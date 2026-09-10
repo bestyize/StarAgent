@@ -1,0 +1,205 @@
+package com.starringbox.staragent.feature.agents
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.starringbox.staragent.core.data.AppState
+import com.starringbox.staragent.core.data.LocalAppState
+import com.starringbox.staragent.core.designsystem.component.AgentAvatar
+import com.starringbox.staragent.core.designsystem.component.CircleIconButton
+import com.starringbox.staragent.core.designsystem.component.EmptyHint
+import com.starringbox.staragent.core.designsystem.component.StarTopBar
+import com.starringbox.staragent.core.designsystem.icon.StarIcon
+import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
+import com.starringbox.staragent.core.designsystem.navigation.Navigator
+import com.starringbox.staragent.core.designsystem.navigation.Route
+import com.starringbox.staragent.core.designsystem.theme.StarPalette
+import com.starringbox.staragent.core.model.Agent
+
+/**
+ * 首页：智能体联系人列表。
+ *
+ * 每一行是一个智能体，同时承载三类动态——与它的对话、它托管的任务结果、
+ * 它的主动消息。三者共用同一条消息流，这正是"智能体即联系人"的心智：
+ * 你看到的是"这个联系人最近发生了什么"。
+ */
+@Composable
+fun AgentListScreen(navigator: Navigator) {
+    val state = LocalAppState.current
+    val query = state.searchQuery
+    val agents = state.agents.filter { agent ->
+        query.isBlank() || agent.name.contains(query) || agent.persona.contains(query)
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        StarTopBar(
+            title = "星环",
+            subtitle = if (state.agents.isEmpty()) "还没有智能体" else "${state.agents.size} 个智能体",
+            actions = {
+                CircleIconButton(
+                    glyph = StarIconGlyph.Plus,
+                    onClick = { navigator.push(Route.AgentEditor(null)) },
+                )
+            },
+        )
+
+        SearchField(
+            value = query,
+            onValueChange = { state.searchQuery = it },
+            modifier = Modifier.padding(bottom = 6.dp),
+        )
+
+        if (agents.isEmpty()) {
+            EmptyHint(
+                text = if (query.isBlank()) "还没有智能体，点右上角创建一个" else "没有匹配的智能体",
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            LazyColumn(Modifier.weight(1f)) {
+                items(agents, key = { it.id }) { agent ->
+                    AgentRow(
+                        state = state,
+                        agent = agent,
+                        onClick = { navigator.push(Route.Chat(agent.id)) },
+                    )
+                }
+                item {
+                    CreateAgentRow(onClick = { navigator.push(Route.AgentEditor(null)) })
+                }
+                item { Spacer(Modifier.height(12.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AgentRow(state: AppState, agent: Agent, onClick: () -> Unit) {
+    val last = state.lastMessage(agent.id)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AgentAvatar(glyph = agent.glyph, accentIndex = agent.accentIndex)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = agent.name,
+                style = MaterialTheme.typography.titleMedium,
+                color = StarPalette.Text,
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                // 摘要取最有信息量的一条，而不是时间戳。
+                text = last?.let { state.previewOf(it) } ?: agent.persona,
+                style = MaterialTheme.typography.bodySmall,
+                color = StarPalette.TextMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (last != null) {
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = last.timeLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = StarPalette.TextFaint,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CreateAgentRow(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(46.dp)
+                .height(46.dp)
+                .clip(RoundedCornerShape(15.dp))
+                .background(StarPalette.SurfaceAlt),
+            contentAlignment = Alignment.Center,
+        ) {
+            StarIcon(StarIconGlyph.Plus, iconSize = 20.dp, tint = StarPalette.TextMuted)
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = "创建新的智能体",
+            style = MaterialTheme.typography.bodyLarge,
+            color = StarPalette.TextMuted,
+        )
+    }
+}
+
+@Composable
+private fun SearchField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(StarPalette.SurfaceAlt)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StarIcon(StarIconGlyph.Search, iconSize = 16.dp, tint = StarPalette.TextFaint)
+        Spacer(Modifier.width(8.dp))
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyMedium.copy(color = StarPalette.Text),
+            cursorBrush = SolidColor(StarPalette.Indigo),
+            modifier = Modifier.weight(1f),
+            decorationBox = { inner ->
+                Box(contentAlignment = Alignment.CenterStart) {
+                    if (value.isEmpty()) {
+                        Text(
+                            text = "搜索智能体",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = StarPalette.TextFaint,
+                        )
+                    }
+                    inner()
+                }
+            },
+        )
+    }
+}

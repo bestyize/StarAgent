@@ -7,6 +7,10 @@ plugins {
     alias(libs.plugins.composeCompiler)
 }
 
+/**
+ * 应用外壳：负责组装各功能模块、承载导航宿主，
+ * 同时是三端（Android / iOS / Desktop）共用的入口。
+ */
 kotlin {
     listOf(
         iosArm64(),
@@ -17,36 +21,46 @@ kotlin {
             isStatic = true
         }
     }
-    
+
     jvm()
-    
+
     android {
-       namespace = "com.starringbox.staragent.shared"
-       compileSdk = libs.versions.android.compileSdk.get().toInt()
-       minSdk = libs.versions.android.minSdk.get().toInt()
-    
-       compilerOptions {
-           jvmTarget = JvmTarget.JVM_11
-       }
-       androidResources {
-           enable = true
-       }
-       withHostTest {
-           isIncludeAndroidResources = true
-       }
-       withDeviceTestBuilder {
-           sourceSetTreeName = "test"
-       }.configure {
-           instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-       }
+        namespace = "com.starringbox.staragent.shared"
+        compileSdk = libs.versions.android.compileSdk.get().toInt()
+        minSdk = libs.versions.android.minSdk.get().toInt()
+
+        compilerOptions {
+            jvmTarget = JvmTarget.JVM_11
+        }
+        androidResources {
+            enable = true
+        }
+        withHostTest {
+            isIncludeAndroidResources = true
+        }
+        withDeviceTestBuilder {
+            sourceSetTreeName = "test"
+        }.configure {
+            instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        }
     }
-    
+
     sourceSets {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.compose.uiTooling)
         }
         commonMain.dependencies {
+            api(project(":core:designsystem"))
+
+            implementation(project(":core:model"))
+            implementation(project(":core:data"))
+
+            implementation(project(":feature:agents"))
+            implementation(project(":feature:chat"))
+            implementation(project(":feature:tasks"))
+            implementation(project(":feature:settings"))
+
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)
@@ -55,6 +69,7 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
+            implementation(libs.kotlinx.coroutines.core)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
