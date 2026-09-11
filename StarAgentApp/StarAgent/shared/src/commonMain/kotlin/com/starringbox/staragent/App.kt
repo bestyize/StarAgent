@@ -1,7 +1,16 @@
 package com.starringbox.staragent
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
@@ -21,11 +30,13 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.starringbox.staragent.core.data.AppState
 import com.starringbox.staragent.core.data.LocalAppState
 import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
+import com.starringbox.staragent.core.designsystem.navigation.NavAction
 import com.starringbox.staragent.core.designsystem.navigation.Navigator
 import com.starringbox.staragent.core.designsystem.navigation.Route
 import com.starringbox.staragent.core.designsystem.navigation.isTabRoot
@@ -54,6 +65,10 @@ fun App() {
         val navigator = remember { Navigator(Route.Agents) }
 
         CompositionLocalProvider(LocalAppState provides state) {
+            // 系统返回键接进导航栈：还有上一页就返回，到底了才交回系统（退出）。
+            // 不接这一步的话，在二级页按返回会直接退出 App。
+            PlatformBackHandler(enabled = navigator.canGoBack) { navigator.pop() }
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -74,20 +89,49 @@ fun App() {
     }
 }
 
+/**
+ * 页面转场用 tween 而不是 spring：整屏位移下弹簧的过冲会让页面"弹"一下，时长也不可预期。
+ * FastOutSlowIn 起步快、收尾稳，是页面级位移的常规选择。
+ */
+private val SlideSpec = tween<IntOffset>(durationMillis = 280, easing = FastOutSlowInEasing)
+
 @Composable
 private fun RouteHost(navigator: Navigator) {
-    when (val route = navigator.current) {
-        Route.Agents -> AgentListScreen(navigator)
-        is Route.Chat -> ChatScreen(navigator, route.agentId)
-        Route.Tasks -> TaskCenterScreen(navigator)
-        is Route.TaskDetail -> TaskDetailScreen(navigator, route.taskId)
-        Route.Me -> MeScreen(navigator)
-        is Route.AgentEditor -> AgentEditorScreen(navigator, route.agentId)
-        Route.ModelConfig -> ModelConfigScreen(navigator)
-        is Route.ProviderDetail -> ProviderDetailScreen(navigator, route.providerId)
-        Route.Memories -> MemoryScreen(navigator)
-        Route.Channels -> ChannelsScreen(navigator)
-        Route.Skills -> SkillsScreen(navigator)
+    AnimatedContent(
+        targetState = navigator.target,
+        transitionSpec = {
+            when (targetState.action) {
+                // Tab 之间是平级切换，没有"更深一层"的关系，加位移动画反而像又进了一层
+                NavAction.Replace -> EnterTransition.None togetherWith ExitTransition.None
+
+                // 前进：新页从右侧推入，旧页只让出三分之一屏宽，留出层次
+                NavAction.Push ->
+                    slideInHorizontally(SlideSpec) { it } togetherWith
+                        slideOutHorizontally(SlideSpec) { -it / 3 }
+
+                // 返回：正好反过来
+                NavAction.Pop ->
+                    slideInHorizontally(SlideSpec) { -it / 3 } togetherWith
+                        slideOutHorizontally(SlideSpec) { it }
+            }
+        },
+        // 一个页面的身份就是它的路由，动作不同不构成换页
+        contentKey = { it.route },
+        label = "route",
+    ) { target ->
+        when (val route = target.route) {
+            Route.Agents -> AgentListScreen(navigator)
+            is Route.Chat -> ChatScreen(navigator, route.agentId)
+            Route.Tasks -> TaskCenterScreen(navigator)
+            is Route.TaskDetail -> TaskDetailScreen(navigator, route.taskId)
+            Route.Me -> MeScreen(navigator)
+            is Route.AgentEditor -> AgentEditorScreen(navigator, route.agentId)
+            Route.ModelConfig -> ModelConfigScreen(navigator)
+            is Route.ProviderDetail -> ProviderDetailScreen(navigator, route.providerId)
+            Route.Memories -> MemoryScreen(navigator)
+            Route.Channels -> ChannelsScreen(navigator)
+            Route.Skills -> SkillsScreen(navigator)
+        }
     }
 }
 
@@ -123,7 +167,11 @@ private fun StarBottomBar(navigator: Navigator) {
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .clickable { if (!selected) navigator.switchTab(tab.route) },
+                        // 去掉点击水波纹：底栏是常驻导航，反馈靠颜色变化就够了
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { if (!selected) navigator.switchTab(tab.route) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     StarIcon(
@@ -138,9 +186,6 @@ private fun StarBottomBar(navigator: Navigator) {
                         style = MaterialTheme.typography.labelMedium,
                         color = tint,
                     )
-                    if (selected) {
-                        Box(Modifier.padding(top = 4.dp).size(4.dp).clip(CircleShape).background(StarPalette.Indigo))
-                    }
                 }
             }
         }

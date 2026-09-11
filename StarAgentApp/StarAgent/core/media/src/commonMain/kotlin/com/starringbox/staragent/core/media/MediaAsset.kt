@@ -1,5 +1,7 @@
 package com.starringbox.staragent.core.media
 
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -9,11 +11,16 @@ import kotlin.io.encoding.ExperimentalEncodingApi
  *
  * 用普通 class 而不是 data class：内部是 ByteArray，
  * 自动生成的 equals 是按引用比的，既误导调用方，也会让 Compose 漏掉重组。
+ *
+ * **持久化说明**：字节本体不进 JSON（base64 塞进去会让存档膨胀好几倍），
+ * 由持久化层按 [id] 单独存成文件，读档时再填回来。
+ * 所以 [bytes] 标了 [Transient] 并给了默认值。
  */
+@Serializable
 class MediaAsset(
     val id: String,
     val mimeType: String,
-    val bytes: ByteArray,
+    @Transient val bytes: ByteArray = ByteArray(0),
 ) {
     val sizeBytes: Int get() = bytes.size
 

@@ -66,7 +66,9 @@ fun ProviderDetailScreen(navigator: Navigator, providerId: String?) {
 
     var name by remember { mutableStateOf(existing?.name.orEmpty()) }
     var protocol by remember { mutableStateOf(existing?.protocol ?: LlmProtocol.OpenAi) }
-    var baseUrl by remember { mutableStateOf(existing?.baseUrl.orEmpty()) }
+    // 两种协议的地址往往不同，分开存、分开填
+    var openAiUrl by remember { mutableStateOf(existing?.openAiBaseUrl.orEmpty()) }
+    var anthropicUrl by remember { mutableStateOf(existing?.anthropicBaseUrl.orEmpty()) }
     var apiKey by remember { mutableStateOf(existing?.apiKey.orEmpty()) }
     var selected by remember { mutableStateOf(existing?.models.orEmpty().toSet()) }
     var fetched by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -78,7 +80,11 @@ fun ProviderDetailScreen(navigator: Navigator, providerId: String?) {
         (existing?.models.orEmpty() + fetched).distinct().sorted()
     }
     val ordered = allModels.filter { it in selected }
-    val canSave = name.isNotBlank() && baseUrl.isNotBlank() && ordered.isNotEmpty()
+    val currentBaseUrl = when (protocol) {
+        LlmProtocol.OpenAi -> openAiUrl
+        LlmProtocol.Anthropic -> anthropicUrl
+    }
+    val canSave = name.isNotBlank() && currentBaseUrl.isNotBlank() && ordered.isNotEmpty()
 
     Column(Modifier.fillMaxSize()) {
         StarTopBar(
@@ -120,14 +126,26 @@ fun ProviderDetailScreen(navigator: Navigator, providerId: String?) {
                         )
 
                         Spacer(Modifier.height(16.dp))
-                        SectionLabel("接口地址")
+                        SectionLabel("接口地址 · OpenAI 兼容")
                         StarTextField(
-                            value = baseUrl,
-                            onValueChange = { baseUrl = it },
-                            placeholder = when (protocol) {
-                                LlmProtocol.OpenAi -> "https://api.deepseek.com/v1"
-                                LlmProtocol.Anthropic -> "https://api.anthropic.com/v1"
-                            },
+                            value = openAiUrl,
+                            onValueChange = { openAiUrl = it },
+                            placeholder = "https://api.deepseek.com/v1",
+                        )
+
+                        Spacer(Modifier.height(16.dp))
+                        SectionLabel("接口地址 · Anthropic")
+                        StarTextField(
+                            value = anthropicUrl,
+                            onValueChange = { anthropicUrl = it },
+                            placeholder = "https://api.deepseek.com/anthropic",
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "同一家的两种协议地址常常不一样，所以分开填。" +
+                                "用不到的那个可以留空，留空即表示这家不提供该协议。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = StarPalette.TextFaint,
                         )
 
                         Spacer(Modifier.height(16.dp))
@@ -153,7 +171,8 @@ fun ProviderDetailScreen(navigator: Navigator, providerId: String?) {
                     onFetch = {
                         fetchState = FetchState.Loading
                         scope.launch {
-                            val result = ModelCatalog.fetch(protocol, baseUrl.trim(), apiKey.trim())
+                            // 用当前协议对应的那个地址去拉模型列表
+                            val result = ModelCatalog.fetch(protocol, currentBaseUrl.trim(), apiKey.trim())
                             fetchState = result.fold(
                                 onSuccess = { models ->
                                     fetched = models
@@ -217,7 +236,8 @@ fun ProviderDetailScreen(navigator: Navigator, providerId: String?) {
                                 val created = state.addCustomProvider(
                                     name = name,
                                     protocol = protocol,
-                                    baseUrl = baseUrl,
+                                    openAiBaseUrl = openAiUrl,
+                                    anthropicBaseUrl = anthropicUrl,
                                     models = ordered,
                                     apiKey = apiKey,
                                 )
@@ -229,7 +249,8 @@ fun ProviderDetailScreen(navigator: Navigator, providerId: String?) {
                                     existing!!.copy(
                                         name = name.trim(),
                                         protocol = protocol,
-                                        baseUrl = baseUrl.trim(),
+                                        openAiBaseUrl = openAiUrl.trim(),
+                                        anthropicBaseUrl = anthropicUrl.trim(),
                                         models = ordered,
                                         apiKey = apiKey.trim(),
                                     )

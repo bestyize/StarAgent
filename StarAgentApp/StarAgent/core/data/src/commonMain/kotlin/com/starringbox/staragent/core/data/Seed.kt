@@ -20,19 +20,29 @@ import com.starringbox.staragent.core.model.TaskPriority
 /**
  * 一期的种子数据。
  *
- * 内置服务商只预填了接口地址与常见模型名，**不含任何 API Key**——
- * 用户需要自己去「我的 → 模型服务」填一个，填完就能真正对话。
+ * 分两部分，调用时机不同：
+ * [installProviders] 是**结构**，每次启动都要装；[populateDemo] 是**演示内容**，只在首次启动灌一次。
+ * 混在一起会导致：走存档还原时服务商列表是空的。
  */
 internal object Seed {
 
-    fun populate(state: AppState) {
+    /**
+     * 内置服务商。只预填接口地址与常见模型名，**不含任何 API Key**——
+     * 用户需要自己去「我的 → 模型服务」填一个，填完就能真正对话。
+     *
+     * 用户对服务商的改动（Key、模型清单、自建端点）存在 SettingsStore 里，
+     * 这里提供的是每次启动都该存在的基础层，所以**不能**放进"仅首次"的分支。
+     */
+    fun installProviders(state: AppState) {
         state.providers.addAll(
             listOf(
                 ModelProvider(
                     id = "deepseek",
                     name = "DeepSeek",
                     protocol = LlmProtocol.OpenAi,
-                    baseUrl = "https://api.deepseek.com/v1",
+                    openAiBaseUrl = "https://api.deepseek.com/v1",
+                    // DeepSeek 两种协议路径不同：OpenAI 在根下，Anthropic 在 /anthropic
+                    anthropicBaseUrl = "https://api.deepseek.com/anthropic",
                     // deepseek-chat / deepseek-reasoner 已于 2026-07-24 停用，改成了 V4 系列
                     // deepseek-v4-pro 也将在 2026-09-14 之后统一路由到 V4.1 Flash
                     models = listOf("deepseek-flash", "deepseek-v4-pro"),
@@ -41,7 +51,8 @@ internal object Seed {
                     id = "qwen",
                     name = "通义千问",
                     protocol = LlmProtocol.OpenAi,
-                    baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    openAiBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    anthropicBaseUrl = "https://dashscope.aliyuncs.com/apps/anthropic",
                     models = listOf("qwen3.8-max", "qwen3.8-max-0902"),
                 ),
                 ModelProvider(
@@ -49,14 +60,16 @@ internal object Seed {
                     name = "智谱 GLM",
                     protocol = LlmProtocol.OpenAi,
                     // 公司改名为 Z.AI，但大陆端点没变（api.z.ai 是新增的国际端点）
-                    baseUrl = "https://open.bigmodel.cn/api/paas/v4",
+                    openAiBaseUrl = "https://open.bigmodel.cn/api/paas/v4",
+                    anthropicBaseUrl = "https://open.bigmodel.cn/api/anthropic",
                     models = listOf("glm-5.3", "glm-5.3-flash", "glm-5.2"),
                 ),
                 ModelProvider(
                     id = "kimi",
                     name = "Kimi",
                     protocol = LlmProtocol.OpenAi,
-                    baseUrl = "https://api.moonshot.cn/v1",
+                    openAiBaseUrl = "https://api.moonshot.cn/v1",
+                    anthropicBaseUrl = "https://api.moonshot.cn/anthropic",
                     // 旧的 kimi-k2-*-preview 系列已于 2026-05-25 停服
                     models = listOf("kimi-k3", "kimi-k2.7-code", "kimi-k2.6"),
                 ),
@@ -64,7 +77,8 @@ internal object Seed {
                     id = "minimax",
                     name = "MiniMax",
                     protocol = LlmProtocol.OpenAi,
-                    baseUrl = "https://api.minimaxi.com/v1",
+                    openAiBaseUrl = "https://api.minimaxi.com/v1",
+                    anthropicBaseUrl = "https://api.minimaxi.com/anthropic",
                     // 模型名区分大小写
                     models = listOf("MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"),
                 ),
@@ -72,7 +86,8 @@ internal object Seed {
                     id = "mimo",
                     name = "小米 MiMo",
                     protocol = LlmProtocol.OpenAi,
-                    baseUrl = "https://api.xiaomimimo.com/v1",
+                    openAiBaseUrl = "https://api.xiaomimimo.com/v1",
+                    anthropicBaseUrl = "https://api.xiaomimimo.com/anthropic",
                     models = listOf("xiaomi/mimo-v2.5", "xiaomi/mimo-v2.5-pro"),
                 ),
                 ModelProvider(
@@ -80,7 +95,9 @@ internal object Seed {
                     name = "火山 CodingPlan",
                     protocol = LlmProtocol.OpenAi,
                     // 必须带 coding 段；/api/v3 是按量计费接口，走那里不消耗套餐额度、会另外计费
-                    baseUrl = "https://ark.cn-beijing.volces.com/api/coding/v3",
+                    openAiBaseUrl = "https://ark.cn-beijing.volces.com/api/coding/v3",
+                    // CodingPlan 的 Anthropic 端点比 OpenAI 的少一段 v3
+                    anthropicBaseUrl = "https://ark.cn-beijing.volces.com/api/coding",
                     models = listOf(
                         "ark-code-latest",
                         "doubao-seed-evolving",
@@ -93,7 +110,7 @@ internal object Seed {
                     id = "openai",
                     name = "OpenAI",
                     protocol = LlmProtocol.OpenAi,
-                    baseUrl = "https://api.openai.com/v1",
+                    openAiBaseUrl = "https://api.openai.com/v1",
                     // GPT-5.6 家族分三档，裸 gpt-5.6 是 gpt-5.6-sol 的别名
                     models = listOf("gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"),
                 ),
@@ -101,14 +118,14 @@ internal object Seed {
                     id = "anthropic",
                     name = "Anthropic",
                     protocol = LlmProtocol.Anthropic,
-                    baseUrl = "https://api.anthropic.com/v1",
+                    anthropicBaseUrl = "https://api.anthropic.com/v1",
                     models = listOf("claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5-20251001"),
                 ),
                 ModelProvider(
                     id = "openrouter",
                     name = "OpenRouter",
                     protocol = LlmProtocol.OpenAi,
-                    baseUrl = "https://openrouter.ai/api/v1",
+                    openAiBaseUrl = "https://openrouter.ai/api/v1",
                     // 模型名是「厂商/模型」；openrouter/auto 由它自动挑。
                     // 这里只放几个稳定入口，真实目录有 400+ 个，点「获取模型列表」拉。
                     models = listOf(
@@ -120,7 +137,10 @@ internal object Seed {
                 ),
             )
         )
+    }
 
+    /** 首次启动的演示内容：智能体、任务、记忆、技能、渠道与示例对话。 */
+    fun populateDemo(state: AppState) {
         state.channels.addAll(
             listOf(
                 Channel("wechat", "微信", "💬", connected = true),

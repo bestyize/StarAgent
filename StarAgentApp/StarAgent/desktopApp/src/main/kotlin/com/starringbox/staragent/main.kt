@@ -7,12 +7,14 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.starringbox.staragent.core.media.MediaPickers
 import com.starringbox.staragent.core.media.MediaSavers
+import com.starringbox.staragent.core.storage.LocalStores
 
 /**
  * 桌面端仅用于开发预览：窗口按手机比例，方便直接看到移动端的真实排版。
  */
 fun main() = application {
-    // 选图与保存都由平台入口注入——媒体模块本身不认识任何平台
+    // 选图、保存、本地存储都由平台入口注入——这几个核心模块本身都不认识平台
+    LocalStores.install(DesktopLocalStore())
     MediaPickers.install(DesktopMediaPicker())
     MediaSavers.install(DesktopMediaSaver())
 

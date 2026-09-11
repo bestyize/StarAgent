@@ -13,6 +13,7 @@ import com.starringbox.staragent.core.llm.LlmEndpoint
 import com.starringbox.staragent.core.llm.LlmRole
 import com.starringbox.staragent.core.llm.LlmTurn
 import com.starringbox.staragent.core.media.MediaAsset
+import com.starringbox.staragent.core.storage.LocalStores
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.AgentTask
 import com.starringbox.staragent.core.model.Author
@@ -62,9 +63,46 @@ class AppState {
     private var idSeq = 0
 
     init {
-        Seed.populate(this)
-        defaultModelId = modelKey(providers.first().id, 0)
+        // 内置服务商是结构不是内容：用户配的 Key 和模型清单存在 SettingsStore 里，
+        // 这一层每次启动都要重建，否则走存档还原时服务商列表是空的。
+        Seed.installProviders(this)
+
+        // 演示内容（智能体、任务、记忆…）是另一回事：有存档就还原，没有才灌种子。
+        // 这一步是"删掉的会话冷启又回来"的根因所在——原先每次启动都无条件灌种子，
+        // 用户的删除自然就白删了。
+        val restored = if (LocalStores.available) StatePersister(LocalStores.current).load() else null
+
+        if (restored != null) {
+            agents.addAll(restored.agents)
+            tasks.addAll(restored.tasks)
+            memories.addAll(restored.memories)
+            skills.addAll(restored.skills)
+            channels.addAll(restored.channels)
+            restored.conversations.forEach { (agentId, messages) -> messagesOf(agentId).addAll(messages) }
+        } else {
+            Seed.populateDemo(this)
+            // 首次运行立刻落盘：否则用户这次删的东西，下次启动又会被种子灌回来
+            persistState()
+        }
+
+        // 兜底默认模型取第一家的第一个；没有服务商时留空，交给 SettingsStore 里用户自己的选择
+        providers.firstOrNull()?.let { defaultModelId = modelKey(it.id, 0) }
         restoreSettings()
+    }
+
+    /** 把当前状态落盘。没装存储实现（iOS）时整段跳过。 */
+    private fun persistState() {
+        if (!LocalStores.available) return
+        StatePersister(LocalStores.current).save(
+            PersistedState(
+                agents = agents.toList(),
+                tasks = tasks.toList(),
+                memories = memories.toList(),
+                skills = skills.toList(),
+                channels = channels.toList(),
+                conversations = conversations.mapValues { (_, list) -> list.toList() },
+            )
+        )
     }
 
     fun nextId(prefix: String): String = "$prefix-${++idSeq}"
@@ -73,9 +111,16 @@ class AppState {
 
     fun agent(id: String): Agent? = agents.firstOrNull { it.id == id }
 
-    fun deleteAgent(id: String) { agents.removeAll { it.id == id }; conversations.remove(id) }
+    fun deleteAgent(id: String) {
+        agents.removeAll { it.id == id }
+        conversations.remove(id)
+        persistState()
+    }
+
     fun setAgentPinned(id: String, pinned: Boolean) {
-        val i = agents.indexOfFirst { it.id == id }; if (i >= 0) agents[i] = agents[i].copy(pinned = pinned)
+        val i = agents.indexOfFirst { it.id == id }
+        if (i >= 0) agents[i] = agents[i].copy(pinned = pinned)
+        persistState()
     }
 
     fun messagesOf(agentId: String): SnapshotStateList<ChatMessage> =
@@ -88,6 +133,7 @@ class AppState {
     /** 删掉对话里的某一条消息。 */
     fun removeMessage(agentId: String, messageId: String) {
         conversations[agentId]?.removeAll { it.id == messageId }
+        persistState()
     }
 
     fun tasksOf(agentId: String): List<AgentTask> = tasks.filter { it.agentId == agentId }
@@ -143,9 +189,11 @@ class AppState {
     fun endpointFor(agent: Agent): LlmEndpoint? {
         val (provider, model) = resolveModel(agent.modelId) ?: return null
         if (!provider.configured) return null
+        // 地址按当前协议取：同一家两种协议的路径往往不同
+        val baseUrl = provider.baseUrlFor(provider.protocol) ?: return null
         return LlmEndpoint(
             protocol = provider.protocol,
-            baseUrl = provider.baseUrl,
+            baseUrl = baseUrl,
             apiKey = provider.apiKey,
             model = model,
             systemPrompt = systemPromptFor(agent),
@@ -164,11 +212,12 @@ class AppState {
         }
     }
 
-    /** 新增一个自定义服务商，协议由用户二选一。 */
+    /** 新增一个自定义服务商。两种协议的地址分开填，用不到的那个可以留空。 */
     fun addCustomProvider(
         name: String,
         protocol: LlmProtocol,
-        baseUrl: String,
+        openAiBaseUrl: String,
+        anthropicBaseUrl: String,
         models: List<String>,
         apiKey: String,
     ): ModelProvider {
@@ -176,7 +225,8 @@ class AppState {
             id = nextId("custom"),
             name = name.trim(),
             protocol = protocol,
-            baseUrl = baseUrl.trim(),
+            openAiBaseUrl = openAiBaseUrl.trim(),
+            anthropicBaseUrl = anthropicBaseUrl.trim(),
             models = models,
             apiKey = apiKey.trim(),
             builtIn = false,
@@ -219,6 +269,7 @@ class AppState {
     fun setAgentModel(agentId: String, modelId: String) {
         val index = agents.indexOfFirst { it.id == agentId }
         if (index >= 0) agents[index] = agents[index].copy(modelId = modelId)
+        persistState()
     }
 
     // ── 对话 ────────────────────────────────────
@@ -330,6 +381,9 @@ class AppState {
                 )
             }
         }
+
+        // 一轮回复结束才落盘：流式过程中每个字都写一次磁盘没有必要
+        persistState()
     }
 
     /** 用户点「创建」才真正落一条任务——草稿只是建议。 */
@@ -348,6 +402,7 @@ class AppState {
                 timeLabel = "刚刚",
             )
         )
+        persistState()
     }
 
     // ── 任务 / 记忆 / 技能 / 渠道 ────────────────
@@ -359,10 +414,12 @@ class AppState {
         tasks[index] = task.copy(
             status = if (task.status == TaskStatus.Active) TaskStatus.Paused else TaskStatus.Active,
         )
+        persistState()
     }
 
     fun removeTask(taskId: String) {
         tasks.removeAll { it.id == taskId }
+        persistState()
     }
 
     fun task(id: String): AgentTask? = tasks.firstOrNull { it.id == id }
@@ -371,42 +428,56 @@ class AppState {
     fun updateTask(task: AgentTask) {
         val index = tasks.indexOfFirst { it.id == task.id }
         if (index >= 0) tasks[index] = task
+        persistState()
     }
 
     fun completeTask(taskId: String) {
         val index = tasks.indexOfFirst { it.id == taskId }
         if (index >= 0) tasks[index] = tasks[index].copy(status = TaskStatus.Done, lastRunLabel = "刚刚")
+        persistState()
     }
 
-    fun addQuickTask() {
-        val agentId = agents.firstOrNull()?.id ?: return
-        tasks.add(0, AgentTask(nextId("task"), agentId, "新的托管任务", Recurrence.Once, "今天 10:00", "今天 10:00"))
+    /**
+     * 新建一个空白任务，返回它的 id 供界面跳到编辑页。
+     * 没有智能体可挂时返回 null。
+     */
+    fun addQuickTask(): String? {
+        val agentId = agents.firstOrNull()?.id ?: return null
+        val task = AgentTask(nextId("task"), agentId, "新的托管任务", Recurrence.Once, "今天 10:00", "今天 10:00")
+        tasks.add(0, task)
+        persistState()
+        return task.id
     }
 
     fun addMemory(agentId: String, category: MemoryCategory, text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
         memories.add(0, MemoryItem(nextId("mem"), agentId, category, trimmed))
+        persistState()
     }
 
     fun removeMemory(memoryId: String) {
         memories.removeAll { it.id == memoryId }
+        persistState()
     }
 
     fun toggleSkill(skillId: String) {
         val index = skills.indexOfFirst { it.id == skillId }
         if (index < 0) return
         skills[index] = skills[index].copy(installed = !skills[index].installed)
+        persistState()
     }
 
     fun toggleChannel(channelId: String) {
         val index = channels.indexOfFirst { it.id == channelId }
         if (index < 0) return
         channels[index] = channels[index].copy(connected = !channels[index].connected)
+        persistState()
     }
 
     fun addAgent(agent: Agent) {
         agents.add(agent)
+        persistState()
     }
 
     // ── 内部 ────────────────────────────────────
@@ -482,7 +553,8 @@ class AppState {
         if (!provider.builtIn) {
             SettingsStore.put("custom:${provider.id}:name", provider.name)
             SettingsStore.put("custom:${provider.id}:protocol", provider.protocol.name)
-            SettingsStore.put("custom:${provider.id}:baseUrl", provider.baseUrl)
+            SettingsStore.put("custom:${provider.id}:openAiBaseUrl", provider.openAiBaseUrl)
+            SettingsStore.put("custom:${provider.id}:anthropicBaseUrl", provider.anthropicBaseUrl)
             SettingsStore.put("custom:${provider.id}:models", encodeList(provider.models))
             SettingsStore.put("custom:${provider.id}:key", provider.apiKey)
         }
@@ -520,11 +592,21 @@ class AppState {
             val protocol = SettingsStore.get("custom:$id:protocol")
                 ?.let { saved -> LlmProtocol.entries.firstOrNull { it.name == saved } }
                 ?: LlmProtocol.OpenAi
-            val baseUrl = SettingsStore.get("custom:$id:baseUrl").orEmpty()
+            val openAiBaseUrl = SettingsStore.get("custom:$id:openAiBaseUrl").orEmpty()
+            val anthropicBaseUrl = SettingsStore.get("custom:$id:anthropicBaseUrl").orEmpty()
             val models = decodeList(SettingsStore.get("custom:$id:models"))
             val apiKey = SettingsStore.get("custom:$id:key").orEmpty()
             providers.add(
-                ModelProvider(id, name, protocol, baseUrl, models, apiKey, builtIn = false)
+                ModelProvider(
+                    id = id,
+                    name = name,
+                    protocol = protocol,
+                    openAiBaseUrl = openAiBaseUrl,
+                    anthropicBaseUrl = anthropicBaseUrl,
+                    models = models,
+                    apiKey = apiKey,
+                    builtIn = false,
+                )
             )
         }
 

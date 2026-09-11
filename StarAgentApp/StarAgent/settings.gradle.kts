@@ -40,11 +40,13 @@ include(":shared")
 // model        领域模型，纯 Kotlin，不依赖 Compose
 // designsystem 设计系统：主题、图标、通用组件、导航契约
 // media        多模态基础能力：媒体资源的表示、编码与选取
+// storage      本地存储：按名字读写文本与字节（零平台依赖）
 // llm          模型接入：协议实现 + 流式解析（无 Compose 依赖）
 // data         应用状态与数据源（一期为内存实现 + 本地偏好存储）
 include(":core:model")
 include(":core:designsystem")
 include(":core:media")
+include(":core:storage")
 include(":core:llm")
 include(":core:data")
 

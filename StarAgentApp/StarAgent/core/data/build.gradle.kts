@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.androidMultiplatformLibrary)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
+    alias(libs.plugins.kotlinSerialization)
 }
 
 /**
@@ -30,6 +31,7 @@ kotlin {
         commonMain.dependencies {
             api(project(":core:model"))
             api(project(":core:llm"))
+            implementation(project(":core:storage"))
             implementation(libs.compose.runtime)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)

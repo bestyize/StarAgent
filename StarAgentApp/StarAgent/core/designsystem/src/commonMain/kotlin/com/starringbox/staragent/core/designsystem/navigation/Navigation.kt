@@ -1,6 +1,9 @@
 package com.starringbox.staragent.core.designsystem.navigation
 
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 
 /**
  * 应用的全部目的地。导航契约放在设计系统层，
@@ -51,6 +54,17 @@ val Route.isTabRoot: Boolean
     get() = this is Route.Agents || this is Route.Tasks ||
         this is Route.Memories || this is Route.Me
 
+/** 上一次导航动作。界面据此决定转场方向：前进从右侧滑入，返回则相反。 */
+enum class NavAction { Push, Pop, Replace }
+
+/**
+ * 一次导航的结果：目的地 + 造成这次跳转的动作。
+ *
+ * 两者捆成一个值交给界面，是因为转场方向由动作决定。如果界面分别去读
+ * 「当前路由」和「上一次动作」，两次读取之间状态可能已经变了，动画就会选错方向。
+ */
+data class NavTarget(val route: Route, val action: NavAction)
+
 /**
  * 极简导航器：一条返回栈。
  * 切换 Tab 时重置到该 Tab 的根页面，符合底部导航的常规预期。
@@ -58,20 +72,28 @@ val Route.isTabRoot: Boolean
 class Navigator(initial: Route = Route.Agents) {
     private val stack = mutableStateListOf(initial)
 
-    val current: Route get() = stack.last()
+    var target by mutableStateOf(NavTarget(initial, NavAction.Replace))
+        private set
+
+    val current: Route get() = target.route
 
     val canGoBack: Boolean get() = stack.size > 1
 
     fun push(route: Route) {
         stack.add(route)
+        target = NavTarget(route, NavAction.Push)
     }
 
     fun pop() {
-        if (stack.size > 1) stack.removeAt(stack.lastIndex)
+        if (stack.size > 1) {
+            stack.removeAt(stack.lastIndex)
+            target = NavTarget(stack.last(), NavAction.Pop)
+        }
     }
 
     fun switchTab(route: Route) {
         stack.clear()
         stack.add(route)
+        target = NavTarget(route, NavAction.Replace)
     }
 }

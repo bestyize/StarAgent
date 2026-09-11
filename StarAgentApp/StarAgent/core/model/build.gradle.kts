@@ -2,6 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.kotlinSerialization)
     alias(libs.plugins.androidMultiplatformLibrary)
 }
 
@@ -30,6 +31,7 @@ kotlin {
         commonMain.dependencies {
             // api：上层（core:llm、core:data、各 feature）能直接用 MediaAsset，不必各自再声明一次
             api(project(":core:media"))
+            implementation(libs.kotlinx.serialization.json)
         }
     }
 }

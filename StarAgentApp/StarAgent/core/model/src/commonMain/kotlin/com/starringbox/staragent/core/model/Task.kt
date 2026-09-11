@@ -1,11 +1,14 @@
 package com.starringbox.staragent.core.model
 
+import kotlinx.serialization.Serializable
+
 /**
  * 任务的重复方式，对应设计稿里的任务类型切换。
  *
  * [Conditional] 不是按时间跑，而是满足某个条件才触发（例如"当连接 Wi-Fi 时"），
  * 条件本身写在任务的 [AgentTask.scheduleLabel] 里。
  */
+@Serializable
 enum class Recurrence(val label: String) {
     Once("一次性"),
     Daily("每天"),
@@ -14,6 +17,7 @@ enum class Recurrence(val label: String) {
     Conditional("条件触发"),
 }
 
+@Serializable
 enum class TaskStatus {
     Active,
     Paused,
@@ -21,6 +25,7 @@ enum class TaskStatus {
 }
 
 /** 任务优先级。设计稿把它作为卡片上的一个标签（"高优先级"）。 */
+@Serializable
 enum class TaskPriority(val label: String) {
     High("高优先级"),
     Medium("中优先级"),
@@ -34,6 +39,7 @@ enum class TaskPriority(val label: String) {
  * [priority]、[categoryLabel]、[remindLabel]、[note] 是设计稿任务详情页要展示的字段，
  * 都是可选的——从对话里建出来的任务默认没有这些，由用户之后补。
  */
+@Serializable
 data class AgentTask(
     val id: String,
     val agentId: String,
@@ -54,6 +60,7 @@ data class AgentTask(
  * 智能体识别出可托管的意图，把它解析成这张已填好参数的卡片，
  * 用户确认后才会真正创建任务。
  */
+@Serializable
 data class TaskDraft(
     val title: String,
     val recurrence: Recurrence,

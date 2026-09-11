@@ -58,7 +58,6 @@ import com.starringbox.staragent.core.model.TaskStatus
 fun TaskCenterScreen(navigator: Navigator) {
     val state = LocalAppState.current
     val managing = remember { mutableStateOf<AgentTask?>(null) }
-    var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     // 默认必须是"全部"：种子任务都是定时/周期，默认选中"一次性任务"会让页面一进来就是空的。
     val selectedType = remember { mutableStateOf("全部") }
@@ -103,14 +102,42 @@ fun TaskCenterScreen(navigator: Navigator) {
                         Text("任务中心", style = MaterialTheme.typography.headlineSmall, color = StarPalette.Text)
                         Text("T A S K   C E N T E R", style = MaterialTheme.typography.labelSmall, color = StarPalette.Indigo)
                     }
-                    CircleIconButton(StarIconGlyph.Search, onClick = { searching = !searching }, tint = StarPalette.Text, size = 38.dp)
-                    Spacer(Modifier.width(5.dp))
-                    CircleIconButton(StarIconGlyph.Plus, onClick = { state.addQuickTask() }, tint = Color.White, containerColor = StarPalette.Indigo, size = 38.dp)
+                    CircleIconButton(
+                        glyph = StarIconGlyph.Plus,
+                        onClick = {
+                            // 新建之后直接进编辑页——只往列表里塞一条任务，用户看不到任何反馈
+                            state.addQuickTask()?.let { navigator.push(Route.TaskDetail(it)) }
+                        },
+                        tint = Color.White,
+                        containerColor = StarPalette.Indigo,
+                        size = 38.dp,
+                    )
                 }
-                if (searching) {
-                    Spacer(Modifier.height(10.dp))
-                    BasicTextField(query, { query = it }, singleLine = true, textStyle = MaterialTheme.typography.bodyMedium.copy(color = StarPalette.Text), cursorBrush = SolidColor(StarPalette.Indigo), modifier = Modifier.fillMaxWidth().background(Color.White.copy(alpha = 0.8f), RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 10.dp))
-                }
+                Spacer(Modifier.height(14.dp))
+                // 搜索框常驻：任务多起来之后搜索是高频操作，不该藏在按钮后面
+                BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = StarPalette.Text),
+                    cursorBrush = SolidColor(StarPalette.Indigo),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White.copy(alpha = 0.85f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    decorationBox = { inner ->
+                        Box {
+                            if (query.isEmpty()) {
+                                Text(
+                                    text = "搜索任务",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = StarPalette.TextFaint,
+                                )
+                            }
+                            inner()
+                        }
+                    },
+                )
                 Spacer(Modifier.height(22.dp))
                 Text("让重要的事，在对的时间自然发生", style = MaterialTheme.typography.titleLarge, color = StarPalette.Text)
                 Text("用 AI 帮你规划、执行、追踪每一个任务，把精力留给更有价值的生活。", style = MaterialTheme.typography.bodyMedium, color = StarPalette.TextMuted, modifier = Modifier.padding(top = 5.dp))

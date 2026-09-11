@@ -1,9 +1,12 @@
 package com.starringbox.staragent.core.model
 
+import kotlinx.serialization.Serializable
+
 /**
  * 记忆分类，与设计稿「我的记忆」的五个标签一一对应。
  * 单位也放在这里，因为界面上要显示成"12 条 / 8 位"。
  */
+@Serializable
 enum class MemoryCategory(val label: String, val unit: String) {
     Preference("我的喜好", "条"),
     Person("重要的人", "位"),
@@ -16,6 +19,7 @@ enum class MemoryCategory(val label: String, val unit: String) {
  * 长期记忆。记忆必须可查看、可编辑、可删除——这是隐私底线，
  * 也是"高自由度"的应有之义。
  */
+@Serializable
 data class MemoryItem(
     val id: String,
     val agentId: String,

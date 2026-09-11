@@ -49,6 +49,8 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.compose.uiTooling)
+            // 系统返回键的拦截要用到 BackHandler
+            implementation(libs.androidx.activity.compose)
         }
         commonMain.dependencies {
             api(project(":core:designsystem"))

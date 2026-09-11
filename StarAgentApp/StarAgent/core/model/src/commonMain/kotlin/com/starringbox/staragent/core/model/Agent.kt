@@ -1,9 +1,12 @@
 package com.starringbox.staragent.core.model
 
+import kotlinx.serialization.Serializable
+
 /**
  * 智能体。产品里"智能体即联系人"——每个智能体是一个独立的对话对象，
  * 拥有自己的人设、模型、技能与记忆范围。
  */
+@Serializable
 data class Agent(
     val id: String,
     val name: String,
@@ -24,6 +27,7 @@ data class Agent(
 )
 
 /** 响应模式。用户关心的是"这次要多快、多深"，而不是具体用了哪个模型。 */
+@Serializable
 enum class ResponseMode(val label: String, val hint: String) {
     Fast("快速", "尽快回应，适合简单问答"),
     Standard("标准", "速度与质量的平衡"),
@@ -34,6 +38,7 @@ enum class ResponseMode(val label: String, val hint: String) {
  * 模型服务使用的协议。决定请求体怎么拼、流式响应怎么解析。
  * 自定义服务商时由用户二选一。
  */
+@Serializable
 enum class LlmProtocol(val label: String, val hint: String) {
     OpenAi("OpenAI 兼容", "DeepSeek、通义、智谱、Kimi 及多数自建端点都走这套"),
     Anthropic("Anthropic", "Claude 的原生协议"),
@@ -42,20 +47,40 @@ enum class LlmProtocol(val label: String, val hint: String) {
 /**
  * 一个大模型服务商。
  *
- * 内置的几家只是预填了地址与常见模型名，用户同样可以自行添加任意服务商，
- * 并在两种协议之间选择——这是"模型自由"的落点。
+ * **两种协议的地址往往不同**，所以分两个字段存，由 [protocol] 决定实际用哪个。
+ * 例如 DeepSeek 的 OpenAI 端点是 `https://api.deepseek.com/v1`，
+ * 而 Anthropic 兼容端点是 `https://api.deepseek.com/anthropic`——
+ * 只存一个地址的话，用户切换协议就会打到错的路径上。
+ *
+ * 内置的几家只是预填了地址与常见模型名，用户同样可以自行添加任意服务商。
  */
+@Serializable
 data class ModelProvider(
     val id: String,
     val name: String,
+    /** 用户选定的协议。 */
     val protocol: LlmProtocol,
-    val baseUrl: String,
-    val models: List<String>,
+    val openAiBaseUrl: String = "",
+    val anthropicBaseUrl: String = "",
+    val models: List<String> = emptyList(),
     val apiKey: String = "",
     val builtIn: Boolean = true,
 ) {
+    /** 某协议下的接口地址；这家没提供该协议时返回 null。 */
+    fun baseUrlFor(protocol: LlmProtocol): String? {
+        val url = when (protocol) {
+            LlmProtocol.OpenAi -> openAiBaseUrl
+            LlmProtocol.Anthropic -> anthropicBaseUrl
+        }
+        return url.ifBlank { null }
+    }
+
+    /** 这家支持的协议。界面上据此把不支持的那个选项禁掉。 */
+    val availableProtocols: List<LlmProtocol>
+        get() = LlmProtocol.entries.filter { baseUrlFor(it) != null }
+
     val configured: Boolean
-        get() = apiKey.isNotBlank() && baseUrl.isNotBlank() && models.isNotEmpty()
+        get() = apiKey.isNotBlank() && models.isNotEmpty() && baseUrlFor(protocol) != null
 
     /** 界面上只回显打码后的 Key，避免旁人一眼看到完整密钥。 */
     val maskedKey: String
@@ -70,6 +95,7 @@ data class ModelProvider(
  * IM 渠道。绑定后智能体以"联系人"形式出现在该渠道里，
  * 与 App 内共用同一条会话。
  */
+@Serializable
 data class Channel(
     val id: String,
     val name: String,
@@ -78,6 +104,7 @@ data class Channel(
 )
 
 /** Skill：可插拔的能力单元。 */
+@Serializable
 data class Skill(
     val id: String,
     val name: String,

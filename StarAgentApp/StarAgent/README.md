@@ -77,6 +77,7 @@ StarAgent/
 规则：
 
 - **功能模块之间互不依赖。** 需要跨模块跳转时，走 `core:designsystem` 里的 [Route](core/designsystem/src/commonMain/kotlin/com/starringbox/staragent/core/designsystem/navigation/Navigation.kt) 与 `Navigator`，不直接引用对方的界面。
+- **只有 push / pop 才做转场动画**，Tab 之间是平级切换、不加动画。方向随 `NavTarget` 一起交给界面，不要分别去读「当前路由」和「上一次动作」——两次读取之间状态可能已经变了，动画会选错方向。转场也不用淡入淡出：整屏页面叠加时两边都是半透明，会看到重影。
 - **`core:model` 与 `core:llm` 不依赖 Compose。** 协议层保持纯粹，将来可以独立复用或搬到服务端。
 - **`core:designsystem` 不含业务逻辑。** 只有主题、图标、通用组件和导航契约。
 - **界面层只读 `AppState` / 调它的方法**，不自己持有业务状态，也不直接发网络请求。
