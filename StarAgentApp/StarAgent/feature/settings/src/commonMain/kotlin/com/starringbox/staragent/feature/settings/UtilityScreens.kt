@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,10 +22,13 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.unit.dp
 import com.starringbox.staragent.core.data.LocalAppState
 import com.starringbox.staragent.core.designsystem.component.IconTile
@@ -44,6 +48,7 @@ import com.starringbox.staragent.core.designsystem.theme.StarPalette
 @Composable
 fun ChannelsScreen(navigator: Navigator) {
     val state = LocalAppState.current
+    val showTelegram = remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         StarTopBar(
@@ -59,40 +64,49 @@ fun ChannelsScreen(navigator: Navigator) {
             item { Explainer("绑定后，智能体会以联系人的形式出现在你的聊天工具里。你在 App 里说过的话，在 IM 里能接着聊；在 IM 里交代的任务，结果也会回流到 App。同一条会话、同一份记忆。") }
 
             items(state.channels, key = { it.id }) { channel ->
-                StarCard(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
+                StarCard(modifier = Modifier.fillMaxWidth().clickable { if (channel.name.contains("Telegram", ignoreCase = true)) showTelegram.value = true }) {
+                    Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(channel.glyph, style = MaterialTheme.typography.headlineSmall)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(
-                                text = channel.name,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = StarPalette.Text,
-                            )
+                            Text(channel.name, style = MaterialTheme.typography.bodyLarge, color = StarPalette.Text)
                             Spacer(Modifier.height(3.dp))
-                            Text(
-                                text = if (channel.connected) "已绑定，可接收任务结果" else "未绑定",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = StarPalette.TextMuted,
-                            )
+                            Text(if (channel.connected) "已绑定，可接收任务结果" else "未绑定 · 点击配置", style = MaterialTheme.typography.bodySmall, color = StarPalette.TextMuted)
                         }
-                        Switch(
-                            checked = channel.connected,
-                            onCheckedChange = { state.toggleChannel(channel.id) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = StarPalette.Indigo,
-                                checkedBorderColor = StarPalette.Indigo,
-                            ),
-                        )
+                        Switch(checked = channel.connected, onCheckedChange = { state.toggleChannel(channel.id) }, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = StarPalette.Indigo, checkedBorderColor = StarPalette.Indigo))
                     }
                 }
             }
 
             item { Spacer(Modifier.height(16.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun ConfigField(label: String, value: androidx.compose.runtime.MutableState<String>) {
+    Column {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = StarPalette.TextMuted)
+        Spacer(Modifier.height(5.dp))
+        BasicTextField(value.value, { value.value = it }, singleLine = true, textStyle = MaterialTheme.typography.bodyMedium.copy(color = StarPalette.Text), cursorBrush = SolidColor(StarPalette.Indigo), modifier = Modifier.fillMaxWidth().background(StarPalette.SurfaceAlt, RoundedCornerShape(10.dp)).padding(horizontal = 12.dp, vertical = 11.dp))
+    }
+}
+
+@Composable
+private fun TelegramConfigDialog(onDismiss: () -> Unit) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        StarCard(Modifier.fillMaxWidth().padding(20.dp), cornerRadius = 18.dp) {
+            Column(Modifier.padding(18.dp)) {
+                Text("Telegram Bot 配置", style = MaterialTheme.typography.titleLarge, color = StarPalette.Text)
+                Spacer(Modifier.height(14.dp))
+                val token = remember { mutableStateOf("") }
+                val webhook = remember { mutableStateOf("") }
+                ConfigField("Bot Token", token)
+                Spacer(Modifier.height(10.dp))
+                ConfigField("Webhook 地址（可选）", webhook)
+                Spacer(Modifier.height(14.dp))
+                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(StarPalette.Indigo).clickable(enabled = token.value.isNotBlank(), onClick = onDismiss).padding(vertical = 11.dp), contentAlignment = Alignment.Center) { Text("保存并测试连接", color = Color.White, style = MaterialTheme.typography.labelLarge) }
+            }
         }
     }
 }

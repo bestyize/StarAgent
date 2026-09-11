@@ -20,6 +20,7 @@ data class Agent(
      * 默认关闭——新智能体默认保持"纯对话"，需要时再打开。
      */
     val canScheduleTasks: Boolean = false,
+    val pinned: Boolean = false,
 )
 
 /** 响应模式。用户关心的是"这次要多快、多深"，而不是具体用了哪个模型。 */

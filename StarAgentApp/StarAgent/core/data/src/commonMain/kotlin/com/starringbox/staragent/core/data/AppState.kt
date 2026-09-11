@@ -72,6 +72,11 @@ class AppState {
 
     fun agent(id: String): Agent? = agents.firstOrNull { it.id == id }
 
+    fun deleteAgent(id: String) { agents.removeAll { it.id == id }; conversations.remove(id) }
+    fun setAgentPinned(id: String, pinned: Boolean) {
+        val i = agents.indexOfFirst { it.id == id }; if (i >= 0) agents[i] = agents[i].copy(pinned = pinned)
+    }
+
     fun messagesOf(agentId: String): SnapshotStateList<ChatMessage> =
         conversations.getOrPut(agentId) { mutableStateListOf() }
 
@@ -345,6 +350,16 @@ class AppState {
 
     fun removeTask(taskId: String) {
         tasks.removeAll { it.id == taskId }
+    }
+
+    fun completeTask(taskId: String) {
+        val index = tasks.indexOfFirst { it.id == taskId }
+        if (index >= 0) tasks[index] = tasks[index].copy(status = TaskStatus.Done, lastRunLabel = "刚刚")
+    }
+
+    fun addQuickTask() {
+        val agentId = agents.firstOrNull()?.id ?: return
+        tasks.add(0, AgentTask(nextId("task"), agentId, "新的托管任务", Recurrence.Once, "今天 10:00", "今天 10:00"))
     }
 
     fun addMemory(agentId: String, category: MemoryCategory, text: String) {

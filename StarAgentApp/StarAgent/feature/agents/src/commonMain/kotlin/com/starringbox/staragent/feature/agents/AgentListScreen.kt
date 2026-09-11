@@ -1,6 +1,9 @@
 package com.starringbox.staragent.feature.agents
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,7 +18,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.starringbox.staragent.core.data.AppState
@@ -31,6 +38,8 @@ import com.starringbox.staragent.core.designsystem.component.AgentAvatar
 import com.starringbox.staragent.core.designsystem.component.CircleIconButton
 import com.starringbox.staragent.core.designsystem.component.EmptyHint
 import com.starringbox.staragent.core.designsystem.component.StarTopBar
+import com.starringbox.staragent.core.designsystem.component.StarActionSheet
+import com.starringbox.staragent.core.designsystem.component.StarSheetAction
 import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.navigation.Navigator
@@ -50,20 +59,26 @@ fun AgentListScreen(navigator: Navigator) {
     val state = LocalAppState.current
     val query = state.searchQuery
     val agents = state.agents.filter { agent ->
-        query.isBlank() || agent.name.contains(query) || agent.persona.contains(query)
+        query.isBlank() || agent.name.contains(query, ignoreCase = true) || agent.persona.contains(query, ignoreCase = true) || state.lastMessage(agent.id)?.let { state.previewOf(it).contains(query, ignoreCase = true) } == true
     }
+    val managing = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Agent?>(null) }
 
     Column(Modifier.fillMaxSize()) {
-        StarTopBar(
-            title = "星环",
-            subtitle = if (state.agents.isEmpty()) "还没有智能体" else "${state.agents.size} 个智能体",
-            actions = {
-                CircleIconButton(
-                    glyph = StarIconGlyph.Plus,
-                    onClick = { navigator.push(Route.AgentEditor(null)) },
-                )
-            },
-        )
+        Box(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(0xFFE7EFFF), StarPalette.Bg)))) {
+            Box(Modifier.align(Alignment.TopEnd).padding(end = 24.dp, top = 12.dp).width(110.dp).height(110.dp).clip(CircleShape).background(Brush.radialGradient(listOf(Color(0xFFBFCBFF), Color.Transparent))))
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("星环", style = MaterialTheme.typography.headlineSmall, color = StarPalette.Text)
+                        Text("${state.agents.size} 个智能体 · ${state.agents.size * 4} 条会话", style = MaterialTheme.typography.bodyLarge, color = StarPalette.TextMuted)
+                    }
+                    CircleIconButton(glyph = StarIconGlyph.Plus, onClick = { navigator.push(Route.AgentEditor(null)) }, size = 44.dp, tint = Color.White, containerColor = StarPalette.Indigo)
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("智能体，让一切更简单", style = MaterialTheme.typography.headlineSmall, color = StarPalette.Text)
+                Text("创建 · 连接 · 扩展 · 与 AI 一起成长", style = MaterialTheme.typography.bodySmall, color = StarPalette.TextMuted)
+            }
+        }
 
         SearchField(
             value = query,
@@ -71,19 +86,31 @@ fun AgentListScreen(navigator: Navigator) {
             modifier = Modifier.padding(bottom = 6.dp),
         )
 
+        if (agents.isNotEmpty() && query.isBlank()) {
+            Text("置顶会话", style = MaterialTheme.typography.titleMedium, color = StarPalette.TextMuted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp))
+        }
+
         if (agents.isEmpty()) {
             EmptyHint(
                 text = if (query.isBlank()) "还没有智能体，点右上角创建一个" else "没有匹配的智能体",
                 modifier = Modifier.weight(1f),
             )
         } else {
-            LazyColumn(Modifier.weight(1f)) {
-                items(agents, key = { it.id }) { agent ->
+            LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 10.dp, top = 0.dp, end = 10.dp, bottom = 16.dp)) {
+                val pinned = agents.filter { it.pinned }
+                val recent = agents.filterNot { it.pinned }
+                if (pinned.isNotEmpty()) item { SectionTitle("置顶会话", "最常用的智能体") }
+                items(pinned, key = { "pinned-${it.id}" }) { agent ->
                     AgentRow(
                         state = state,
                         agent = agent,
                         onClick = { navigator.push(Route.Chat(agent.id)) },
+                        onLongClick = { managing.value = agent },
                     )
+                }
+                if (recent.isNotEmpty()) item { SectionTitle("最近会话", "与你的智能体保持连接") }
+                items(recent, key = { "recent-${it.id}" }) { agent ->
+                    AgentRow(state, agent, { navigator.push(Route.Chat(agent.id)) }, { managing.value = agent })
                 }
                 item {
                     CreateAgentRow(onClick = { navigator.push(Route.AgentEditor(null)) })
@@ -92,16 +119,30 @@ fun AgentListScreen(navigator: Navigator) {
             }
         }
     }
+    managing.value?.let { agent ->
+        StarActionSheet( actions = listOf(StarSheetAction(if (agent.pinned) "取消置顶" else "置顶会话"), StarSheetAction("删除会话", true)), onAction = { index -> if (index == 0) state.setAgentPinned(agent.id, !agent.pinned) else state.deleteAgent(agent.id); managing.value = null }, onDismiss = { managing.value = null })
+    }
 }
 
 @Composable
-private fun AgentRow(state: AppState, agent: Agent, onClick: () -> Unit) {
+private fun SectionTitle(title: String, subtitle: String) {
+    Column(Modifier.padding(horizontal = 10.dp, vertical = 14.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, color = StarPalette.Text)
+        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = StarPalette.TextMuted)
+    }
+}
+
+@Composable
+private fun AgentRow(state: AppState, agent: Agent, onClick: () -> Unit, onLongClick: () -> Unit) {
     val last = state.lastMessage(agent.id)
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() }
+            .pointerInput(agent.id) { detectTapGestures(onTap = { onClick() }, onLongPress = { onLongClick() }) }
+            .padding(horizontal = 10.dp, vertical = 3.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(StarPalette.Surface)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -192,7 +233,7 @@ private fun SearchField(
                 Box(contentAlignment = Alignment.CenterStart) {
                     if (value.isEmpty()) {
                         Text(
-                            text = "搜索智能体",
+                            text = "搜索会话内容、智能体或关键词",
                             style = MaterialTheme.typography.bodyMedium,
                             color = StarPalette.TextFaint,
                         )

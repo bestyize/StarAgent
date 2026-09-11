@@ -3,6 +3,8 @@ package com.starringbox.staragent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -89,8 +92,10 @@ private fun RouteHost(navigator: Navigator) {
 private data class Tab(val route: Route, val glyph: StarIconGlyph, val label: String)
 
 private val Tabs = listOf(
-    Tab(Route.Agents, StarIconGlyph.Chat, "对话"),
+    Tab(Route.Agents, StarIconGlyph.Chat, "首页"),
     Tab(Route.Tasks, StarIconGlyph.Task, "任务"),
+    Tab(Route.Memories, StarIconGlyph.Book, "记忆"),
+    Tab(Route.Skills, StarIconGlyph.Bolt, "技能"),
     Tab(Route.Me, StarIconGlyph.Person, "我的"),
 )
 
@@ -109,7 +114,7 @@ private fun StarBottomBar(navigator: Navigator) {
             modifier = Modifier
                 .fillMaxWidth()
                 .background(StarPalette.Surface)
-                .padding(vertical = 9.dp),
+                .padding(top = 10.dp, bottom = 14.dp),
         ) {
             Tabs.forEach { tab ->
                 val selected = current == tab.route
@@ -122,16 +127,19 @@ private fun StarBottomBar(navigator: Navigator) {
                 ) {
                     StarIcon(
                         icon = tab.glyph,
-                        iconSize = 22.dp,
+                        iconSize = 24.dp,
                         tint = tint,
                         strokeWidth = if (selected) 2.15f else 1.8f,
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = tab.label,
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelMedium,
                         color = tint,
                     )
+                    if (selected) {
+                        Box(Modifier.padding(top = 4.dp).size(4.dp).clip(CircleShape).background(StarPalette.Indigo))
+                    }
                 }
             }
         }

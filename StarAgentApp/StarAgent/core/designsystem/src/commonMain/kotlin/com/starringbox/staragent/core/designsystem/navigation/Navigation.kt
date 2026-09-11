@@ -40,7 +40,7 @@ sealed interface Route {
 
 /** 是否为底部导航的三个根页面。 */
 val Route.isTabRoot: Boolean
-    get() = this is Route.Agents || this is Route.Tasks || this is Route.Me
+    get() = this is Route.Agents || this is Route.Tasks || this is Route.Memories || this is Route.Skills || this is Route.Me
 
 /**
  * 极简导航器：一条返回栈。

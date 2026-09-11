@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -17,10 +18,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -32,6 +42,7 @@ import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.designsystem.theme.avatarGradient
+import com.starringbox.staragent.common.apptheme.LocalColor
 
 /** 智能体头像：渐变底 + 字形，颜色按序号稳定取用。 */
 @Composable
@@ -151,9 +162,35 @@ fun StarCard(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(cornerRadius))
+            .shadow(2.dp, RoundedCornerShape(cornerRadius), ambientColor = Color(0x12000000), spotColor = Color(0x18000000))
             .background(containerColor),
     ) {
         content()
+    }
+}
+
+data class StarSheetAction(val label: String, val destructive: Boolean = false)
+
+/** 轻量底部操作面板：业务层只提供标题、选项和回调。 */
+@Composable
+fun StarActionSheet(
+    actions: List<StarSheetAction>,
+    onAction: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        val offsetY = remember { mutableFloatStateOf(0f) }
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            Box(Modifier.fillMaxSize().clickable { onDismiss() }.background(Color.Black.copy(alpha = 0.22f)))
+            Column(Modifier.fillMaxWidth().offset { IntOffset(0, offsetY.floatValue.toInt()) }.pointerInput(Unit) { detectVerticalDragGestures(onVerticalDrag = { _, drag -> offsetY.floatValue = (offsetY.floatValue + drag).coerceAtLeast(0f) }, onDragEnd = { if (offsetY.floatValue > 100f) onDismiss() else offsetY.floatValue = 0f }) }.clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(StarPalette.SurfaceFloat).padding(bottom = 22.dp)) {
+                Box(Modifier.padding(top = 12.dp).size(width = 34.dp, height = 4.dp).clip(CircleShape).background(StarPalette.Divider).align(Alignment.CenterHorizontally))
+                actions.forEachIndexed { index, action ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp).clip(RoundedCornerShape(10.dp)).background(StarPalette.SurfaceFloatElevated).clickable { onAction(index) }.padding(horizontal = 16.dp, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(action.label, style = MaterialTheme.typography.bodyLarge, color = if (action.destructive) StarPalette.Danger else LocalColor.Text1)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -240,7 +277,8 @@ fun StarTopBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .background(Brush.verticalGradient(listOf(Color(0xFFEFF4FF), StarPalette.Bg)))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (onBack != null) {

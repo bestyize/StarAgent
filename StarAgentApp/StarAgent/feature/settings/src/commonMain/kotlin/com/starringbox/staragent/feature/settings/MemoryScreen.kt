@@ -58,10 +58,57 @@ fun MemoryScreen(navigator: Navigator) {
 
     Column(Modifier.fillMaxSize()) {
         StarTopBar(
-            title = "记忆",
+            title = "记忆与成长",
             subtitle = "${state.memories.size} 条 · 每个智能体各记各的",
             onBack = { navigator.pop() },
         )
+        Text("记住重要的你，看见持续成长的自己", style = MaterialTheme.typography.headlineSmall, color = StarPalette.Text, modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp))
+        Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MemoryCategory.entries.take(4).forEach { entry -> StarTag(entry.label, containerColor = StarPalette.SurfaceAlt) }
+        }
+        Spacer(Modifier.height(14.dp))
+        StarCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                MemoryStat("偏好", state.memories.count { it.category == MemoryCategory.Preference })
+                MemoryStat("习惯", state.memories.count { it.category == MemoryCategory.Habit })
+                MemoryStat("事实", state.memories.count { it.category == MemoryCategory.Fact })
+                MemoryStat("项目", state.memories.count { it.category == MemoryCategory.Project })
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        StarCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("自我优化循环", style = MaterialTheme.typography.titleMedium, color = StarPalette.Text, modifier = Modifier.weight(1f))
+                    Text("了解更多 〉", style = MaterialTheme.typography.labelMedium, color = StarPalette.Indigo)
+                }
+                Spacer(Modifier.height(14.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    GrowthMetric("记录生活", "沉淀记忆")
+                    Text("→", color = StarPalette.Indigo, modifier = Modifier.padding(top = 8.dp))
+                    GrowthMetric("反思洞察", "发现机会")
+                    Text("→", color = StarPalette.Indigo, modifier = Modifier.padding(top = 8.dp))
+                    GrowthMetric("获得成长", "遇见更好的自己")
+                }
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        StarCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("我的成长概览", style = MaterialTheme.typography.titleMedium, color = StarPalette.Text, modifier = Modifier.weight(1f))
+                    StarTag("持续成长", contentColor = StarPalette.Indigo)
+                }
+                Spacer(Modifier.height(10.dp))
+                Text("记忆让每一次对话都更懂你", style = MaterialTheme.typography.bodyMedium, color = StarPalette.TextMuted)
+                Spacer(Modifier.height(14.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    GrowthMetric("记录数", state.memories.size.toString())
+                    GrowthMetric("智能体", state.agents.size.toString())
+                    GrowthMetric("连续使用", "7 天")
+                }
+            }
+        }
 
         LazyColumn(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -173,6 +220,22 @@ fun MemoryScreen(navigator: Navigator) {
 
             item { Spacer(Modifier.height(16.dp)) }
         }
+    }
+}
+
+@Composable
+private fun MemoryStat(label: String, count: Int) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(count.toString(), style = MaterialTheme.typography.titleLarge, color = StarPalette.Indigo)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = StarPalette.TextMuted)
+    }
+}
+
+@Composable
+private fun GrowthMetric(label: String, value: String) {
+    Column {
+        Text(value, style = MaterialTheme.typography.titleLarge, color = StarPalette.Text)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = StarPalette.TextMuted)
     }
 }
 
