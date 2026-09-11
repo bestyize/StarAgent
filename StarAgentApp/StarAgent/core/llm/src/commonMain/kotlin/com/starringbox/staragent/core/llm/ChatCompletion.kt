@@ -20,6 +20,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -27,6 +28,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 
 /**
  * 一次流式对话。两种协议对外暴露同一个事件流，
@@ -73,7 +75,7 @@ object ChatCompletion {
                 history.forEach { turn ->
                     addJsonObject {
                         put("role", turn.role.wire())
-                        put("content", turn.text)
+                        putOpenAiContent(turn)
                     }
                 }
             }
@@ -129,7 +131,7 @@ object ChatCompletion {
                 history.forEach { turn ->
                     addJsonObject {
                         put("role", turn.role.wire())
-                        put("content", turn.text)
+                        putAnthropicContent(turn)
                     }
                 }
             }
@@ -180,6 +182,64 @@ object ChatCompletion {
 class LlmHttpException(val userMessage: String) : Exception(userMessage)
 
 private fun LlmRole.wire(): String = if (this == LlmRole.User) "user" else "assistant"
+
+/**
+ * OpenAI 兼容系的图片写法：content 从字符串变成块数组，图片是 `image_url` + **data URL**。
+ *
+ * DeepSeek、通义千问、智谱、Kimi、MiniMax、小米 MiMo、火山、OpenRouter 都认这一套，
+ * 所以只需要这一份实现。没有图片时仍发纯字符串，减少无谓的格式变化。
+ */
+internal fun JsonObjectBuilder.putOpenAiContent(turn: LlmTurn) {
+    if (turn.images.isEmpty()) {
+        put("content", turn.text)
+        return
+    }
+    putJsonArray("content") {
+        turn.images.forEach { asset ->
+            addJsonObject {
+                put("type", "image_url")
+                putJsonObject("image_url") { put("url", asset.dataUrl()) }
+            }
+        }
+        if (turn.text.isNotBlank()) {
+            addJsonObject {
+                put("type", "text")
+                put("text", turn.text)
+            }
+        }
+    }
+}
+
+/**
+ * Anthropic 的图片写法与上面**完全不同**，这是接多模态时最容易踩的坑：
+ * - 块类型是 `image`（不是 `image_url`）
+ * - base64 必须是**裸串**，带上 `data:` 前缀会被判定为非法 Base64
+ * - MIME 类型因此要单独放在 `media_type` 字段里
+ */
+internal fun JsonObjectBuilder.putAnthropicContent(turn: LlmTurn) {
+    if (turn.images.isEmpty()) {
+        put("content", turn.text)
+        return
+    }
+    putJsonArray("content") {
+        turn.images.forEach { asset ->
+            addJsonObject {
+                put("type", "image")
+                putJsonObject("source") {
+                    put("type", "base64")
+                    put("media_type", asset.mimeType)
+                    put("data", asset.base64())
+                }
+            }
+        }
+        if (turn.text.isNotBlank()) {
+            addJsonObject {
+                put("type", "text")
+                put("text", turn.text)
+            }
+        }
+    }
+}
 
 private fun JsonElement?.asTextOrNull(): String? {
     if (this == null || this is JsonNull) return null

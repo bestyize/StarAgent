@@ -33,35 +33,90 @@ internal object Seed {
                     name = "DeepSeek",
                     protocol = LlmProtocol.OpenAi,
                     baseUrl = "https://api.deepseek.com/v1",
-                    models = listOf("deepseek-chat", "deepseek-reasoner"),
+                    // deepseek-chat / deepseek-reasoner 已于 2026-07-24 停用，改成了 V4 系列
+                    // deepseek-v4-pro 也将在 2026-09-14 之后统一路由到 V4.1 Flash
+                    models = listOf("deepseek-flash", "deepseek-v4-pro"),
                 ),
                 ModelProvider(
                     id = "qwen",
                     name = "通义千问",
                     protocol = LlmProtocol.OpenAi,
                     baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                    models = listOf("qwen-max", "qwen-plus"),
+                    models = listOf("qwen3.8-max", "qwen3.8-max-0902"),
                 ),
                 ModelProvider(
                     id = "zhipu",
                     name = "智谱 GLM",
                     protocol = LlmProtocol.OpenAi,
+                    // 公司改名为 Z.AI，但大陆端点没变（api.z.ai 是新增的国际端点）
                     baseUrl = "https://open.bigmodel.cn/api/paas/v4",
-                    models = listOf("glm-4-plus", "glm-4-flash"),
+                    models = listOf("glm-5.3", "glm-5.3-flash", "glm-5.2"),
+                ),
+                ModelProvider(
+                    id = "kimi",
+                    name = "Kimi",
+                    protocol = LlmProtocol.OpenAi,
+                    baseUrl = "https://api.moonshot.cn/v1",
+                    // 旧的 kimi-k2-*-preview 系列已于 2026-05-25 停服
+                    models = listOf("kimi-k3", "kimi-k2.7-code", "kimi-k2.6"),
+                ),
+                ModelProvider(
+                    id = "minimax",
+                    name = "MiniMax",
+                    protocol = LlmProtocol.OpenAi,
+                    baseUrl = "https://api.minimaxi.com/v1",
+                    // 模型名区分大小写
+                    models = listOf("MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"),
+                ),
+                ModelProvider(
+                    id = "mimo",
+                    name = "小米 MiMo",
+                    protocol = LlmProtocol.OpenAi,
+                    baseUrl = "https://api.xiaomimimo.com/v1",
+                    models = listOf("xiaomi/mimo-v2.5", "xiaomi/mimo-v2.5-pro"),
+                ),
+                ModelProvider(
+                    id = "ark-coding",
+                    name = "火山 CodingPlan",
+                    protocol = LlmProtocol.OpenAi,
+                    // 必须带 coding 段；/api/v3 是按量计费接口，走那里不消耗套餐额度、会另外计费
+                    baseUrl = "https://ark.cn-beijing.volces.com/api/coding/v3",
+                    models = listOf(
+                        "ark-code-latest",
+                        "doubao-seed-evolving",
+                        "doubao-seed-2.1-turbo",
+                        "glm-5.3",
+                        "kimi-k2.7-code",
+                    ),
                 ),
                 ModelProvider(
                     id = "openai",
                     name = "OpenAI",
                     protocol = LlmProtocol.OpenAi,
                     baseUrl = "https://api.openai.com/v1",
-                    models = listOf("gpt-5.3", "gpt-5.3-mini"),
+                    // GPT-5.6 家族分三档，裸 gpt-5.6 是 gpt-5.6-sol 的别名
+                    models = listOf("gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"),
                 ),
                 ModelProvider(
                     id = "anthropic",
                     name = "Anthropic",
                     protocol = LlmProtocol.Anthropic,
                     baseUrl = "https://api.anthropic.com/v1",
-                    models = listOf("claude-sonnet-5", "claude-opus-5"),
+                    models = listOf("claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5-20251001"),
+                ),
+                ModelProvider(
+                    id = "openrouter",
+                    name = "OpenRouter",
+                    protocol = LlmProtocol.OpenAi,
+                    baseUrl = "https://openrouter.ai/api/v1",
+                    // 模型名是「厂商/模型」；openrouter/auto 由它自动挑。
+                    // 这里只放几个稳定入口，真实目录有 400+ 个，点「获取模型列表」拉。
+                    models = listOf(
+                        "openrouter/auto",
+                        "anthropic/claude-opus-5",
+                        "openai/gpt-6-astra",
+                        "openai/gpt-5.6-terra",
+                    ),
                 ),
             )
         )

@@ -41,9 +41,15 @@ sealed interface Route {
     data object Skills : Route
 }
 
-/** 是否为底部导航的三个根页面。 */
+/**
+ * 是否为底部导航的根页面。
+ *
+ * 技能页不在其中——它是二级页，从「我的 → Skill 商店」推进来。
+ * 所以这里必须跟着一起改，否则进技能页时底栏会错误地留着。
+ */
 val Route.isTabRoot: Boolean
-    get() = this is Route.Agents || this is Route.Tasks || this is Route.Memories || this is Route.Skills || this is Route.Me
+    get() = this is Route.Agents || this is Route.Tasks ||
+        this is Route.Memories || this is Route.Me
 
 /**
  * 极简导航器：一条返回栈。

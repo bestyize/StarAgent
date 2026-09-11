@@ -97,7 +97,6 @@ private val Tabs = listOf(
     Tab(Route.Agents, StarIconGlyph.Chat, "首页"),
     Tab(Route.Tasks, StarIconGlyph.Task, "任务"),
     Tab(Route.Memories, StarIconGlyph.Book, "记忆"),
-    Tab(Route.Skills, StarIconGlyph.Bolt, "技能"),
     Tab(Route.Me, StarIconGlyph.Person, "我的"),
 )
 

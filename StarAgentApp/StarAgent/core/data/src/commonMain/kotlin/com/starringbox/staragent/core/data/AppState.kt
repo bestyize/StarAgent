@@ -12,6 +12,7 @@ import com.starringbox.staragent.core.llm.ChatStreamEvent
 import com.starringbox.staragent.core.llm.LlmEndpoint
 import com.starringbox.staragent.core.llm.LlmRole
 import com.starringbox.staragent.core.llm.LlmTurn
+import com.starringbox.staragent.core.media.MediaAsset
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.AgentTask
 import com.starringbox.staragent.core.model.Author
@@ -103,6 +104,13 @@ class AppState {
     /** 列表页显示的消息摘要——取最有信息量的一条，而不是时间戳。 */
     fun previewOf(message: ChatMessage): String = when (val body = message.body) {
         is MessageBody.Text -> body.text.ifBlank { "正在回复…" }
+        is MessageBody.Image -> buildString {
+            append("[图片")
+            if (body.assets.size > 1) append(" ×").append(body.assets.size)
+            append(']')
+            if (body.caption.isNotBlank()) append(' ').append(body.caption)
+        }
+
         is MessageBody.Notice -> body.text
         is MessageBody.Execution -> "正在处理…"
         is MessageBody.Draft -> "任务草稿：${body.draft.title}"
@@ -215,9 +223,10 @@ class AppState {
 
     // ── 对话 ────────────────────────────────────
 
-    suspend fun send(agentId: String, text: String) {
+    suspend fun send(agentId: String, text: String, images: List<MediaAsset> = emptyList()) {
         val trimmed = text.trim()
-        if (trimmed.isEmpty() || isBusy(agentId)) return
+        // 只发图片、不写字，是常见用法，不能拦掉
+        if ((trimmed.isEmpty() && images.isEmpty()) || isBusy(agentId)) return
 
         val agent = agent(agentId) ?: return
         val conversation = messagesOf(agentId)
@@ -226,7 +235,11 @@ class AppState {
             ChatMessage(
                 id = nextId("m"),
                 author = Author.User,
-                body = MessageBody.Text(trimmed),
+                body = if (images.isEmpty()) {
+                    MessageBody.Text(trimmed)
+                } else {
+                    MessageBody.Image(assets = images, caption = trimmed)
+                },
                 timeLabel = "刚刚",
             )
         )
@@ -398,16 +411,23 @@ class AppState {
 
     // ── 内部 ────────────────────────────────────
 
-    /** 只把文本类消息发给模型；卡片、回执这些是界面结构，不属于对话内容。 */
+    /**
+     * 只把文本与图片发回模型；卡片、回执这些是界面结构，不属于对话内容。
+     * 带图的消息即使没有文字也要发——否则模型看不到上一轮用户发的那张图。
+     */
     private fun historyFor(agentId: String): List<LlmTurn> =
         messagesOf(agentId)
             .mapNotNull { message ->
-                val body = message.body as? MessageBody.Text ?: return@mapNotNull null
-                if (body.text.isBlank()) return@mapNotNull null
-                LlmTurn(
-                    role = if (message.author == Author.User) LlmRole.User else LlmRole.Assistant,
-                    text = body.text,
-                )
+                val role = if (message.author == Author.User) LlmRole.User else LlmRole.Assistant
+                when (val body = message.body) {
+                    is MessageBody.Text ->
+                        body.text.takeIf { it.isNotBlank() }?.let { LlmTurn(role, it) }
+
+                    is MessageBody.Image ->
+                        LlmTurn(role, body.caption, body.assets)
+
+                    else -> null
+                }
             }
             .takeLast(24)
 
@@ -473,15 +493,26 @@ class AppState {
             ?.let { saved -> ResponseMode.entries.firstOrNull { it.name == saved } }
             ?.let { responseMode = it }
 
+        // 预置模型清单更新后，要把本地缓存的那份丢掉，否则用户永远看不到新模型。
+        // API Key 必须保留——只重置模型名。
+        val savedSeedVersion = SettingsStore.get(KEY_SEED_VERSION)?.toIntOrNull() ?: 0
+        val presetsOutdated = savedSeedVersion < SEED_VERSION
+
         providers.indices.forEach { index ->
             val provider = providers[index]
             val savedKey = SettingsStore.get(keyOf(provider.id)).orEmpty()
-            val savedModels = decodeList(SettingsStore.get(modelsOf(provider.id)))
+            val savedModels = if (presetsOutdated) {
+                emptyList()
+            } else {
+                decodeList(SettingsStore.get(modelsOf(provider.id)))
+            }
             providers[index] = provider.copy(
                 apiKey = savedKey,
                 models = savedModels.ifEmpty { provider.models },
             )
         }
+
+        SettingsStore.put(KEY_SEED_VERSION, SEED_VERSION.toString())
 
         readCustomIds().forEach { id ->
             if (providerById(id) != null) return@forEach
@@ -530,6 +561,14 @@ class AppState {
         const val KEY_DEFAULT_MODEL = "defaultModel"
         const val KEY_RESPONSE_MODE = "responseMode"
         const val KEY_CUSTOM_IDS = "customIds"
+        const val KEY_SEED_VERSION = "seedVersion"
+
+        /**
+         * 预置服务商/模型清单的版本。
+         * **每次改动 Seed 里的预置模型，就把这个数字 +1**——
+         * 否则老用户本机缓存的那份清单会一直盖住新预设。
+         */
+        const val SEED_VERSION = 2
     }
 }
 

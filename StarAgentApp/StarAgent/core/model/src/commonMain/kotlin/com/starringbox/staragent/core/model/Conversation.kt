@@ -1,5 +1,7 @@
 package com.starringbox.staragent.core.model
 
+import com.starringbox.staragent.core.media.MediaAsset
+
 enum class Author { User, Agent }
 
 /**
@@ -11,6 +13,15 @@ enum class Author { User, Agent }
  */
 sealed interface MessageBody {
     data class Text(val text: String) : MessageBody
+
+    /**
+     * 带图片的消息。图片与文字可以同时存在——
+     * 用户常见的用法是"拍一张 + 一句问题"。
+     */
+    data class Image(
+        val assets: List<MediaAsset>,
+        val caption: String = "",
+    ) : MessageBody
 
     /**
      * 系统提示：未配置模型、调用失败、被限流等。

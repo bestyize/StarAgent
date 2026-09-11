@@ -34,6 +34,7 @@ Key 只保存在本机（桌面 `java.util.prefs`、Android `SharedPreferences`�
 ```
 StarAgent/
 ├── core/                    核心层：不含业务界面，被所有功能模块依赖
+│   ├── media/               多模态基础能力：资源表示、编码、校验、选取契约（零平台依赖）
 │   ├── model/               领域模型（纯 Kotlin，不依赖 Compose）
 │   ├── designsystem/        主题、图标、通用组件、导航契约
 │   ├── llm/                 模型接入：协议实现 + 流式解析（不依赖 Compose）
@@ -69,6 +70,7 @@ StarAgent/
                     │      core:data     │  状态 / 模型配置 / 对话流
                     │      core:llm      │  协议实现 + 流式解析
                     │     core:model     │  领域模型
+                    │     core:media     │  多模态基础能力（叶子模块）
                     └────────────────────┘
 ```
 
@@ -91,8 +93,44 @@ StarAgent/
 | --- | --- | --- | --- |
 | `core:llm` 的 HTTP 引擎 | CIO | OkHttp | Darwin |
 | `core:data` 的本地键值存储 | `java.util.prefs` | `SharedPreferences` | `NSUserDefaults` |
+| 选图实现（**放在各端入口模块**） | `desktopApp` | `androidApp` | 尚未接入 |
 
-Android 上 `SettingsStore` 需要 Context，由 `MainActivity` 调 `AndroidAppContext.install(applicationContext)` 注入。
+Android 上 `SettingsStore` 需要 Context，由 `MainActivity` 调 `AndroidAppContext.install(applicationContext)` 注入；
+选图因为要挂在 Activity 的 result 回调上，也在同一处注入。
+
+---
+
+## 多模态
+
+图片能力集中在 `:core:media`，它的职责边界划得很死——**只负责"拿到一张图，并把它变成可传输的形式"**：
+
+```
+core/media
+├── MediaAsset   资源表示（bytes + mimeType），带 base64() / dataUrl() 两种编码
+├── MediaRules   格式与体积准入规则，不合格的在本地就挡下来
+└── MediaPicker  选取契约 + 注册表
+```
+
+**为什么选图不做成 `expect/actual`**：Android 的选图必须挂在 Activity 的 `registerForActivityResult` 上，
+用 `expect` 函数凭空造一个出来是做不到的。所以改成"平台注册、上层取用"——
+各端入口把实现推进 `MediaPickers`，媒体模块本身**不认识任何平台**。
+
+依赖方向因此是单向且干净的：
+
+```
+core:media  ←  core:model  ←  core:llm / core:data / feature:*
+   （叶子，只依赖协程）        （只管按协议把图编成 payload）
+```
+
+界面侧 `StarImage` 只接收 `ByteArray`、不接收 `MediaAsset`，
+所以设计系统也不必反向依赖业务类型。
+
+**两家协议的图片格式完全不同**，这是接多模态最容易踩的坑，`core:llm` 里分了两套实现并用测试钉住：
+
+| | 块类型 | base64 形式 |
+| --- | --- | --- |
+| OpenAI 兼容系（含 DeepSeek、千问、智谱、Kimi、MiniMax、MiMo、火山、OpenRouter） | `image_url` | **data URL**，带 `data:image/png;base64,` 前缀 |
+| Anthropic | `image` | **裸 base64**，MIME 类型单独放 `media_type`，带前缀会 400 |
 
 ---
 

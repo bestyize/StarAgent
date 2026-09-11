@@ -28,9 +28,13 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":core:model"))
+            implementation(project(":core:media"))
             implementation(libs.ktor.client.core)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
+        }
+        commonTest.dependencies {
+            implementation(libs.kotlin.test)
         }
         jvmMain.dependencies {
             implementation(libs.ktor.client.cio)

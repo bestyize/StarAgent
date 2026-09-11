@@ -45,6 +45,9 @@ import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.navigation.Navigator
 import com.starringbox.staragent.core.designsystem.navigation.Route
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
+import com.starringbox.staragent.core.media.MediaAsset
+import com.starringbox.staragent.core.media.MediaPickers
+import com.starringbox.staragent.core.media.MediaRules
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.Author
 import com.starringbox.staragent.core.model.ChatMessage
@@ -73,6 +76,9 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
     var sheetOpen by remember { mutableStateOf(false) }
     var turn by remember { mutableStateOf<Job?>(null) }
     var picked by remember { mutableStateOf<ChatMessage?>(null) }
+    // 待发送的图片，以及选图被拒时的提示（格式不支持、太大等）
+    var attachments by remember { mutableStateOf<List<MediaAsset>>(emptyList()) }
+    var attachError by remember { mutableStateOf<String?>(null) }
     val busy = state.isBusy(agentId)
     val configured = state.endpointFor(agent) != null
 
@@ -140,10 +146,33 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
                 ConfigureModelBanner(onClick = { navigator.push(Route.ModelConfig) })
             }
 
+            attachError?.let { message ->
+                AttachErrorStrip(message = message, onDismiss = { attachError = null })
+            }
+
             InputDock(
                 enabled = configured,
                 busy = busy,
-                onSend = { text -> turn = scope.launch { state.send(agentId, text) } },
+                attachments = attachments,
+                canPickImage = MediaPickers.available,
+                onPickImage = {
+                    attachError = null
+                    scope.launch {
+                        val asset = MediaPickers.pickImage() ?: return@launch
+                        val rejection = MediaRules.rejection(asset)
+                        if (rejection != null) {
+                            attachError = rejection.message
+                        } else {
+                            attachments = attachments + asset
+                        }
+                    }
+                },
+                onRemoveAttachment = { asset -> attachments = attachments.filterNot { it.id == asset.id } },
+                onSend = { text ->
+                    val outgoing = attachments
+                    attachments = emptyList()
+                    turn = scope.launch { state.send(agentId, text, outgoing) }
+                },
                 onStop = { turn?.cancel() },
             )
         }
@@ -172,12 +201,15 @@ private fun MessageRow(
             .combinedClickable(onClick = {}, onLongClick = onLongPress),
     ) {
         when (message.author) {
-            Author.User -> {
-                val text = (message.body as? MessageBody.Text)?.text
-                if (!text.isNullOrBlank()) UserBubble(text)
+            Author.User -> when (val body = message.body) {
+                is MessageBody.Text -> if (body.text.isNotBlank()) UserBubble(body.text)
+                is MessageBody.Image -> UserImageBubble(body.assets, body.caption)
+                else -> Unit
             }
 
             Author.Agent -> when (val body = message.body) {
+                // 目前模型只回文本；图片消息都是用户发的
+                is MessageBody.Image -> Unit
                 // 流式回复刚开头、还没有内容时先不画空气泡，交给下方的「···」占位。
                 is MessageBody.Text -> if (body.text.isNotBlank()) AgentTextBubble(body.text)
                 is MessageBody.Notice -> NoticeCard(body.text, body.isError)
@@ -228,6 +260,11 @@ private fun BarAction(label: String, color: Color, onClick: () -> Unit) {
 /** 把一条消息摊平成可复制的文本——卡片的字段也一并带上。 */
 private fun ChatMessage.copyableText(): String = when (val body = body) {
     is MessageBody.Text -> body.text
+    is MessageBody.Image -> buildString {
+        append("[图片 ×").append(body.assets.size).append(']')
+        if (body.caption.isNotBlank()) append(' ').append(body.caption)
+    }
+
     is MessageBody.Notice -> body.text
     is MessageBody.Execution -> body.steps.joinToString("\n") { it.label }
     is MessageBody.Draft ->
@@ -235,6 +272,39 @@ private fun ChatMessage.copyableText(): String = when (val body = body) {
     is MessageBody.Created -> "任务：${body.task.title}（${body.task.scheduleLabel}）"
     is MessageBody.Delivered -> "${body.artifact.title}\n${body.artifact.summary}"
     is MessageBody.MemoryNote -> body.text
+}
+
+/** 选图被拒时的提示条。本地就挡掉，不要发出去换个 400 回来。 */
+@Composable
+private fun AttachErrorStrip(message: String, onDismiss: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFFDECEC))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StarIcon(
+            icon = StarIconGlyph.Info,
+            iconSize = 16.dp,
+            tint = StarPalette.Danger,
+            strokeWidth = 2f,
+        )
+        Spacer(Modifier.width(9.dp))
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodySmall,
+            color = Color(0xFF9B1C1C),
+            modifier = Modifier.weight(1f),
+        )
+        StarIcon(
+            icon = StarIconGlyph.Close,
+            iconSize = 14.dp,
+            tint = Color(0xFF9B1C1C),
+            strokeWidth = 2.2f,
+            modifier = Modifier.clickable { onDismiss() },
+        )
+    }
 }
 
 /**

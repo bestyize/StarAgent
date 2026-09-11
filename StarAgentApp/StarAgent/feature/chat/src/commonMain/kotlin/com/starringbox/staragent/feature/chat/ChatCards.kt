@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,10 +32,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.starringbox.staragent.core.designsystem.component.IconTile
 import com.starringbox.staragent.core.designsystem.component.StarCard
+import com.starringbox.staragent.core.designsystem.component.StarImage
 import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.component.StarTag
 import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
+import com.starringbox.staragent.core.media.MediaAsset
 import com.starringbox.staragent.core.model.AgentTask
 import com.starringbox.staragent.core.model.Artifact
 import com.starringbox.staragent.core.model.ExecutionStep
@@ -56,6 +59,41 @@ internal fun UserBubble(text: String) {
             // 能选中才能复制——聊天里这是刚需。
             SelectionContainer {
                 Text(text, style = MaterialTheme.typography.bodyLarge, color = Color.White)
+            }
+        }
+    }
+}
+
+/**
+ * 用户发出的图片。图片在上、文字在下——和常见 IM 一致。
+ * 可以只有图没有字，所以 caption 为空时不画气泡。
+ */
+@Composable
+internal fun UserImageBubble(assets: List<MediaAsset>, caption: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        Column(horizontalAlignment = Alignment.End) {
+            assets.forEachIndexed { index, asset ->
+                StarImage(
+                    bytes = asset.bytes,
+                    modifier = Modifier
+                        .widthIn(max = 232.dp)
+                        .heightIn(max = 300.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .padding(bottom = if (index == assets.lastIndex && caption.isBlank()) 0.dp else 6.dp),
+                )
+            }
+            if (caption.isNotBlank()) {
+                Box(
+                    modifier = Modifier
+                        .widthIn(max = 272.dp)
+                        .clip(BubbleShapeUser)
+                        .background(StarPalette.Indigo)
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                ) {
+                    SelectionContainer {
+                        Text(caption, style = MaterialTheme.typography.bodyLarge, color = Color.White)
+                    }
+                }
             }
         }
     }

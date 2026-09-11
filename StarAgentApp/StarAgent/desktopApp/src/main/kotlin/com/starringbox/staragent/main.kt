@@ -5,11 +5,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.starringbox.staragent.core.media.MediaPickers
 
 /**
  * 桌面端仅用于开发预览：窗口按手机比例，方便直接看到移动端的真实排版。
  */
 fun main() = application {
+    // 选图能力由平台入口注入——媒体模块本身不认识任何平台
+    MediaPickers.install(DesktopMediaPicker())
+
     Window(
         onCloseRequest = ::exitApplication,
         title = "StarAgent",
