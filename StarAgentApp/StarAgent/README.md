@@ -93,10 +93,10 @@ StarAgent/
 | --- | --- | --- | --- |
 | `core:llm` 的 HTTP 引擎 | CIO | OkHttp | Darwin |
 | `core:data` 的本地键值存储 | `java.util.prefs` | `SharedPreferences` | `NSUserDefaults` |
-| 选图实现（**放在各端入口模块**） | `desktopApp` | `androidApp` | 尚未接入 |
+| 选图 / 保存（**放在各端入口模块**） | `desktopApp` | `androidApp` | 尚未接入 |
 
 Android 上 `SettingsStore` 需要 Context，由 `MainActivity` 调 `AndroidAppContext.install(applicationContext)` 注入；
-选图因为要挂在 Activity 的 result 回调上，也在同一处注入。
+选图与保存因为都要挂在 Activity 的 result 回调上，也在同一处注册。
 
 ---
 
@@ -108,7 +108,8 @@ Android 上 `SettingsStore` 需要 Context，由 `MainActivity` 调 `AndroidAppC
 core/media
 ├── MediaAsset   资源表示（bytes + mimeType），带 base64() / dataUrl() 两种编码
 ├── MediaRules   格式与体积准入规则，不合格的在本地就挡下来
-└── MediaPicker  选取契约 + 注册表
+├── MediaPicker  选取契约 + 注册表
+└── MediaSaver   保存契约 + 注册表
 ```
 
 **为什么选图不做成 `expect/actual`**：Android 的选图必须挂在 Activity 的 `registerForActivityResult` 上，
@@ -123,7 +124,8 @@ core:media  ←  core:model  ←  core:llm / core:data / feature:*
 ```
 
 界面侧 `StarImage` 只接收 `ByteArray`、不接收 `MediaAsset`，
-所以设计系统也不必反向依赖业务类型。
+所以设计系统也不必反向依赖业务类型。全屏查看器 `StarImageViewer` 同理——
+它把"保存"暴露成 `onSave: (Int) -> Unit` 回调，由对话页接到 `MediaSavers` 上。
 
 **两家协议的图片格式完全不同**，这是接多模态最容易踩的坑，`core:llm` 里分了两套实现并用测试钉住：
 

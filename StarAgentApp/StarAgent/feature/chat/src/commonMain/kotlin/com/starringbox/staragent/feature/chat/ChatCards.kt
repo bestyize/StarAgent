@@ -67,9 +67,15 @@ internal fun UserBubble(text: String) {
 /**
  * 用户发出的图片。图片在上、文字在下——和常见 IM 一致。
  * 可以只有图没有字，所以 caption 为空时不画气泡。
+ *
+ * 单张图片尺寸有上限，点一下开全屏查看器看原图。
  */
 @Composable
-internal fun UserImageBubble(assets: List<MediaAsset>, caption: String) {
+internal fun UserImageBubble(
+    assets: List<MediaAsset>,
+    caption: String,
+    onImageClick: (Int) -> Unit,
+) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         Column(horizontalAlignment = Alignment.End) {
             assets.forEachIndexed { index, asset ->
@@ -78,8 +84,10 @@ internal fun UserImageBubble(assets: List<MediaAsset>, caption: String) {
                     modifier = Modifier
                         .widthIn(max = 232.dp)
                         .heightIn(max = 300.dp)
+                        // 间距放最外层，这样点击区域正好是图片本身，不含留白
+                        .padding(bottom = if (index == assets.lastIndex && caption.isBlank()) 0.dp else 6.dp)
                         .clip(RoundedCornerShape(16.dp))
-                        .padding(bottom = if (index == assets.lastIndex && caption.isBlank()) 0.dp else 6.dp),
+                        .clickable { onImageClick(index) },
                 )
             }
             if (caption.isNotBlank()) {

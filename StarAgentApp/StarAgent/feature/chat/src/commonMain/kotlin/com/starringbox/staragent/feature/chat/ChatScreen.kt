@@ -44,10 +44,13 @@ import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.navigation.Navigator
 import com.starringbox.staragent.core.designsystem.navigation.Route
+import com.starringbox.staragent.core.designsystem.component.StarImageViewer
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.media.MediaAsset
 import com.starringbox.staragent.core.media.MediaPickers
 import com.starringbox.staragent.core.media.MediaRules
+import com.starringbox.staragent.core.media.MediaSavers
+import com.starringbox.staragent.core.media.suggestedFileName
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.Author
 import com.starringbox.staragent.core.model.ChatMessage
@@ -76,9 +79,12 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
     var sheetOpen by remember { mutableStateOf(false) }
     var turn by remember { mutableStateOf<Job?>(null) }
     var picked by remember { mutableStateOf<ChatMessage?>(null) }
-    // 待发送的图片，以及选图被拒时的提示（格式不支持、太大等）
+    // 全屏图片查看：记住是哪条消息、从第几张开始看
+    var viewingMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var viewingIndex by remember { mutableStateOf(0) }
+    // 待发送的图片，以及一条提示（选图被拒 / 保存结果共用）
     var attachments by remember { mutableStateOf<List<MediaAsset>>(emptyList()) }
-    var attachError by remember { mutableStateOf<String?>(null) }
+    var notice by remember { mutableStateOf<DockNotice?>(null) }
     val busy = state.isBusy(agentId)
     val configured = state.endpointFor(agent) != null
 
@@ -120,6 +126,10 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
                         message = message,
                         onConfirmDraft = { draft -> state.confirmDraft(agentId, draft) },
                         onLongPress = { picked = message },
+                        onImageClick = { index ->
+                            viewingMessage = message
+                            viewingIndex = index
+                        },
                     )
                 }
                 if (waitingFirstToken) {
@@ -146,8 +156,12 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
                 ConfigureModelBanner(onClick = { navigator.push(Route.ModelConfig) })
             }
 
-            attachError?.let { message ->
-                AttachErrorStrip(message = message, onDismiss = { attachError = null })
+            notice?.let { current ->
+                DockNoticeStrip(
+                    text = current.text,
+                    isError = current.isError,
+                    onDismiss = { notice = null },
+                )
             }
 
             InputDock(
@@ -156,12 +170,12 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
                 attachments = attachments,
                 canPickImage = MediaPickers.available,
                 onPickImage = {
-                    attachError = null
+                    notice = null
                     scope.launch {
                         val asset = MediaPickers.pickImage() ?: return@launch
                         val rejection = MediaRules.rejection(asset)
                         if (rejection != null) {
-                            attachError = rejection.message
+                            notice = DockNotice(rejection.message, isError = true)
                         } else {
                             attachments = attachments + asset
                         }
@@ -184,6 +198,35 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
                 onPickModel = { state.setAgentModel(agentId, it) },
             )
         }
+
+        // 全屏看图。放在最外层，盖住底栏与输入坞。
+        (viewingMessage?.body as? MessageBody.Image)?.let { body ->
+            val assets = body.assets
+            StarImageViewer(
+                images = assets.map { it.bytes },
+                initialIndex = viewingIndex,
+                onDismiss = { viewingMessage = null },
+                onSave = if (MediaSavers.available) {
+                    { index ->
+                        val asset = assets.getOrNull(index)
+                        if (asset != null) {
+                            scope.launch {
+                                val saved = MediaSavers.save(asset, asset.suggestedFileName())
+                                notice = if (saved != null) {
+                                    DockNotice("已保存到 $saved", isError = false)
+                                } else {
+                                    DockNotice("没能保存这张图片", isError = true)
+                                }
+                                // 成功就退回对话，让那条提示看得见
+                                viewingMessage = null
+                            }
+                        }
+                    }
+                } else {
+                    null
+                },
+            )
+        }
     }
 }
 
@@ -193,6 +236,7 @@ private fun MessageRow(
     message: ChatMessage,
     onConfirmDraft: (TaskDraft) -> Unit,
     onLongPress: () -> Unit,
+    onImageClick: (Int) -> Unit,
 ) {
     Box(
         Modifier
@@ -203,7 +247,7 @@ private fun MessageRow(
         when (message.author) {
             Author.User -> when (val body = message.body) {
                 is MessageBody.Text -> if (body.text.isNotBlank()) UserBubble(body.text)
-                is MessageBody.Image -> UserImageBubble(body.assets, body.caption)
+                is MessageBody.Image -> UserImageBubble(body.assets, body.caption, onImageClick)
                 else -> Unit
             }
 
@@ -274,33 +318,38 @@ private fun ChatMessage.copyableText(): String = when (val body = body) {
     is MessageBody.MemoryNote -> body.text
 }
 
-/** 选图被拒时的提示条。本地就挡掉，不要发出去换个 400 回来。 */
+/** 输入坞上方的一条提示。选图被拒、保存成功/失败都走它。 */
+private data class DockNotice(val text: String, val isError: Boolean)
+
 @Composable
-private fun AttachErrorStrip(message: String, onDismiss: () -> Unit) {
+private fun DockNoticeStrip(text: String, isError: Boolean, onDismiss: () -> Unit) {
+    val background = if (isError) Color(0xFFFDECEC) else Color(0xFFE8F7F1)
+    val foreground = if (isError) Color(0xFF9B1C1C) else Color(0xFF0F6B4F)
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFFFDECEC))
+            .background(background)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         StarIcon(
-            icon = StarIconGlyph.Info,
+            icon = if (isError) StarIconGlyph.Info else StarIconGlyph.Check,
             iconSize = 16.dp,
-            tint = StarPalette.Danger,
+            tint = foreground,
             strokeWidth = 2f,
         )
         Spacer(Modifier.width(9.dp))
         Text(
-            text = message,
+            text = text,
             style = MaterialTheme.typography.bodySmall,
-            color = Color(0xFF9B1C1C),
+            color = foreground,
             modifier = Modifier.weight(1f),
         )
         StarIcon(
             icon = StarIconGlyph.Close,
             iconSize = 14.dp,
-            tint = Color(0xFF9B1C1C),
+            tint = foreground,
             strokeWidth = 2.2f,
             modifier = Modifier.clickable { onDismiss() },
         )
