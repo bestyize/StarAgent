@@ -1,10 +1,15 @@
 package com.starringbox.staragent.core.model
 
-enum class MemoryCategory(val label: String) {
-    Preference("偏好"),
-    Fact("事实"),
-    Habit("习惯"),
-    Project("项目"),
+/**
+ * 记忆分类，与设计稿「我的记忆」的五个标签一一对应。
+ * 单位也放在这里，因为界面上要显示成"12 条 / 8 位"。
+ */
+enum class MemoryCategory(val label: String, val unit: String) {
+    Preference("我的喜好", "条"),
+    Person("重要的人", "位"),
+    Habit("生活习惯", "条"),
+    Experience("经历历史", "条"),
+    Decision("重要决策", "条"),
 }
 
 /**

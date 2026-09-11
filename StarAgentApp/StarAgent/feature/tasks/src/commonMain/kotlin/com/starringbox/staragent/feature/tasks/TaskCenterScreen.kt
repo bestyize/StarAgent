@@ -2,6 +2,8 @@ package com.starringbox.staragent.feature.tasks
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,7 +60,8 @@ fun TaskCenterScreen(navigator: Navigator) {
     val managing = remember { mutableStateOf<AgentTask?>(null) }
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    val selectedType = remember { mutableStateOf("一次性任务") }
+    // 默认必须是"全部"：种子任务都是定时/周期，默认选中"一次性任务"会让页面一进来就是空的。
+    val selectedType = remember { mutableStateOf("全部") }
     val selectedStatus = remember { mutableStateOf("全部") }
     val byStatus = when (selectedStatus.value) {
         "进行中" -> state.tasks.filter { it.status == TaskStatus.Active }
@@ -70,9 +73,15 @@ fun TaskCenterScreen(navigator: Navigator) {
         "一次性任务" -> byStatus.filter { it.recurrence == Recurrence.Once }
         "定时任务" -> byStatus.filter { it.recurrence == Recurrence.Daily }
         "周期任务" -> byStatus.filter { it.recurrence == Recurrence.Weekly || it.recurrence == Recurrence.Monthly }
-        "条件触发" -> byStatus.filter { it.recurrence == Recurrence.Monthly }
+        "条件触发" -> byStatus.filter { it.recurrence == Recurrence.Conditional }
         else -> byStatus
     }.filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
+    val statusCounts = mapOf(
+        "全部" to state.tasks.size,
+        "进行中" to state.tasks.count { it.status == TaskStatus.Active },
+        "已完成" to state.tasks.count { it.status == TaskStatus.Done },
+        "已暂停" to state.tasks.count { it.status == TaskStatus.Paused },
+    )
     val active = visible.filter { it.status == TaskStatus.Active }
     val inactive = visible.filter { it.status != TaskStatus.Active }
 
@@ -116,7 +125,7 @@ fun TaskCenterScreen(navigator: Navigator) {
             item {
                 TaskTypeTabs(selectedType.value) { selectedType.value = it }
                 Spacer(Modifier.height(8.dp))
-                TaskStatusTabs(selectedStatus.value) { selectedStatus.value = it }
+                TaskStatusTabs(selectedStatus.value, statusCounts) { selectedStatus.value = it }
             }
             if (state.tasks.isEmpty()) {
                 item { EmptyHint("在对话里说一句「每天9点帮我汇总 AI 新闻」，任务就建好了") }
@@ -125,11 +134,11 @@ fun TaskCenterScreen(navigator: Navigator) {
             } else {
                 if (active.isNotEmpty()) {
                     item { Text("进行中的任务", style = MaterialTheme.typography.titleMedium, color = StarPalette.Text, modifier = Modifier.padding(top = 8.dp, start = 2.dp)) }
-                    items(active, key = { it.id }) { task -> TaskCard(state, task, { navigator.push(Route.Chat(task.agentId)) }, { managing.value = task }) }
+                    items(active, key = { it.id }) { task -> TaskCard(state, task, { navigator.push(Route.TaskDetail(task.id)) }, { managing.value = task }) }
                 }
                 if (inactive.isNotEmpty()) {
                     item { Text("已完成或暂停", style = MaterialTheme.typography.titleMedium, color = StarPalette.TextMuted, modifier = Modifier.padding(top = 8.dp, start = 2.dp)) }
-                    items(inactive, key = { it.id }) { task -> TaskCard(state, task, { navigator.push(Route.Chat(task.agentId)) }, { managing.value = task }) }
+                    items(inactive, key = { it.id }) { task -> TaskCard(state, task, { navigator.push(Route.TaskDetail(task.id)) }, { managing.value = task }) }
                 }
             }
         }
@@ -157,11 +166,15 @@ fun TaskCenterScreen(navigator: Navigator) {
 
 @Composable
 private fun TaskTypeTabs(selected: String, onSelect: (String) -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-        listOf("一次性任务", "定时任务", "周期任务", "条件触发").forEach { label ->
+    // 横向可滚：保留设计稿的完整文案，窄屏也不会把标签挤变形
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        listOf("全部", "一次性任务", "定时任务", "周期任务", "条件触发").forEach { label ->
             StarTag(
                 label,
-                modifier = Modifier.weight(1f).clickable { onSelect(label) },
+                modifier = Modifier.clickable { onSelect(label) },
                 contentColor = if (selected == label) Color.White else StarPalette.TextMuted,
                 containerColor = if (selected == label) StarPalette.Indigo else Color.White.copy(alpha = 0.72f),
             )
@@ -170,11 +183,11 @@ private fun TaskTypeTabs(selected: String, onSelect: (String) -> Unit) {
 }
 
 @Composable
-private fun TaskStatusTabs(selected: String, onSelect: (String) -> Unit) {
+private fun TaskStatusTabs(selected: String, counts: Map<String, Int>, onSelect: (String) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf("全部", "进行中", "已完成", "已暂停").forEach { label ->
             StarTag(
-                label,
+                text = "$label (${counts[label] ?: 0})",
                 modifier = Modifier.clickable { onSelect(label) },
                 contentColor = if (selected == label) StarPalette.Indigo else StarPalette.TextMuted,
                 containerColor = if (selected == label) Color(0xFFDDE8FF) else Color.Transparent,
@@ -208,7 +221,21 @@ private fun TaskCard(state: AppState, task: AgentTask, onOpen: () -> Unit, onMor
                 }
                 Spacer(Modifier.height(7.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    StarTag(if (task.status == TaskStatus.Done) "已完成" else "工作", contentColor = if (task.status == TaskStatus.Done) StarPalette.Success else StarPalette.Indigo, containerColor = if (task.status == TaskStatus.Done) Color(0xFFE2F6EB) else Color(0xFFE6EEFF))
+                    if (task.status == TaskStatus.Done) {
+                        StarTag("已完成", contentColor = StarPalette.Success, containerColor = Color(0xFFE2F6EB))
+                    } else {
+                        // 分类与优先级来自任务详情页的编辑，从对话里直接建出来的任务可能还没有
+                        task.categoryLabel?.let {
+                            StarTag(it, contentColor = StarPalette.Indigo, containerColor = Color(0xFFE6EEFF))
+                        }
+                        task.priority?.let {
+                            StarTag(
+                                text = it.label,
+                                contentColor = priorityColor(it),
+                                containerColor = priorityColor(it).copy(alpha = 0.13f),
+                            )
+                        }
+                    }
                     if (agentName != null) StarTag(agentName, contentColor = StarPalette.TextMuted, containerColor = Color(0xFFF0F3FA))
                 }
             }

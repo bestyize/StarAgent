@@ -194,6 +194,52 @@ fun StarActionSheet(
     }
 }
 
+/**
+ * 页面顶部品牌栏：左侧标题，右侧搜索与新建。
+ * 设计稿里首页、记忆、智能体页共用这个头，所以抽在这里，不要各写一份。
+ */
+@Composable
+fun StarPageHeader(
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    onSearch: (() -> Unit)? = null,
+    onCreate: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                color = StarPalette.Text,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = StarPalette.TextFaint,
+            )
+        }
+        if (onSearch != null) {
+            CircleIconButton(glyph = StarIconGlyph.Search, onClick = onSearch, size = 40.dp, tint = StarPalette.Text)
+        }
+        if (onCreate != null) {
+            Spacer(Modifier.width(6.dp))
+            CircleIconButton(
+                glyph = StarIconGlyph.Plus,
+                onClick = onCreate,
+                size = 40.dp,
+                tint = Color.White,
+                containerColor = StarPalette.Indigo,
+            )
+        }
+    }
+}
+
 /** 设置项：图标 + 标题/副标题 + 右侧自定义尾随内容。 */
 @Composable
 fun SettingsRow(

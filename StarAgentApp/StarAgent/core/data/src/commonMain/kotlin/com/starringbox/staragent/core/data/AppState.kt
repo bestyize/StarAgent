@@ -352,6 +352,14 @@ class AppState {
         tasks.removeAll { it.id == taskId }
     }
 
+    fun task(id: String): AgentTask? = tasks.firstOrNull { it.id == id }
+
+    /** 任务详情页保存用。 */
+    fun updateTask(task: AgentTask) {
+        val index = tasks.indexOfFirst { it.id == task.id }
+        if (index >= 0) tasks[index] = task
+    }
+
     fun completeTask(taskId: String) {
         val index = tasks.indexOfFirst { it.id == taskId }
         if (index >= 0) tasks[index] = tasks[index].copy(status = TaskStatus.Done, lastRunLabel = "刚刚")
@@ -439,6 +447,7 @@ class AppState {
             Recurrence.Daily -> "明天 $time"
             Recurrence.Weekly -> "下周一 $time"
             Recurrence.Monthly -> "下月 1 日 $time"
+            Recurrence.Conditional -> "满足条件时触发"
         }
     }
 

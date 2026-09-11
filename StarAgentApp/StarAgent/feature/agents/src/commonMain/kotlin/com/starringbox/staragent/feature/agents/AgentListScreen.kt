@@ -86,10 +86,6 @@ fun AgentListScreen(navigator: Navigator) {
             modifier = Modifier.padding(bottom = 6.dp),
         )
 
-        if (agents.isNotEmpty() && query.isBlank()) {
-            Text("置顶会话", style = MaterialTheme.typography.titleMedium, color = StarPalette.TextMuted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp))
-        }
-
         if (agents.isEmpty()) {
             EmptyHint(
                 text = if (query.isBlank()) "还没有智能体，点右上角创建一个" else "没有匹配的智能体",

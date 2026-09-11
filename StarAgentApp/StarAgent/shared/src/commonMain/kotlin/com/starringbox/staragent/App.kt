@@ -41,6 +41,7 @@ import com.starringbox.staragent.feature.settings.ModelConfigScreen
 import com.starringbox.staragent.feature.settings.ProviderDetailScreen
 import com.starringbox.staragent.feature.settings.SkillsScreen
 import com.starringbox.staragent.feature.tasks.TaskCenterScreen
+import com.starringbox.staragent.feature.tasks.TaskDetailScreen
 
 /**
  * 应用外壳：注入主题与状态，承载导航宿主与底部导航。
@@ -79,6 +80,7 @@ private fun RouteHost(navigator: Navigator) {
         Route.Agents -> AgentListScreen(navigator)
         is Route.Chat -> ChatScreen(navigator, route.agentId)
         Route.Tasks -> TaskCenterScreen(navigator)
+        is Route.TaskDetail -> TaskDetailScreen(navigator, route.taskId)
         Route.Me -> MeScreen(navigator)
         is Route.AgentEditor -> AgentEditorScreen(navigator, route.agentId)
         Route.ModelConfig -> ModelConfigScreen(navigator)

@@ -1,11 +1,17 @@
 package com.starringbox.staragent.core.model
 
-/** 一次性 / 定时 / 周期三种任务形态。 */
+/**
+ * 任务的重复方式，对应设计稿里的任务类型切换。
+ *
+ * [Conditional] 不是按时间跑，而是满足某个条件才触发（例如"当连接 Wi-Fi 时"），
+ * 条件本身写在任务的 [AgentTask.scheduleLabel] 里。
+ */
 enum class Recurrence(val label: String) {
     Once("一次性"),
     Daily("每天"),
     Weekly("每周"),
     Monthly("每月"),
+    Conditional("条件触发"),
 }
 
 enum class TaskStatus {
@@ -14,9 +20,19 @@ enum class TaskStatus {
     Done,
 }
 
+/** 任务优先级。设计稿把它作为卡片上的一个标签（"高优先级"）。 */
+enum class TaskPriority(val label: String) {
+    High("高优先级"),
+    Medium("中优先级"),
+    Low("低优先级"),
+}
+
 /**
  * 托管任务。用户交代一次，智能体长期负责。
  * 任务由对话创建，因此始终回指 [agentId]，结果也回流到那条对话。
+ *
+ * [priority]、[categoryLabel]、[remindLabel]、[note] 是设计稿任务详情页要展示的字段，
+ * 都是可选的——从对话里建出来的任务默认没有这些，由用户之后补。
  */
 data class AgentTask(
     val id: String,
@@ -27,6 +43,10 @@ data class AgentTask(
     val nextRunLabel: String,
     val lastRunLabel: String? = null,
     val status: TaskStatus = TaskStatus.Active,
+    val priority: TaskPriority? = null,
+    val categoryLabel: String? = null,
+    val remindLabel: String? = null,
+    val note: String? = null,
 )
 
 /**

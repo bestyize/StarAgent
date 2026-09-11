@@ -15,6 +15,7 @@ import com.starringbox.staragent.core.model.MessageBody
 import com.starringbox.staragent.core.model.ModelProvider
 import com.starringbox.staragent.core.model.Recurrence
 import com.starringbox.staragent.core.model.Skill
+import com.starringbox.staragent.core.model.TaskPriority
 
 /**
  * 一期的种子数据。
@@ -132,6 +133,10 @@ internal object Seed {
                     scheduleLabel = "每天 09:00",
                     nextRunLabel = "明天 09:00",
                     lastRunLabel = "今天 09:02 已完成",
+                    priority = TaskPriority.Medium,
+                    categoryLabel = "工作",
+                    remindLabel = "提前 10 分钟",
+                    note = "整理要点并同步到知识库",
                 ),
                 AgentTask(
                     id = "task-seed-2",
@@ -140,6 +145,9 @@ internal object Seed {
                     recurrence = Recurrence.Weekly,
                     scheduleLabel = "每周一 09:00",
                     nextRunLabel = "9 月 15 日 09:00",
+                    priority = TaskPriority.High,
+                    categoryLabel = "工作",
+                    remindLabel = "提前 30 分钟",
                 ),
             )
         )
@@ -148,10 +156,11 @@ internal object Seed {
             listOf(
                 MemoryItem("mem-1", "a-xing", MemoryCategory.Preference, "偏好简洁直接的答复，不要客套话"),
                 MemoryItem("mem-2", "a-xing", MemoryCategory.Habit, "习惯在早上通勤时看资讯汇总"),
-                MemoryItem("mem-3", "a-xing", MemoryCategory.Fact, "常驻城市是杭州"),
+                MemoryItem("mem-3", "a-xing", MemoryCategory.Person, "常一起吃饭的同事是小林"),
                 MemoryItem("mem-4", "a-work", MemoryCategory.Preference, "周报必须包含风险项，不要只写进展"),
-                MemoryItem("mem-5", "a-work", MemoryCategory.Project, "移动端 Agent 项目处于一期立项阶段"),
-                MemoryItem("mem-6", "a-english", MemoryCategory.Preference, "希望纠错时说明原因，而不是直接给答案"),
+                MemoryItem("mem-5", "a-work", MemoryCategory.Decision, "一期不做真机操作，先把对话与任务打磨好"),
+                MemoryItem("mem-6", "a-work", MemoryCategory.Experience, "上个月做过一轮同类竞品的调研"),
+                MemoryItem("mem-7", "a-english", MemoryCategory.Preference, "希望纠错时说明原因，而不是直接给答案"),
             )
         )
 
