@@ -1,6 +1,7 @@
 package com.starringbox.staragent
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.slideInHorizontally
@@ -95,6 +96,19 @@ fun App() {
  */
 private val SlideSpec = tween<IntOffset>(durationMillis = 280, easing = FastOutSlowInEasing)
 
+/**
+ * 关掉 AnimatedContent 默认的尺寸补间。
+ *
+ * 它会为容器高度做一段补间，补间的起点是上一页记住的高度、终点是当前页的高度；
+ * 而底栏在进出二级页时会立刻出现/消失，内容区高度本来就是突变的。
+ * 两者叠在一起，正在滑动的页面会被按一个不断变化的高度反复重新测量——
+ * 表现就是返回时整页文字从上往下重新排版一遍。
+ *
+ * 整屏页面不需要尺寸补间：宽高永远铺满，动画只应该是位移。
+ */
+private fun routeTransform(enter: EnterTransition, exit: ExitTransition) =
+    ContentTransform(enter, exit, targetContentZIndex = 0f, sizeTransform = null)
+
 @Composable
 private fun RouteHost(navigator: Navigator) {
     AnimatedContent(
@@ -105,14 +119,16 @@ private fun RouteHost(navigator: Navigator) {
                 NavAction.Replace -> EnterTransition.None togetherWith ExitTransition.None
 
                 // 前进：新页从右侧推入，旧页只让出三分之一屏宽，留出层次
-                NavAction.Push ->
-                    slideInHorizontally(SlideSpec) { it } togetherWith
-                        slideOutHorizontally(SlideSpec) { -it / 3 }
+                NavAction.Push -> routeTransform(
+                    enter = slideInHorizontally(SlideSpec) { it },
+                    exit = slideOutHorizontally(SlideSpec) { -it / 3 },
+                )
 
                 // 返回：正好反过来
-                NavAction.Pop ->
-                    slideInHorizontally(SlideSpec) { -it / 3 } togetherWith
-                        slideOutHorizontally(SlideSpec) { it }
+                NavAction.Pop -> routeTransform(
+                    enter = slideInHorizontally(SlideSpec) { -it / 3 },
+                    exit = slideOutHorizontally(SlideSpec) { it },
+                )
             }
         },
         // 一个页面的身份就是它的路由，动作不同不构成换页
