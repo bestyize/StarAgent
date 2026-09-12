@@ -251,7 +251,9 @@ class AppState {
         ).forEach { SettingsStore.remove(it) }
 
         if (resolveModel(defaultModelId) == null) {
-            setDefaultModel(modelKey(providers.first().id, 0))
+            // 内置服务商删不掉，这里本该不会为空；但"删一个服务商"不该变成崩溃，
+            // 没有可选的就把默认模型留空。
+            providers.firstOrNull()?.let { setDefaultModel(modelKey(it.id, 0)) }
         }
     }
 
