@@ -118,15 +118,18 @@ private fun RouteHost(navigator: Navigator) {
                 // Tab 之间是平级切换，没有"更深一层"的关系，加位移动画反而像又进了一层
                 NavAction.Replace -> EnterTransition.None togetherWith ExitTransition.None
 
-                // 前进：新页从右侧推入，旧页只让出三分之一屏宽，留出层次
+                // 前进：两页一起向左移动整屏宽度——新页从右边进来，旧页从左边出去。
+                // 两者始终首尾相接，任意时刻都不重叠。
                 NavAction.Push -> routeTransform(
                     enter = slideInHorizontally(SlideSpec) { it },
-                    exit = slideOutHorizontally(SlideSpec) { -it / 3 },
+                    exit = slideOutHorizontally(SlideSpec) { -it },
                 )
 
-                // 返回：正好反过来
+                // 返回：方向反过来，同样是整屏等速。
+                // 这里不用视差（让旧页只让出三分之一屏宽那种）：那会让新页一开场就
+                // 压在旧页还在的区域上，看起来像新页的内容提前"透"了出来。
                 NavAction.Pop -> routeTransform(
-                    enter = slideInHorizontally(SlideSpec) { -it / 3 },
+                    enter = slideInHorizontally(SlideSpec) { -it },
                     exit = slideOutHorizontally(SlideSpec) { it },
                 )
             }
