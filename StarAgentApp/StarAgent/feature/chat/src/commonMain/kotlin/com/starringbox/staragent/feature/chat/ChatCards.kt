@@ -400,9 +400,14 @@ internal fun NoticeCard(text: String, isError: Boolean) {
     }
 }
 
-/** 等待首个步骤出现时的占位。 */
+/**
+ * 等待首个字符出现时的占位。
+ *
+ * [speakerName] 只有群聊会传——群里的占位要说清楚"现在轮到谁了"，
+ * 否则用户看着一串「···」不知道是卡住了还是在等某个人。
+ */
 @Composable
-internal fun ThinkingRow() {
+internal fun ThinkingRow(speakerName: String? = null) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
         Box(
             modifier = Modifier
@@ -410,7 +415,11 @@ internal fun ThinkingRow() {
                 .background(StarPalette.Surface)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
-            Text("···", style = MaterialTheme.typography.bodyLarge, color = StarPalette.TextFaint)
+            Text(
+                text = if (speakerName.isNullOrBlank()) "···" else "$speakerName 正在发言 ···",
+                style = MaterialTheme.typography.bodyLarge,
+                color = StarPalette.TextFaint,
+            )
         }
     }
 }

@@ -20,6 +20,7 @@ enum class StarIconGlyph {
     Chat,
     Task,
     Person,
+    Group,
     Plus,
     Back,
     Search,
@@ -120,6 +121,16 @@ fun StarIcon(
             StarIconGlyph.Person -> {
                 circle(12f, 8.5f, 3.6f)
                 arc(4.5f, 13.5f, 19.5f, 25.5f, 190f, 160f)
+            }
+
+            StarIconGlyph.Group -> {
+                // 后面那个人：画小一点、偏右上，是"这里不止一个人"的那一层
+                circle(16.6f, 8f, 2.9f)
+                arc(12.6f, 13f, 22f, 20.6f, 205f, 130f)
+
+                // 前面那个人
+                circle(9.2f, 9.4f, 3.4f)
+                arc(2.8f, 14.6f, 15.6f, 25f, 195f, 150f)
             }
 
             StarIconGlyph.Plus -> {

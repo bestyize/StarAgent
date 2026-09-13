@@ -16,6 +16,12 @@ sealed interface Route {
     /** 与某个智能体的对话。 */
     data class Chat(val agentId: String) : Route
 
+    /** 与某个群组的讨论。 */
+    data class GroupChat(val groupId: String) : Route
+
+    /** 创建 / 编辑群组；传 null 表示新建。 */
+    data class GroupEditor(val groupId: String?) : Route
+
     /** 任务中心。 */
     data object Tasks : Route
 

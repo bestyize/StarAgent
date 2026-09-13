@@ -2,6 +2,7 @@ package com.starringbox.staragent.core.data
 
 import com.starringbox.staragent.core.media.MediaAsset
 import com.starringbox.staragent.core.model.Agent
+import com.starringbox.staragent.core.model.AgentGroup
 import com.starringbox.staragent.core.model.AgentTask
 import com.starringbox.staragent.core.model.Channel
 import com.starringbox.staragent.core.model.ChatMessage
@@ -15,8 +16,12 @@ import kotlinx.serialization.json.Json
 /**
  * 落盘的那一份应用状态。
  *
- * 只存"内容"——智能体、任务、记忆、技能、渠道、对话。
+ * 只存"内容"——智能体、任务、记忆、技能、渠道、群组、对话。
  * 模型服务配置（含 API Key）走 SettingsStore，两套各管各的。
+ *
+ * **新增字段一律要带默认值**：旧存档里没有这个键时，解码器会填默认值，数据照常恢复。
+ * 反过来，改动或删除已有字段会让旧存档解码失败，而 [StatePersister.load] 只能返回 null，
+ * AppState 于是退回种子数据——用户内容会**无声消失**。这是本文件最需要守住的约束。
  */
 @Serializable
 internal data class PersistedState(
@@ -25,6 +30,7 @@ internal data class PersistedState(
     val memories: List<MemoryItem> = emptyList(),
     val skills: List<Skill> = emptyList(),
     val channels: List<Channel> = emptyList(),
+    val groups: List<AgentGroup> = emptyList(),
     val conversations: Map<String, List<ChatMessage>> = emptyMap(),
 )
 
@@ -39,9 +45,14 @@ internal class StatePersister(private val store: LocalStore) {
 
     fun load(): PersistedState? {
         val raw = store.readText(STATE_FILE) ?: return null
-        // 解析不了就退化为种子数据，而不是崩在启动路径上
-        val decoded = runCatching { Json.decodeFromString<PersistedState>(raw) }.getOrNull()
-            ?: return null
+        // 解析不了就退化为种子数据，而不是崩在启动路径上。
+        // 但退化的代价是"用户内容看起来消失了"，所以先把原始字节另存一份再放弃——
+        // 真出事时至少还能人工找回，不至于被种子数据盖掉。
+        val decoded = runCatching { json.decodeFromString<PersistedState>(raw) }.getOrNull()
+            ?: run {
+                runCatching { store.writeText(CORRUPT_FILE, raw) }
+                return null
+            }
         return decoded.copy(conversations = decoded.conversations.mapValues { (_, messages) ->
             messages.map { it.withMediaRestored(store) }
         })
@@ -66,6 +77,15 @@ internal class StatePersister(private val store: LocalStore) {
 
     private companion object {
         const val STATE_FILE = "state.json"
+
+        /** 存档读不出来时，把原始内容挪到这里，留一条人工找回的路。 */
+        const val CORRUPT_FILE = "state.corrupt.json"
+
+        /**
+         * `ignoreUnknownKeys`：存档里多出来的字段不该让整份数据读不出来。
+         * 主要防的是回滚——用旧版本跑新版本写下的存档。
+         */
+        val json = Json { ignoreUnknownKeys = true }
     }
 }
 

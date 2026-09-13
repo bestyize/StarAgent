@@ -45,7 +45,9 @@ import com.starringbox.staragent.core.designsystem.theme.StarAgentTheme
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.feature.agents.AgentEditorScreen
 import com.starringbox.staragent.feature.agents.AgentListScreen
+import com.starringbox.staragent.feature.agents.GroupEditorScreen
 import com.starringbox.staragent.feature.chat.ChatScreen
+import com.starringbox.staragent.feature.chat.GroupChatScreen
 import com.starringbox.staragent.feature.settings.ChannelsScreen
 import com.starringbox.staragent.feature.settings.MeScreen
 import com.starringbox.staragent.feature.settings.MemoryScreen
@@ -141,6 +143,8 @@ private fun RouteHost(navigator: Navigator) {
         when (val route = target.route) {
             Route.Agents -> AgentListScreen(navigator)
             is Route.Chat -> ChatScreen(navigator, route.agentId)
+            is Route.GroupChat -> GroupChatScreen(navigator, route.groupId)
+            is Route.GroupEditor -> GroupEditorScreen(navigator, route.groupId)
             Route.Tasks -> TaskCenterScreen(navigator)
             is Route.TaskDetail -> TaskDetailScreen(navigator, route.taskId)
             Route.Me -> MeScreen(navigator)

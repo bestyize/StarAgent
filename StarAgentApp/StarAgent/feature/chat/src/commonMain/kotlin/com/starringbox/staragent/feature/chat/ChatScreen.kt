@@ -244,32 +244,131 @@ private fun MessageRow(
             // 长按选中这条消息，再决定复制还是删除。
             .combinedClickable(onClick = {}, onLongClick = onLongPress),
     ) {
-        when (message.author) {
-            Author.User -> when (val body = message.body) {
-                is MessageBody.Text -> if (body.text.isNotBlank()) UserBubble(body.text)
-                is MessageBody.Image -> UserImageBubble(body.assets, body.caption, onImageClick)
-                else -> Unit
-            }
+        MessageBodyView(
+            body = message.body,
+            author = message.author,
+            onConfirmDraft = onConfirmDraft,
+            onImageClick = onImageClick,
+        )
+    }
+}
 
-            Author.Agent -> when (val body = message.body) {
-                // 目前模型只回文本；图片消息都是用户发的
-                is MessageBody.Image -> Unit
-                // 流式回复刚开头、还没有内容时先不画空气泡，交给下方的「···」占位。
-                is MessageBody.Text -> if (body.text.isNotBlank()) AgentTextBubble(body.text)
-                is MessageBody.Notice -> NoticeCard(body.text, body.isError)
-                is MessageBody.Execution -> ExecutionCard(body.steps)
-                is MessageBody.Draft -> DraftCard(body.draft, onConfirm = { onConfirmDraft(body.draft) })
-                is MessageBody.Created -> CreatedCard(body.task)
-                is MessageBody.Delivered -> ArtifactCard(body.artifact)
-                is MessageBody.MemoryNote -> MemoryNoteCard(body.text)
-            }
+/**
+ * 一条消息的内容本身（不含"长按选中"这层交互，也不含群聊的发言人抬头）。
+ *
+ * 单聊和群聊的消息长得不一样：群聊要在气泡上方多一行发言人。所以把这层抽出来共用，
+ * 两边的差异各自在外面加。
+ *
+ * [speakerName] 只有群聊会传，仅用于渲染"跳过了本轮"这类需要点名的提示。
+ */
+@Composable
+internal fun MessageBodyView(
+    body: MessageBody,
+    author: Author,
+    onConfirmDraft: (TaskDraft) -> Unit,
+    onImageClick: (Int) -> Unit,
+    speakerName: String? = null,
+) {
+    when (author) {
+        Author.User -> when (body) {
+            is MessageBody.Text -> if (body.text.isNotBlank()) UserBubble(body.text)
+            is MessageBody.Image -> UserImageBubble(body.assets, body.caption, onImageClick)
+            else -> Unit
         }
+
+        Author.Agent -> when (body) {
+            // 目前模型只回文本；图片消息都是用户发的
+            is MessageBody.Image -> Unit
+            // 流式回复刚开头、还没有内容时先不画空气泡，交给下方的「···」占位。
+            is MessageBody.Text -> if (body.text.isNotBlank()) AgentTextBubble(body.text)
+            is MessageBody.Notice -> NoticeCard(body.text, body.isError)
+            is MessageBody.Execution -> ExecutionCard(body.steps)
+            is MessageBody.Draft -> DraftCard(body.draft, onConfirm = { onConfirmDraft(body.draft) })
+            is MessageBody.Created -> CreatedCard(body.task)
+            is MessageBody.Delivered -> ArtifactCard(body.artifact)
+            is MessageBody.MemoryNote -> MemoryNoteCard(body.text)
+            is MessageBody.Skipped -> SkippedRow(speakerName.orEmpty(), body.reason)
+        }
+    }
+}
+
+/**
+ * 群聊里的一条消息。
+ *
+ * 与单聊唯一的区别是**多一行发言人抬头**——群里每条消息都得一眼看出是谁说的，
+ * 只靠左右对齐不够。用户自己的消息不加抬头。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun GroupMessageRow(
+    message: ChatMessage,
+    speaker: Agent?,
+    onLongPress: () -> Unit,
+    onImageClick: (Int) -> Unit,
+) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = {}, onLongClick = onLongPress),
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            val isUser = message.author == Author.User
+            // 抬头只加在"某位成员真的说了话"的消息上——跳过是过程提示，加抬头反而累赘
+            if (!isUser && message.body !is MessageBody.Skipped && speaker != null) {
+                SpeakerHeader(speaker)
+            }
+            MessageBodyView(
+                body = message.body,
+                author = message.author,
+                onConfirmDraft = {},
+                onImageClick = onImageClick,
+                speakerName = speaker?.name,
+            )
+        }
+    }
+}
+
+/** 群聊里气泡上方那一行：这条是谁说的。 */
+@Composable
+private fun SpeakerHeader(agent: Agent) {
+    Row(
+        modifier = Modifier.padding(start = 2.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AgentAvatar(
+            glyph = agent.glyph,
+            accentIndex = agent.accentIndex,
+            size = 20.dp,
+            cornerRadius = 7.dp,
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = agent.name,
+            style = MaterialTheme.typography.labelSmall,
+            color = StarPalette.TextMuted,
+        )
+    }
+}
+
+/** 「某某 跳过了本轮」。讨论过程的一部分，所以是一行淡的居中提示，不是待办卡片。 */
+@Composable
+private fun SkippedRow(speakerName: String, reason: String) {
+    val who = speakerName.ifBlank { "成员" }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = if (reason.isBlank()) "$who 跳过了本轮" else "$who 跳过了：$reason",
+            style = MaterialTheme.typography.labelSmall,
+            color = StarPalette.TextFaint,
+        )
     }
 }
 
 /** 长按选中一条消息后的操作条。 */
 @Composable
-private fun PickedMessageBar(onCopy: () -> Unit, onDelete: () -> Unit, onCancel: () -> Unit) {
+internal fun PickedMessageBar(onCopy: () -> Unit, onDelete: () -> Unit, onCancel: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -302,7 +401,7 @@ private fun BarAction(label: String, color: Color, onClick: () -> Unit) {
 }
 
 /** 把一条消息摊平成可复制的文本——卡片的字段也一并带上。 */
-private fun ChatMessage.copyableText(): String = when (val body = body) {
+internal fun ChatMessage.copyableText(): String = when (val body = body) {
     is MessageBody.Text -> body.text
     is MessageBody.Image -> buildString {
         append("[图片 ×").append(body.assets.size).append(']')
@@ -316,13 +415,14 @@ private fun ChatMessage.copyableText(): String = when (val body = body) {
     is MessageBody.Created -> "任务：${body.task.title}（${body.task.scheduleLabel}）"
     is MessageBody.Delivered -> "${body.artifact.title}\n${body.artifact.summary}"
     is MessageBody.MemoryNote -> body.text
+    is MessageBody.Skipped -> if (body.reason.isBlank()) "跳过了本轮" else "跳过了：${body.reason}"
 }
 
 /** 输入坞上方的一条提示。选图被拒、保存成功/失败都走它。 */
-private data class DockNotice(val text: String, val isError: Boolean)
+internal data class DockNotice(val text: String, val isError: Boolean)
 
 @Composable
-private fun DockNoticeStrip(text: String, isError: Boolean, onDismiss: () -> Unit) {
+internal fun DockNoticeStrip(text: String, isError: Boolean, onDismiss: () -> Unit) {
     val background = if (isError) Color(0xFFFDECEC) else Color(0xFFE8F7F1)
     val foreground = if (isError) Color(0xFF9B1C1C) else Color(0xFF0F6B4F)
 
@@ -361,7 +461,7 @@ private fun DockNoticeStrip(text: String, isError: Boolean, onDismiss: () -> Uni
  * 直接把原因和去处摆出来。
  */
 @Composable
-private fun ConfigureModelBanner(onClick: () -> Unit) {
+internal fun ConfigureModelBanner(onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()

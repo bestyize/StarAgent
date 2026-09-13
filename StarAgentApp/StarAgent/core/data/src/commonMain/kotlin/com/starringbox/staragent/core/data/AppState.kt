@@ -15,6 +15,7 @@ import com.starringbox.staragent.core.llm.LlmTurn
 import com.starringbox.staragent.core.media.MediaAsset
 import com.starringbox.staragent.core.storage.LocalStores
 import com.starringbox.staragent.core.model.Agent
+import com.starringbox.staragent.core.model.AgentGroup
 import com.starringbox.staragent.core.model.AgentTask
 import com.starringbox.staragent.core.model.Author
 import com.starringbox.staragent.core.model.Channel
@@ -30,6 +31,9 @@ import com.starringbox.staragent.core.model.Skill
 import com.starringbox.staragent.core.model.TaskDraft
 import com.starringbox.staragent.core.model.TaskStatus
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -41,8 +45,13 @@ import kotlinx.serialization.json.jsonArray
  *
  * 对话走 [ChatCompletion] 直连用户自己配置的大模型服务；
  * 模型服务配置、API Key、默认模型都通过 [SettingsStore] 持久化到本机。
+ *
+ * [stream] 是给测试留的缝：单测可以塞一个假的流实现，把整条编排链路变成可回归的，
+ * 默认值就是真实实现，生产路径不受影响。
  */
-class AppState {
+class AppState(
+    private val stream: (LlmEndpoint, List<LlmTurn>) -> Flow<ChatStreamEvent> = ChatCompletion::stream,
+) {
 
     val agents = mutableStateListOf<Agent>()
     val tasks = mutableStateListOf<AgentTask>()
@@ -50,6 +59,7 @@ class AppState {
     val skills = mutableStateListOf<Skill>()
     val channels = mutableStateListOf<Channel>()
     val providers = mutableStateListOf<ModelProvider>()
+    val groups = mutableStateListOf<AgentGroup>()
 
     private val conversations = mutableStateMapOf<String, SnapshotStateList<ChatMessage>>()
     private val busy = mutableStateMapOf<String, Boolean>()
@@ -78,6 +88,7 @@ class AppState {
             memories.addAll(restored.memories)
             skills.addAll(restored.skills)
             channels.addAll(restored.channels)
+            groups.addAll(restored.groups)
             restored.conversations.forEach { (agentId, messages) -> messagesOf(agentId).addAll(messages) }
         } else {
             Seed.populateDemo(this)
@@ -100,6 +111,7 @@ class AppState {
                 memories = memories.toList(),
                 skills = skills.toList(),
                 channels = channels.toList(),
+                groups = groups.toList(),
                 conversations = conversations.mapValues { (_, list) -> list.toList() },
             )
         )
@@ -114,12 +126,67 @@ class AppState {
     fun deleteAgent(id: String) {
         agents.removeAll { it.id == id }
         conversations.remove(id)
+        // 人删了，群成员里也要摘掉——否则群的成员计数对不上，
+        // 编排时还得靠 mapNotNull 兜底，等于把一个数据问题藏在运行期。
+        groups.indices.forEach { index ->
+            val group = groups[index]
+            if (id in group.memberIds) {
+                groups[index] = group.copy(memberIds = group.memberIds - id)
+            }
+        }
         persistState()
     }
 
     fun setAgentPinned(id: String, pinned: Boolean) {
         val i = agents.indexOfFirst { it.id == id }
         if (i >= 0) agents[i] = agents[i].copy(pinned = pinned)
+        persistState()
+    }
+
+    // ── 群组 ────────────────────────────────────
+
+    fun group(id: String): AgentGroup? = groups.firstOrNull { it.id == id }
+
+    fun newGroupId(): String = nextId("g")
+
+    /** 群的讨论记录。群复用了智能体的那套会话容器，key 加前缀区分。 */
+    fun messagesOfGroup(groupId: String): SnapshotStateList<ChatMessage> =
+        messagesOf(GroupTalk.key(groupId))
+
+    fun lastGroupMessage(groupId: String): ChatMessage? = lastMessage(GroupTalk.key(groupId))
+
+    fun isGroupBusy(groupId: String): Boolean = isBusy(GroupTalk.key(groupId))
+
+    /** 删掉群里的一条消息。群会话的 key 只有本模块知道，所以从界面来的删除走这里。 */
+    fun removeGroupMessage(groupId: String, messageId: String) {
+        removeMessage(GroupTalk.key(groupId), messageId)
+    }
+
+    /** 群成员，按群设置里的顺序；已经被删除的智能体自动略过。 */
+    fun membersOf(group: AgentGroup): List<Agent> = group.memberIds.mapNotNull { agent(it) }
+
+    /** 一次提问要花掉多少次模型调用：成员数 × 轮数。界面上要提前告诉用户。 */
+    fun callsPerMessage(group: AgentGroup): Int = membersOf(group).size * group.rounds
+
+    /** 群里有没有至少一位成员配好了模型——没有的话界面要给出配置入口。 */
+    fun groupReady(group: AgentGroup): Boolean = membersOf(group).any { endpointFor(it) != null }
+
+    /** 新建或更新一个群。界面只调这一个方法，落盘由这里负责。 */
+    fun saveGroup(group: AgentGroup) {
+        val index = groups.indexOfFirst { it.id == group.id }
+        if (index >= 0) groups[index] = group else groups.add(group)
+        persistState()
+    }
+
+    fun setGroupPinned(id: String, pinned: Boolean) {
+        val index = groups.indexOfFirst { it.id == id }
+        if (index >= 0) groups[index] = groups[index].copy(pinned = pinned)
+        persistState()
+    }
+
+    fun deleteGroup(id: String) {
+        groups.removeAll { it.id == id }
+        conversations.remove(GroupTalk.key(id))
         persistState()
     }
 
@@ -163,6 +230,7 @@ class AppState {
         is MessageBody.Created -> "已创建任务 · ${body.task.title}"
         is MessageBody.Delivered -> "产物 · ${body.artifact.title}"
         is MessageBody.MemoryNote -> body.text
+        is MessageBody.Skipped -> body.reason.ifBlank { "跳过了本轮" }
     }
 
     // ── 模型服务 ────────────────────────────────
@@ -186,7 +254,13 @@ class AppState {
     fun configuredProviders(): List<ModelProvider> = providers.filter { it.configured }
 
     /** 这个智能体当前能不能真正对话——不能的话界面要给出明确的去配置入口。 */
-    fun endpointFor(agent: Agent): LlmEndpoint? {
+    fun endpointFor(agent: Agent): LlmEndpoint? = endpointFor(agent, systemPromptFor(agent))
+
+    /**
+     * 同上，但由调用方给系统提示。群聊走这条：模型与 Key 的解析完全一样，
+     * 只是提示里要写群上下文而不是单聊人设。
+     */
+    fun endpointFor(agent: Agent, systemPrompt: String): LlmEndpoint? {
         val (provider, model) = resolveModel(agent.modelId) ?: return null
         if (!provider.configured) return null
         // 地址按当前协议取：同一家两种协议的路径往往不同
@@ -196,7 +270,7 @@ class AppState {
             baseUrl = baseUrl,
             apiKey = provider.apiKey,
             model = model,
-            systemPrompt = systemPromptFor(agent),
+            systemPrompt = systemPrompt,
         )
     }
 
@@ -328,7 +402,7 @@ class AppState {
         var failure: String? = null
 
         try {
-            ChatCompletion.stream(endpoint, history).collect { event ->
+            stream(endpoint, history).collect { event ->
                 when (event) {
                     is ChatStreamEvent.Delta -> {
                         buffer.append(event.text)
@@ -406,6 +480,154 @@ class AppState {
         )
         persistState()
     }
+
+    // ── 群组讨论 ────────────────────────────────
+
+    /**
+     * 在群里发一条消息，随后成员依次发言。
+     *
+     * 讨论是**串行**的：一个成员收完流才轮到下一个，所以后面发言的人天然看得到前面刚说的话，
+     * 讨论就是这样串起来的。一条消息的真实成本 = 成员数 × 轮数 次模型调用。
+     */
+    suspend fun sendToGroup(groupId: String, text: String, images: List<MediaAsset> = emptyList()) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty() && images.isEmpty()) return
+
+        val group = group(groupId) ?: return
+        val key = GroupTalk.key(groupId)
+        if (isBusy(key)) return
+
+        val conversation = messagesOf(key)
+        conversation.add(
+            ChatMessage(
+                id = nextId("m"),
+                author = Author.User,
+                body = if (images.isEmpty()) {
+                    MessageBody.Text(trimmed)
+                } else {
+                    MessageBody.Image(assets = images, caption = trimmed)
+                },
+                timeLabel = "刚刚",
+            )
+        )
+
+        val members = membersOf(group)
+        if (members.isEmpty()) {
+            conversation.add(notice("这个群还没有成员。去群设置里加几位智能体再试。"))
+            persistState()
+            return
+        }
+        if (members.none { endpointFor(it) != null }) {
+            conversation.add(
+                notice("群里还没有可用的模型服务。去「我的 → 模型服务」配一家，填入 API Key 就能讨论了。")
+            )
+            persistState()
+            return
+        }
+
+        busy[key] = true
+        try {
+            for (round in 1..group.rounds) {
+                // 用户点了停止：不再进入下一轮
+                currentCoroutineContext().ensureActive()
+                for (member in members) {
+                    currentCoroutineContext().ensureActive()
+                    speakOnce(key, group, member, round, members)
+                }
+            }
+        } finally {
+            busy[key] = false
+            // 整场讨论结束才落盘一次，与单聊一致
+            persistState()
+        }
+    }
+
+    /** 群里一位成员发言一次。跳过、失败、被停止都在这里落地。 */
+    private suspend fun speakOnce(
+        key: String,
+        group: AgentGroup,
+        member: Agent,
+        round: Int,
+        roster: List<Agent>,
+    ) {
+        val conversation = messagesOf(key)
+        val endpoint = endpointFor(member, GroupTalk.promptFor(group, member, round, roster, responseMode))
+        if (endpoint == null) {
+            // 个别成员没配模型：记一条说明，讨论继续，不因此中断整场
+            conversation.add(
+                ChatMessage(
+                    id = nextId("m"),
+                    author = Author.Agent,
+                    body = MessageBody.Notice("${member.name} 没有可用的模型，这一轮先跳过。", isError = true),
+                    timeLabel = "刚刚",
+                    speakerAgentId = member.id,
+                    roundIndex = round,
+                )
+            )
+            return
+        }
+
+        // 历史要在占位消息之前取，否则这句空发言会被带进上下文
+        val history = GroupTalk.historyFor(conversation, self = member, roster = roster)
+
+        val placeholder = ChatMessage(
+            id = nextId("m"),
+            author = Author.Agent,
+            body = MessageBody.Text(""),
+            timeLabel = "刚刚",
+            speakerAgentId = member.id,
+            roundIndex = round,
+        )
+        conversation.add(placeholder)
+        // 本成员发言期间不会再往列表里 append，index 是稳的
+        val index = conversation.lastIndex
+
+        val buffer = StringBuilder()
+        var failure: String? = null
+        try {
+            stream(endpoint, history).collect { event ->
+                when (event) {
+                    is ChatStreamEvent.Delta -> {
+                        buffer.append(event.text)
+                        conversation[index] = placeholder.copy(body = MessageBody.Text(buffer.toString()))
+                    }
+
+                    is ChatStreamEvent.Failed -> failure = event.message
+                    ChatStreamEvent.Completed -> Unit
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            // 用户点了停止：已经说出的半句留着，再往上抛，让整场讨论一起停下来
+            if (buffer.isEmpty()) {
+                conversation[index] = placeholder.copy(body = MessageBody.Notice("已停止"))
+            }
+            throw cancelled
+        }
+
+        val failureMessage = failure
+        if (failureMessage != null) {
+            conversation[index] = placeholder.copy(body = MessageBody.Notice(failureMessage, isError = true))
+            return
+        }
+
+        val raw = buffer.toString()
+        if (raw.isBlank()) {
+            conversation[index] = placeholder.copy(body = MessageBody.Notice("模型没有返回内容", isError = true))
+            return
+        }
+
+        conversation[index] = when (val outcome = resolveGroupReply(raw)) {
+            is GroupReplyOutcome.Speak -> placeholder.copy(body = MessageBody.Text(outcome.text))
+            is GroupReplyOutcome.Skip -> placeholder.copy(body = MessageBody.Skipped(outcome.reason))
+        }
+    }
+
+    private fun notice(text: String) = ChatMessage(
+        id = nextId("m"),
+        author = Author.Agent,
+        body = MessageBody.Notice(text, isError = true),
+        timeLabel = "刚刚",
+    )
 
     // ── 任务 / 记忆 / 技能 / 渠道 ────────────────
 

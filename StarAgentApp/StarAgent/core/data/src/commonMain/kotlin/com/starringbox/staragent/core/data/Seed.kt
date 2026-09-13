@@ -1,6 +1,7 @@
 package com.starringbox.staragent.core.data
 
 import com.starringbox.staragent.core.model.Agent
+import com.starringbox.staragent.core.model.AgentGroup
 import com.starringbox.staragent.core.model.AgentTask
 import com.starringbox.staragent.core.model.Artifact
 import com.starringbox.staragent.core.model.ArtifactKind
@@ -240,6 +241,16 @@ internal object Seed {
         )
 
         seedConversations(state)
+
+        // 一个现成的群，让首次打开就能看到「群组」这个形态
+        state.groups.add(
+            AgentGroup(
+                id = "g-1",
+                name = "三人行",
+                memberIds = listOf("a-xing", "a-work", "a-english"),
+                rounds = 1,
+            )
+        )
     }
 
     /**

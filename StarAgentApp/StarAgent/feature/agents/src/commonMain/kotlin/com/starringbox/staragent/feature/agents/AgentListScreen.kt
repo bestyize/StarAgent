@@ -25,6 +25,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,6 +48,7 @@ import com.starringbox.staragent.core.designsystem.navigation.Navigator
 import com.starringbox.staragent.core.designsystem.navigation.Route
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.model.Agent
+import com.starringbox.staragent.core.model.AgentGroup
 
 /**
  * 首页：智能体联系人列表。
@@ -61,7 +64,11 @@ fun AgentListScreen(navigator: Navigator) {
     val agents = state.agents.filter { agent ->
         query.isBlank() || agent.name.contains(query, ignoreCase = true) || agent.persona.contains(query, ignoreCase = true) || state.lastMessage(agent.id)?.let { state.previewOf(it).contains(query, ignoreCase = true) } == true
     }
-    val managing = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Agent?>(null) }
+    val groups = state.groups.filter { group ->
+        query.isBlank() || group.name.contains(query, ignoreCase = true) || state.lastGroupMessage(group.id)?.let { state.previewOf(it).contains(query, ignoreCase = true) } == true
+    }
+    val managing = remember { mutableStateOf<Agent?>(null) }
+    val managingGroup = remember { mutableStateOf<AgentGroup?>(null) }
 
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(0xFFE7EFFF), StarPalette.Bg)))) {
@@ -70,7 +77,7 @@ fun AgentListScreen(navigator: Navigator) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("星环", style = MaterialTheme.typography.headlineSmall, color = StarPalette.Text)
-                        Text("${state.agents.size} 个智能体 · ${state.agents.size * 4} 条会话", style = MaterialTheme.typography.bodyLarge, color = StarPalette.TextMuted)
+                        Text("${state.agents.size} 个智能体 · ${state.groups.size} 个群组", style = MaterialTheme.typography.bodyLarge, color = StarPalette.TextMuted)
                     }
                     CircleIconButton(glyph = StarIconGlyph.Plus, onClick = { navigator.push(Route.AgentEditor(null)) }, size = 44.dp, tint = Color.White, containerColor = StarPalette.Indigo)
                 }
@@ -86,7 +93,7 @@ fun AgentListScreen(navigator: Navigator) {
             modifier = Modifier.padding(bottom = 6.dp),
         )
 
-        if (agents.isEmpty()) {
+        if (agents.isEmpty() && groups.isEmpty()) {
             EmptyHint(
                 text = if (query.isBlank()) "还没有智能体，点右上角创建一个" else "没有匹配的智能体",
                 modifier = Modifier.weight(1f),
@@ -104,6 +111,19 @@ fun AgentListScreen(navigator: Navigator) {
                         onLongClick = { managing.value = agent },
                     )
                 }
+                // 群组和智能体并列——产品里两者都是"联系人"，只是一个是一对一、一个是多人
+                item { SectionTitle("群组", "多个智能体一起讨论") }
+                items(groups, key = { "group-${it.id}" }) { group ->
+                    GroupRow(
+                        state = state,
+                        group = group,
+                        onClick = { navigator.push(Route.GroupChat(group.id)) },
+                        onLongClick = { managingGroup.value = group },
+                    )
+                }
+                item {
+                    CreateGroupRow(onClick = { navigator.push(Route.GroupEditor(null)) })
+                }
                 if (recent.isNotEmpty()) item { SectionTitle("最近会话", "与你的智能体保持连接") }
                 items(recent, key = { "recent-${it.id}" }) { agent ->
                     AgentRow(state, agent, { navigator.push(Route.Chat(agent.id)) }, { managing.value = agent })
@@ -117,6 +137,24 @@ fun AgentListScreen(navigator: Navigator) {
     }
     managing.value?.let { agent ->
         StarActionSheet( actions = listOf(StarSheetAction(if (agent.pinned) "取消置顶" else "置顶会话"), StarSheetAction("删除会话", true)), onAction = { index -> if (index == 0) state.setAgentPinned(agent.id, !agent.pinned) else state.deleteAgent(agent.id); managing.value = null }, onDismiss = { managing.value = null })
+    }
+    managingGroup.value?.let { group ->
+        StarActionSheet(
+            actions = listOf(
+                StarSheetAction(if (group.pinned) "取消置顶" else "置顶群组"),
+                StarSheetAction("群设置", false),
+                StarSheetAction("删除群组", true),
+            ),
+            onAction = { index ->
+                when (index) {
+                    0 -> state.setGroupPinned(group.id, !group.pinned)
+                    1 -> navigator.push(Route.GroupEditor(group.id))
+                    else -> state.deleteGroup(group.id)
+                }
+                managingGroup.value = null
+            },
+            onDismiss = { managingGroup.value = null },
+        )
     }
 }
 
@@ -195,6 +233,81 @@ private fun CreateAgentRow(onClick: () -> Unit) {
         Spacer(Modifier.width(12.dp))
         Text(
             text = "创建新的智能体",
+            style = MaterialTheme.typography.bodyLarge,
+            color = StarPalette.TextMuted,
+        )
+    }
+}
+
+/** 群组行。结构照着 AgentRow 来，只是摘要取群的讨论记录、时间取最后一条。 */
+@Composable
+private fun GroupRow(state: AppState, group: AgentGroup, onClick: () -> Unit, onLongClick: () -> Unit) {
+    val last = state.lastGroupMessage(group.id)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(group.id) { detectTapGestures(onTap = { onClick() }, onLongPress = { onLongClick() }) }
+            .padding(horizontal = 10.dp, vertical = 3.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(StarPalette.Surface)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AgentAvatar(glyph = group.glyph, accentIndex = group.accentIndex)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = group.name,
+                style = MaterialTheme.typography.titleMedium,
+                color = StarPalette.Text,
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                // 还没有讨论过就交代这个群的规模，让用户先知道一次发言要花多少次调用
+                text = last?.let { state.previewOf(it) }
+                    ?: "${state.membersOf(group).size} 位成员 · ${group.rounds} 轮",
+                style = MaterialTheme.typography.bodySmall,
+                color = StarPalette.TextMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (last != null) {
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = last.timeLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = StarPalette.TextFaint,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CreateGroupRow(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(46.dp)
+                .height(46.dp)
+                .clip(RoundedCornerShape(15.dp))
+                .background(StarPalette.SurfaceAlt),
+            contentAlignment = Alignment.Center,
+        ) {
+            StarIcon(StarIconGlyph.Group, iconSize = 22.dp, tint = StarPalette.TextMuted)
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = "创建群组",
             style = MaterialTheme.typography.bodyLarge,
             color = StarPalette.TextMuted,
         )

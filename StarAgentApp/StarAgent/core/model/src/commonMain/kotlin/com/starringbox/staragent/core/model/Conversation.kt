@@ -46,17 +46,40 @@ sealed interface MessageBody {
     data class Delivered(val artifact: Artifact) : MessageBody
     @Serializable
     data class MemoryNote(val text: String) : MessageBody
+
+    /**
+     * 群聊里某个成员这一轮没开口。
+     *
+     * 不塞进 [Notice]：Notice 的心智是"需要你去处理的事"，而跳过是讨论过程的一部分，
+     * 界面上是一行淡淡的居中提示，不是一张待办卡片。
+     */
+    @Serializable
+    data class Skipped(val reason: String = "") : MessageBody
 }
 
 @Serializable
 data class ExecutionStep(val label: String, val done: Boolean)
 
+/**
+ * 一条消息。
+ *
+ * [author] 只区分"用户 / 智能体"两种角色位；**具体是哪个智能体**由 [speakerAgentId] 承载。
+ * 两者正交，所以群聊不需要动 [Author]——把它改成密封类型会改变已有存档的序列化形状，
+ * 旧数据解码失败会静默退化成种子数据（见 Persistence.kt 的注释）。
+ *
+ * 约定：[Author.User] + null = 用户发言；[Author.Agent] + null = 单聊里的智能体；
+ * [Author.Agent] + 非空 = 群聊里的某个成员。
+ */
 @Serializable
 data class ChatMessage(
     val id: String,
     val author: Author,
     val body: MessageBody,
     val timeLabel: String,
+    /** 群聊里这条消息由哪个智能体说的；用户消息与单聊消息为 null。 */
+    val speakerAgentId: String? = null,
+    /** 群聊里这条消息属于第几轮（从 1 开始）；单聊为 null。 */
+    val roundIndex: Int? = null,
 )
 
 @Serializable
