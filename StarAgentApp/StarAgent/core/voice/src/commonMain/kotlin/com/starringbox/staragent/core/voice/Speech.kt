@@ -1,0 +1,52 @@
+package com.starringbox.staragent.core.voice
+
+/** 一次语音操作的结果。失败一律带上可以直接展示给用户的理由。 */
+sealed interface SpeechOutcome<out T> {
+    data class Ok<T>(val value: T) : SpeechOutcome<T>
+    data class Failed(val message: String) : SpeechOutcome<Nothing>
+}
+
+/** 语音能力从哪来。界面上的「语音引擎」就是这个。 */
+enum class VoiceSource(val label: String, val hint: String) {
+    Device("系统能力", "用设备自带的识别与合成，不用配 Key，也不产生费用"),
+    Model("大模型", "走你配置的服务商，识别更准，按量计费"),
+}
+
+/**
+ * 语音转文字。
+ *
+ * 契约是**从"开始听"到"出文字"的整段**，而不是"给我一段音频、我返回文字"——
+ * 因为设备自带的识别（Android 的 `SpeechRecognizer`）自己会录音、自己弹界面，
+ * 压根不接受外部喂进来的音频。把两端对齐成同一段流程，上层就不用区分。
+ */
+interface Transcriber {
+    /**
+     * 现在能不能用：设备端看有没有麦克风权限，模型端看有没有配好带语音能力的服务商。
+     *
+     * 刻意不是挂起函数——界面要拿它决定麦克风入口显不显示，
+     * 在组合期能同步读到是必要条件。
+     */
+    val ready: Boolean
+
+    /** 开始听。返回 false 表示起不来（没权限、没配服务商、设备不认）。 */
+    suspend fun start(): Boolean
+
+    /** 结束并给出文字。用户取消、没听清、网络失败都走 [SpeechOutcome.Failed]。 */
+    suspend fun finish(): SpeechOutcome<String>
+
+    /** 放弃这一次，不需要结果。 */
+    fun cancel()
+}
+
+/**
+ * 文字转语音。**合成与播放是同一件事**——
+ * 设备自带的能力内部直接出声，走服务商的那条则合成后交给 [Players]，
+ * 上层只关心"念出来了没有"。
+ */
+interface Synthesizer {
+    /** 同上，界面要同步地问"能不能念"。 */
+    val ready: Boolean
+
+    /** 念出来。文本为空时直接算成功（没什么可念的）。 */
+    suspend fun speak(text: String): SpeechOutcome<Unit>
+}

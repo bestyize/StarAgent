@@ -41,8 +41,10 @@ import com.starringbox.staragent.core.media.MediaRules
 import com.starringbox.staragent.core.media.MediaSavers
 import com.starringbox.staragent.core.media.suggestedFileName
 import com.starringbox.staragent.core.model.AgentGroup
+import com.starringbox.staragent.core.model.Author
 import com.starringbox.staragent.core.model.ChatMessage
 import com.starringbox.staragent.core.model.MessageBody
+import com.starringbox.staragent.core.voice.SpeechOutcome
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -73,6 +75,8 @@ fun GroupChatScreen(navigator: Navigator, groupId: String) {
     var viewingIndex by remember { mutableStateOf(0) }
     var attachments by remember { mutableStateOf<List<MediaAsset>>(emptyList()) }
     var notice by remember { mutableStateOf<DockNotice?>(null) }
+    // 正在听。Voice 里的那个是普通变量（不是 Compose 状态），界面自己记一份。
+    var listening by remember { mutableStateOf(false) }
     val busy = state.isGroupBusy(groupId)
     val ready = state.groupReady(group)
 
@@ -90,6 +94,23 @@ fun GroupChatScreen(navigator: Navigator, groupId: String) {
         val info = listState.layoutInfo
         val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: return@LaunchedEffect
         if (lastVisible >= info.totalItemsCount - 2) listState.scrollToItem(messages.lastIndex)
+    }
+
+
+    // 念出最后一条回复。只有开了朗读、且现在念得了的时候才做，其余情况静默跳过——
+    // 念不出来不该打断对话。卡片类消息不念：它们不是"话"。
+    val readReplyAloud: suspend () -> Unit = {
+        if (state.speakReplies && state.canSpeak) {
+            val reply = messages.lastOrNull { it.author == Author.Agent }
+                ?.let { (it.body as? MessageBody.Text)?.text }
+                ?.takeIf { it.isNotBlank() }
+            if (reply != null) {
+                val spoken = state.speak(reply)
+                if (spoken is SpeechOutcome.Failed) {
+                    notice = DockNotice(spoken.message, isError = true)
+                }
+            }
+        }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -189,6 +210,37 @@ fun GroupChatScreen(navigator: Navigator, groupId: String) {
                 },
                 onStop = { turn?.cancel() },
                 mentions = members,
+                canVoice = state.canListen,
+                listening = listening,
+                onVoiceToggle = {
+                    notice = null
+                    if (listening) {
+                        listening = false
+                        turn = scope.launch {
+                            when (val heard = state.stopListening()) {
+                                // 转写成功直接发到群里，群里照样按轮流/点名去讨论
+                                is SpeechOutcome.Ok -> {
+                                    state.sendToGroup(groupId, heard.value)
+                                    readReplyAloud()
+                                }
+
+                                is SpeechOutcome.Failed ->
+                                    notice = DockNotice(heard.message, isError = true)
+                            }
+                        }
+                    } else {
+                        listening = true
+                        scope.launch {
+                            when (val started = state.startListening()) {
+                                is SpeechOutcome.Ok -> Unit
+                                is SpeechOutcome.Failed -> {
+                                    listening = false
+                                    notice = DockNotice(started.message, isError = true)
+                                }
+                            }
+                        }
+                    }
+                },
             )
         }
 

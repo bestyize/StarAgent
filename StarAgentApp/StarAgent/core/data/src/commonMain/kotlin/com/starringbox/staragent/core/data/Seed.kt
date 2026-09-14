@@ -64,6 +64,11 @@ internal object Seed {
                     openAiBaseUrl = "https://open.bigmodel.cn/api/paas/v4",
                     anthropicBaseUrl = "https://open.bigmodel.cn/api/anthropic",
                     models = listOf("glm-5.3", "glm-5.3-flash", "glm-5.2"),
+                    // 语音：识别与合成走的是和对话同源的 OpenAI 形状
+                    // （/audio/transcriptions 与 /audio/speech），模型 ID 取自它的 OpenAPI 定义
+                    asrModel = "glm-asr-2512",
+                    ttsModel = "glm-tts",
+                    ttsVoice = "tongtong",
                 ),
                 ModelProvider(
                     id = "kimi",
@@ -114,6 +119,9 @@ internal object Seed {
                     openAiBaseUrl = "https://api.openai.com/v1",
                     // GPT-5.6 家族分三档，裸 gpt-5.6 是 gpt-5.6-sol 的别名
                     models = listOf("gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"),
+                    asrModel = "gpt-4o-transcribe",
+                    ttsModel = "gpt-4o-mini-tts",
+                    ttsVoice = "alloy",
                 ),
                 ModelProvider(
                     id = "anthropic",

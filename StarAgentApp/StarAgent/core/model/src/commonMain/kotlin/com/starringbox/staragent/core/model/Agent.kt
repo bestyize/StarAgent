@@ -65,7 +65,26 @@ data class ModelProvider(
     val models: List<String> = emptyList(),
     val apiKey: String = "",
     val builtIn: Boolean = true,
+    /**
+     * 语音能力：这家的识别 / 合成模型。
+     *
+     * 留空表示**这家没有语音接口**——十家里只有智谱和 OpenAI 提供，
+     * 其余几家（含 DeepSeek）本身就是纯文本，留空正好让语音那条链路跳过它们。
+     * 这两个字段不参与对话，只在要用语音时被读，所以留空是完全正常的状态。
+     */
+    val asrModel: String? = null,
+    val ttsModel: String? = null,
+    /**
+     * 合成用的音色名。**每家的取值不一样**（智谱 `tongtong`、OpenAI `alloy`），
+     * 而合成接口把它列为必填，所以只能跟着服务商一起存。
+     */
+    val ttsVoice: String? = null,
 ) {
+    /** 这家能不能用来做语音。 */
+    val supportsSpeech: Boolean
+        get() = apiKey.isNotBlank() && (asrModel != null || ttsModel != null) && baseUrlFor(protocol) != null
+
+
     /** 某协议下的接口地址；这家没提供该协议时返回 null。 */
     fun baseUrlFor(protocol: LlmProtocol): String? {
         val url = when (protocol) {

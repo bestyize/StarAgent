@@ -15,6 +15,7 @@ dependencies {
     implementation(project(":core:data"))
     implementation(project(":core:media"))
     implementation(project(":core:storage"))
+    implementation(project(":core:voice"))
 
     implementation(libs.androidx.activity.compose)
 

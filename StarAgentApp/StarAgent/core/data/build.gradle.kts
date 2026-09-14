@@ -32,6 +32,7 @@ kotlin {
             api(project(":core:model"))
             api(project(":core:llm"))
             implementation(project(":core:storage"))
+            implementation(project(":core:voice"))
             implementation(libs.compose.runtime)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)

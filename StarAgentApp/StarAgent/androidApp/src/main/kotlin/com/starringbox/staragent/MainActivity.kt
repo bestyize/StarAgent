@@ -10,6 +10,9 @@ import com.starringbox.staragent.core.data.AndroidAppContext
 import com.starringbox.staragent.core.media.MediaPickers
 import com.starringbox.staragent.core.media.MediaSavers
 import com.starringbox.staragent.core.storage.LocalStores
+import com.starringbox.staragent.core.voice.Players
+import com.starringbox.staragent.core.voice.Recorders
+import com.starringbox.staragent.core.voice.Voice
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -20,6 +23,16 @@ class MainActivity : ComponentActivity() {
         LocalStores.install(AndroidLocalStore(applicationContext))
         MediaPickers.install(AndroidMediaPicker(applicationContext, this))
         MediaSavers.install(AndroidMediaSaver(applicationContext, this))
+
+        // 语音：录音与播放是设备能力；识别和合成**两路都注册**——
+        // 系统自带的那路不要 Key、不花钱，模型那路由 core:data 装。
+        // 具体用哪路由 core:voice 按偏好挑（默认自动，优先系统能力）。
+        Recorders.install(AndroidVoiceRecorder(applicationContext, this))
+        Players.install(AndroidVoicePlayer(applicationContext))
+        Voice.installDevice(
+            transcriber = AndroidSystemTranscriber(applicationContext, this),
+            synthesizer = AndroidSystemSynthesizer(applicationContext),
+        )
 
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)

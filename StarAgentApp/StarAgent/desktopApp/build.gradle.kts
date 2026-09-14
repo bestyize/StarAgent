@@ -10,6 +10,7 @@ dependencies {
     implementation(project(":shared"))
     implementation(project(":core:media"))
     implementation(project(":core:storage"))
+    implementation(project(":core:voice"))
 
     implementation(compose.desktop.currentOs)
     implementation(libs.kotlinx.coroutinesSwing)

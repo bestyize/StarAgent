@@ -12,8 +12,14 @@ import com.starringbox.staragent.core.llm.ChatStreamEvent
 import com.starringbox.staragent.core.llm.LlmEndpoint
 import com.starringbox.staragent.core.llm.LlmRole
 import com.starringbox.staragent.core.llm.LlmTurn
+import com.starringbox.staragent.core.llm.ModelSynthesizer
+import com.starringbox.staragent.core.llm.ModelTranscriber
+import com.starringbox.staragent.core.llm.SpeechEndpoint
 import com.starringbox.staragent.core.media.MediaAsset
 import com.starringbox.staragent.core.storage.LocalStores
+import com.starringbox.staragent.core.voice.SpeechOutcome
+import com.starringbox.staragent.core.voice.Voice
+import com.starringbox.staragent.core.voice.VoiceSource
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.AgentGroup
 import com.starringbox.staragent.core.model.AgentTask
@@ -72,6 +78,14 @@ class AppState(
 
     var responseMode by mutableStateOf(ResponseMode.Standard)
         private set
+
+    /** 语音引擎偏好。null = 自动：优先设备能力（不要 Key、不花钱）。 */
+    var voiceSource by mutableStateOf<VoiceSource?>(null)
+        private set
+
+    /** 回复要不要念出来。默认关——朗读会真的产生费用，不能默默开始花钱。 */
+    var speakReplies by mutableStateOf(false)
+        private set
     var defaultModelId by mutableStateOf("")
         private set
     var searchQuery by mutableStateOf("")
@@ -111,6 +125,13 @@ class AppState(
             // 首次运行立刻落盘：否则用户这次删的东西，下次启动又会被种子灌回来
             persistState()
         }
+
+        // 语音的模型后端在这里装：它要用"用户当前配置的服务商"，
+        // 所以只有数据层装得了。设备能力那一路由各端入口装（Android 有，桌面没有）。
+        Voice.installModel(
+            transcriber = ModelTranscriber { speechEndpoint() },
+            synthesizer = ModelSynthesizer { speechEndpoint() },
+        )
 
         // 兜底默认模型取第一家的第一个；没有服务商时留空，交给 SettingsStore 里用户自己的选择
         providers.firstOrNull()?.let { defaultModelId = modelKey(it.id, 0) }
@@ -298,6 +319,58 @@ class AppState(
         is MessageBody.Delivered -> "产物 · ${body.artifact.title}"
         is MessageBody.MemoryNote -> body.text
         is MessageBody.Skipped -> body.reason.ifBlank { "跳过了本轮" }
+    }
+
+    // ── 语音 ────────────────────────────────────
+
+    /**
+     * 当前用来做语音的服务商。
+     *
+     * 取第一个**既配好了 Key、又带语音模型**的——十家里只有智谱和 OpenAI 有语音接口，
+     * 其余几家（含 DeepSeek）的 asrModel/ttsModel 是空的，自然被跳过。
+     */
+    fun speechEndpoint(): SpeechEndpoint? {
+        val provider = providers.firstOrNull { it.supportsSpeech } ?: return null
+        val baseUrl = provider.baseUrlFor(provider.protocol) ?: return null
+        return SpeechEndpoint(
+            baseUrl = baseUrl,
+            apiKey = provider.apiKey,
+            asrModel = provider.asrModel,
+            ttsModel = provider.ttsModel,
+            ttsVoice = provider.ttsVoice,
+        )
+    }
+
+    /** 现在能不能语音输入。界面据此决定麦克风入口显不显示。 */
+    val canListen: Boolean get() = Voice.canListen
+
+    /** 现在能不能朗读。 */
+    val canSpeak: Boolean get() = Voice.canSpeak
+
+    /** 正在听。界面据此把输入区换成"正在听…"。 */
+    val isListening: Boolean get() = Voice.isListening
+
+    suspend fun startListening(): SpeechOutcome<Unit> = Voice.startListening()
+
+    suspend fun stopListening(): SpeechOutcome<String> = Voice.stopListening()
+
+    fun cancelListening() = Voice.cancelListening()
+
+    /** 念一段文字。回复里只有纯文本会被念——卡片不是"话"。 */
+    suspend fun speak(text: String): SpeechOutcome<Unit> = Voice.speak(text)
+
+    fun stopSpeaking() = Voice.stopSpeaking()
+
+    /** 注意：不能叫 setVoiceSource——那会跟属性自带的 setter 撞 JVM 签名。 */
+    fun selectVoiceSource(source: VoiceSource?) {
+        voiceSource = source
+        SettingsStore.put(KEY_VOICE_SOURCE, source?.name.orEmpty())
+    }
+
+    /** 同理，不能叫 setSpeakReplies。 */
+    fun setReadingReplies(enabled: Boolean) {
+        speakReplies = enabled
+        SettingsStore.put(KEY_SPEAK_REPLIES, enabled.toString())
     }
 
     // ── 模型服务 ────────────────────────────────
@@ -1027,6 +1100,12 @@ class AppState(
     }
 
     private fun restoreSettings() {
+        SettingsStore.get(KEY_VOICE_SOURCE)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { saved -> VoiceSource.entries.firstOrNull { it.name == saved } }
+            ?.let { selectVoiceSource(it) }
+        speakReplies = SettingsStore.get(KEY_SPEAK_REPLIES) == "true"
+
         SettingsStore.get(KEY_RESPONSE_MODE)
             ?.let { saved -> ResponseMode.entries.firstOrNull { it.name == saved } }
             ?.let { responseMode = it }
@@ -1109,6 +1188,8 @@ class AppState(
         const val KEY_DEFAULT_MODEL = "defaultModel"
         const val KEY_RESPONSE_MODE = "responseMode"
         const val KEY_CUSTOM_IDS = "customIds"
+        const val KEY_VOICE_SOURCE = "voiceSource"
+        const val KEY_SPEAK_REPLIES = "speakReplies"
         const val KEY_SEED_VERSION = "seedVersion"
 
         /**

@@ -46,6 +46,8 @@ include(":shared")
 include(":core:model")
 include(":core:designsystem")
 include(":core:media")
+// voice        语音能力：识别/合成的统一契约（设备能力或大模型，由入口注入）
+include(":core:voice")
 include(":core:storage")
 include(":core:llm")
 include(":core:data")

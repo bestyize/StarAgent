@@ -27,6 +27,9 @@ kotlin {
             api(project(":core:designsystem"))
             implementation(project(":core:model"))
             implementation(project(":core:data"))
+            // 语音能力的类型（SpeechOutcome 等）。core:media 能看见是靠 core:model 的 api 传递，
+            // core:voice 没有这条链，必须显式声明。
+            implementation(project(":core:voice"))
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)

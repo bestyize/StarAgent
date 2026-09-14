@@ -35,6 +35,7 @@ import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.ResponseMode
+import com.starringbox.staragent.core.voice.VoiceSource
 
 /**
  * 对话页顶部状态位的展开面板。
@@ -192,7 +193,76 @@ internal fun AgentStatusSheet(
                 }
             }
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(20.dp))
+            SectionLabel("语音")
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "朗读回复",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = StarPalette.Text,
+                    )
+                    Text(
+                        text = "念出来会调用语音合成，按量计费",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = StarPalette.TextFaint,
+                    )
+                }
+                Switch(
+                    checked = state.speakReplies,
+                    onCheckedChange = { state.setReadingReplies(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = StarPalette.Indigo,
+                        checkedBorderColor = StarPalette.Indigo,
+                    ),
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
+            // 引擎选择。默认「自动」：优先系统能力，它不要 Key、不花钱。
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val choices = listOf(null, VoiceSource.Device, VoiceSource.Model)
+                choices.forEach { source ->
+                    val selected = state.voiceSource == source
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (selected) StarPalette.Indigo else StarPalette.SurfaceAlt)
+                            .clickable { state.selectVoiceSource(source) }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = source?.label ?: "自动",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (selected) Color.White else StarPalette.TextMuted,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = when {
+                    !state.canListen && !state.canSpeak ->
+                        "现在还用不了语音：这台设备没有可用的识别与合成，也没配支持语音的服务商（智谱或 OpenAI）。"
+
+                    state.voiceSource == null ->
+                        "自动：优先用系统能力，它不要 Key 也不花钱；用不了时才走大模型。"
+
+                    else -> state.voiceSource?.hint.orEmpty()
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = StarPalette.TextFaint,
+            )
+
+            Spacer(Modifier.height(20.dp))
             Box(
                 Modifier
                     .fillMaxWidth()

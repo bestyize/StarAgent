@@ -55,6 +55,11 @@ internal fun InputDock(
     onSend: (String) -> Unit,
     onStop: () -> Unit,
     mentions: List<Agent> = emptyList(),
+    /** 能不能语音输入。不能时麦克风入口整个不显示，而不是留个点了没反应的按钮。 */
+    canVoice: Boolean = false,
+    /** 正在听。界面据此把按钮换成停止、输入框换成提示。 */
+    listening: Boolean = false,
+    onVoiceToggle: () -> Unit = {},
 ) {
     var text by remember { mutableStateOf("") }
     // 只有图片、没有文字也要能发
@@ -89,13 +94,15 @@ internal fun InputDock(
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
-            CircleIconButton(
-                glyph = StarIconGlyph.Mic,
-                onClick = { },
-                size = 38.dp,
-                tint = StarPalette.TextMuted,
-            )
-            Spacer(Modifier.width(6.dp))
+            if (canVoice) {
+                CircleIconButton(
+                    glyph = if (listening) StarIconGlyph.Pause else StarIconGlyph.Mic,
+                    onClick = onVoiceToggle,
+                    size = 38.dp,
+                    tint = if (listening) StarPalette.Danger else StarPalette.TextMuted,
+                )
+                Spacer(Modifier.width(6.dp))
+            }
 
             Row(
                 modifier = Modifier
@@ -108,7 +115,7 @@ internal fun InputDock(
                 BasicTextField(
                     value = text,
                     onValueChange = { text = it },
-                    enabled = !busy,
+                    enabled = !busy && !listening,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = StarPalette.Text),
                     cursorBrush = SolidColor(StarPalette.Indigo),
                     maxLines = 4,
@@ -117,7 +124,11 @@ internal fun InputDock(
                         Box {
                             if (text.isEmpty()) {
                                 Text(
-                                    text = if (busy) "正在回复…" else "说点什么…",
+                                    text = when {
+                                        listening -> "正在听…再点一下结束"
+                                        busy -> "正在回复…"
+                                        else -> "说点什么…"
+                                    },
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = StarPalette.TextFaint,
                                 )
