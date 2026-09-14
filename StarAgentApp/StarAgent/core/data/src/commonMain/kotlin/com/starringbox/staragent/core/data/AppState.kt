@@ -96,6 +96,10 @@ class AppState(
             channels.addAll(saved.channels)
             groups.addAll(saved.groups)
             saved.conversations.forEach { (agentId, messages) -> messagesOf(agentId).addAll(messages) }
+
+            // 修过 id 就顺手落盘，否则这份存档每次启动都要重修一遍。
+            // 必须等上面填完再写——persistState 是从这些列表里取的，提前调会写出空存档。
+            if (saved != restored) persistState()
         } else {
             Seed.populateDemo(this)
             // 首次运行立刻落盘：否则用户这次删的东西，下次启动又会被种子灌回来

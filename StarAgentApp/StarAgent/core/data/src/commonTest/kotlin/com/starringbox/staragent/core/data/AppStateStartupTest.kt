@@ -213,5 +213,12 @@ class AppStateStartupTest {
 
         val fresh = state.nextId("m")
         assertTrue(fresh !in ids, "接着发的新消息不能再撞上已有的 id，实际拿到 $fresh")
+
+        // 修完要落盘，而且不能写空——persistState 是从内存列表里取的，
+        // 如果调得太早（列表还没填）就会把用户存档清掉
+        val again = AppState()
+        assertEquals(3, again.messagesOf("a-1").size, "修复后的存档被写空了")
+        val againIds = again.messagesOf("a-1").map { it.id }
+        assertEquals(againIds.size, againIds.toSet().size, "落盘之后 id 仍然唯一")
     }
 }
