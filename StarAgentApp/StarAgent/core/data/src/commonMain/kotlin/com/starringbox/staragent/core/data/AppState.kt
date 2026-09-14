@@ -83,13 +83,19 @@ class AppState(
         val restored = if (LocalStores.available) StatePersister(LocalStores.current).load() else null
 
         if (restored != null) {
-            agents.addAll(restored.agents)
-            tasks.addAll(restored.tasks)
-            memories.addAll(restored.memories)
-            skills.addAll(restored.skills)
-            channels.addAll(restored.channels)
-            groups.addAll(restored.groups)
-            restored.conversations.forEach { (agentId, messages) -> messagesOf(agentId).addAll(messages) }
+            // id 计数器（idSeq）不落盘，重启后从 0 开始，新消息就会拿到跟存档里
+            // 已有消息相同的 id——列表里出现重复 key，LazyColumn 会直接崩。
+            // 所以还原前先修一遍：计数器顶到已有 id 之上，已经撞上的重新编号。
+            val (saved, counter) = normalizeIds(restored)
+            idSeq = counter
+
+            agents.addAll(saved.agents)
+            tasks.addAll(saved.tasks)
+            memories.addAll(saved.memories)
+            skills.addAll(saved.skills)
+            channels.addAll(saved.channels)
+            groups.addAll(saved.groups)
+            saved.conversations.forEach { (agentId, messages) -> messagesOf(agentId).addAll(messages) }
         } else {
             Seed.populateDemo(this)
             // 首次运行立刻落盘：否则用户这次删的东西，下次启动又会被种子灌回来
@@ -118,6 +124,57 @@ class AppState(
     }
 
     fun nextId(prefix: String): String = "$prefix-${++idSeq}"
+
+    /**
+     * 修正存档里的 id。
+     *
+     * [idSeq] 只是个内存里的自增数，不落盘，所以每次冷启都从 0 开始——新消息于是会拿到
+     * 跟存档里已有消息**相同**的 id。界面上消息列表用 id 当 key，重复 key 会让
+     * LazyColumn 直接抛异常。单聊同样会中，只是群聊一次生成好几条，更早撞上。
+     *
+     * 这里做两件事：把计数器顶到已有 id 的最大值之上（以后不再撞）；
+     * 把**已经撞上的**重新编号（已经坏掉的存档也得能打开）。重编号只改身份不改内容。
+     *
+     * 返回修正后的存档和修正后的计数器。
+     */
+    private fun normalizeIds(state: PersistedState): Pair<PersistedState, Int> {
+        var counter = 0
+
+        fun bump(id: String) {
+            id.substringAfterLast('-').toIntOrNull()?.let { if (it > counter) counter = it }
+        }
+
+        val agents = state.agents.onEach { bump(it.id) }
+        val tasks = state.tasks.onEach { bump(it.id) }
+        val memories = state.memories.onEach { bump(it.id) }
+        val skills = state.skills.onEach { bump(it.id) }
+        val channels = state.channels.onEach { bump(it.id) }
+        val groups = state.groups.onEach { bump(it.id) }
+
+        val conversations = state.conversations.mapValues { (_, messages) ->
+            val seen = mutableSetOf<String>()
+            messages.map { message ->
+                if (seen.add(message.id)) {
+                    bump(message.id)
+                    message
+                } else {
+                    val fresh = "m-${++counter}"
+                    seen.add(fresh)
+                    message.copy(id = fresh)
+                }
+            }
+        }
+
+        return PersistedState(
+            agents = agents,
+            tasks = tasks,
+            memories = memories,
+            skills = skills,
+            channels = channels,
+            groups = groups,
+            conversations = conversations,
+        ) to counter
+    }
 
     // ── 会话查询 ────────────────────────────────
 

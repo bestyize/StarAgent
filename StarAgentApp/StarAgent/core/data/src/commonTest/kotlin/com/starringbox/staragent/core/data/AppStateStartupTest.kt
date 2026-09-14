@@ -167,4 +167,51 @@ class AppStateStartupTest {
         assertNull(restored.speakerAgentId, "旧消息没有发言人字段，应当补成 null 而不是解码失败")
         assertNull(restored.roundIndex)
     }
+
+    /**
+     * 消息 id 的计数器不落盘，冷启后从 0 开始——新消息会拿到跟存档里一样的 id。
+     * 界面用 id 当列表 key，重复 key 会让 LazyColumn 直接抛异常。
+     *
+     * 所以还原时要修两件事：计数器顶到已有 id 之上；已经撞上的重新编号（内容不能丢）。
+     */
+    @Test
+    fun collidingMessageIdsAreRepairedOnLoad() {
+        val store = MemoryStore()
+        store.writeText(
+            "state.json",
+            """
+            {
+              "agents": [
+                {"id":"a-1","name":"老智能体","glyph":"老","persona":"","modelId":"deepseek:0"}
+              ],
+              "tasks": [], "memories": [], "skills": [], "channels": [],
+              "conversations": {
+                "a-1": [
+                  {"id":"m-1","author":"User",
+                   "body":{"type":"com.starringbox.staragent.core.model.MessageBody.Text","text":"一"},
+                   "timeLabel":"刚刚"},
+                  {"id":"m-1","author":"Agent",
+                   "body":{"type":"com.starringbox.staragent.core.model.MessageBody.Text","text":"二"},
+                   "timeLabel":"刚刚"},
+                  {"id":"m-9","author":"User",
+                   "body":{"type":"com.starringbox.staragent.core.model.MessageBody.Text","text":"三"},
+                   "timeLabel":"刚刚"}
+                ]
+              }
+            }
+            """.trimIndent(),
+        )
+        LocalStores.install(store)
+
+        val state = AppState()
+        val messages = state.messagesOf("a-1")
+        val ids = messages.map { it.id }
+
+        assertEquals(3, messages.size, "重编号只改身份，一条消息都不能丢")
+        assertEquals(ids.size, ids.toSet().size, "id 必须唯一，否则列表 key 会重复")
+        assertEquals(listOf("一", "二", "三"), messages.map { (it.body as MessageBody.Text).text })
+
+        val fresh = state.nextId("m")
+        assertTrue(fresh !in ids, "接着发的新消息不能再撞上已有的 id，实际拿到 $fresh")
+    }
 }
