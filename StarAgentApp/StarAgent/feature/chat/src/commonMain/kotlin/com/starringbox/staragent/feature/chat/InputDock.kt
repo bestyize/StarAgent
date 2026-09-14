@@ -27,18 +27,22 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.unit.dp
+import com.starringbox.staragent.core.designsystem.component.AgentAvatar
 import com.starringbox.staragent.core.designsystem.component.CircleIconButton
 import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.component.StarImage
 import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.media.MediaAsset
+import com.starringbox.staragent.core.model.Agent
 
 /**
  * 输入坞：文字 / 语音 / 拍照三合一。
  * 语音和拍照是**输入方式的补充**，不另开独立模式——避免用户在多个入口之间迷路。
  *
  * 待发送的图片显示在文字行上方，可以逐张移除。
+ *
+ * [mentions] 只有群聊会传：打「@」时在输入框上方列出成员供点选。单聊传空列表，行为不变。
  */
 @Composable
 internal fun InputDock(
@@ -50,10 +54,12 @@ internal fun InputDock(
     onRemoveAttachment: (MediaAsset) -> Unit,
     onSend: (String) -> Unit,
     onStop: () -> Unit,
+    mentions: List<Agent> = emptyList(),
 ) {
     var text by remember { mutableStateOf("") }
     // 只有图片、没有文字也要能发
     val canSend = enabled && !busy && (text.isNotBlank() || attachments.isNotEmpty())
+    val openMention = remember(text, mentions) { openMention(text, mentions) }
 
     Column(
         Modifier
@@ -64,6 +70,16 @@ internal fun InputDock(
             PendingAttachments(
                 attachments = attachments,
                 onRemove = onRemoveAttachment,
+            )
+        }
+
+        // 打「@」时把成员列在输入框上方。点一位就把 "@名字 " 补进文本。
+        openMention?.let { mention ->
+            MentionPicker(
+                candidates = mention.candidates,
+                onPick = { agent ->
+                    text = text.substring(0, mention.start) + "@" + agent.name + " "
+                },
             )
         }
 
@@ -191,6 +207,62 @@ private fun PendingAttachments(attachments: List<MediaAsset>, onRemove: (MediaAs
                         strokeWidth = 2.6f,
                     )
                 }
+            }
+        }
+    }
+}
+
+/** 正在输入的 @ 查询：从哪个位置开始、以及匹配到的候选。 */
+private data class OpenMention(val start: Int, val candidates: List<Agent>)
+
+/**
+ * 判断当前是不是正在打一个 @。
+ *
+ * 取**最后一个**还没跟空格的 @ 当查询词，不做光标跟踪——
+ * 那需要把光标位置一路传进输入框，代价大，而实际输入里这个近似已经够准。
+ */
+private fun openMention(text: String, mentions: List<Agent>): OpenMention? {
+    if (mentions.isEmpty()) return null
+    val at = text.lastIndexOf('@')
+    if (at < 0) return null
+
+    val query = text.substring(at + 1)
+    // 已经打完一个名字、后面跟了空格，就不再弹了
+    if (query.any { it == ' ' || it == '\n' || it == '@' }) return null
+
+    val candidates = mentions.filter { it.name.contains(query, ignoreCase = true) }
+    return if (candidates.isEmpty()) null else OpenMention(at, candidates)
+}
+
+/** @ 的候选列表。**用点选代替手打**，名字重名或者被人截断时都不会认错。 */
+@Composable
+private fun MentionPicker(candidates: List<Agent>, onPick: (Agent) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(StarPalette.SurfaceAlt)
+            .padding(vertical = 4.dp),
+    ) {
+        candidates.take(6).forEach { agent ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onPick(agent) }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AgentAvatar(
+                    glyph = agent.glyph,
+                    accentIndex = agent.accentIndex,
+                    size = 24.dp,
+                    cornerRadius = 8.dp,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = agent.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = StarPalette.Text,
+                )
             }
         }
     }

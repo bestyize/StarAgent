@@ -147,9 +147,12 @@ fun GroupChatScreen(navigator: Navigator, groupId: String) {
                 ConfigureModelBanner(onClick = { navigator.push(Route.ModelConfig) })
             } else {
                 CostStrip(
-                    text = "发一条 = 依次请 ${members.size} 位成员发言" +
-                        if (group.rounds > 1) " × ${group.rounds} 轮 = ${state.callsPerMessage(group)} 次模型调用"
-                        else " = ${state.callsPerMessage(group)} 次模型调用",
+                    text = buildString {
+                        append("发一条 = 依次请 ").append(members.size).append(" 位成员发言")
+                        if (group.rounds > 1) append(" × ").append(group.rounds).append(" 轮")
+                        append(" = ").append(state.callsPerMessage(group)).append(" 次模型调用")
+                        append(" · @ 某位则只叫他说")
+                    },
                 )
             }
 
@@ -185,6 +188,7 @@ fun GroupChatScreen(navigator: Navigator, groupId: String) {
                     turn = scope.launch { state.sendToGroup(groupId, text, outgoing) }
                 },
                 onStop = { turn?.cancel() },
+                mentions = members,
             )
         }
 

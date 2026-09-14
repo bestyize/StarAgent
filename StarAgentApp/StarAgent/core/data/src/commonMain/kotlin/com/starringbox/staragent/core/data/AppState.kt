@@ -525,14 +525,18 @@ class AppState(
             return
         }
 
+        // @ 谁就只叫谁说；没 @ 就按顺序轮流。被 @ 的人还需要在提示里被点明这次是找他的。
+        val addressed = GroupTalk.mentionedIds(trimmed, members)
+        val speakers = if (addressed.isEmpty()) members else members.filter { it.id in addressed }
+
         busy[key] = true
         try {
             for (round in 1..group.rounds) {
                 // 用户点了停止：不再进入下一轮
                 currentCoroutineContext().ensureActive()
-                for (member in members) {
+                for (member in speakers) {
                     currentCoroutineContext().ensureActive()
-                    speakOnce(key, group, member, round, members)
+                    speakOnce(key, group, member, round, members, addressed = member.id in addressed)
                 }
             }
         } finally {
@@ -549,9 +553,13 @@ class AppState(
         member: Agent,
         round: Int,
         roster: List<Agent>,
+        addressed: Boolean = false,
     ) {
         val conversation = messagesOf(key)
-        val endpoint = endpointFor(member, GroupTalk.promptFor(group, member, round, roster, responseMode))
+        val endpoint = endpointFor(
+            member,
+            GroupTalk.promptFor(group, member, round, roster, responseMode, addressed = addressed),
+        )
         if (endpoint == null) {
             // 个别成员没配模型：记一条说明，讨论继续，不因此中断整场
             conversation.add(

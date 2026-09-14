@@ -249,4 +249,30 @@ class GroupTalkFlowTest {
             "被中断的那位要留下一条说明",
         )
     }
+
+    @Test
+    fun mentioningOneMemberOnlyCallsThatOne() = runTest {
+        val order = mutableListOf<String>()
+        val state = readyState { endpoint, _ ->
+            order += speakerOf(endpoint.systemPrompt)
+            "我说两句。"
+        }
+
+        state.sendToGroup("g-1", "@英语老师 你怎么看")
+
+        assertEquals(listOf("英语老师"), order, "@ 了谁就只叫谁，其余这轮不发言")
+    }
+
+    @Test
+    fun unrecognisedMentionFallsBackToEveryone() = runTest {
+        val order = mutableListOf<String>()
+        val state = readyState { endpoint, _ ->
+            order += speakerOf(endpoint.systemPrompt)
+            "我说两句。"
+        }
+
+        state.sendToGroup("g-1", "@一个不在群里的人 你们说说")
+
+        assertEquals(3, order.size, "@ 不到具体某个人时按普通消息处理，照常轮流")
+    }
 }

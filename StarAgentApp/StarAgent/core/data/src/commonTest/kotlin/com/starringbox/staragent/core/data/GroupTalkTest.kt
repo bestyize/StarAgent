@@ -147,4 +147,47 @@ class GroupTalkTest {
         val turns = GroupTalk.historyFor(many, self = work, roster = roster)
         assertTrue(turns.size <= 24, "上下文条数要有上限，实际 ${turns.size}")
     }
+
+    // ── @ 某位成员 ────────────────────────────────
+
+    @Test
+    fun mentionFindsTheNamedMember() {
+        assertEquals(listOf("a-work"), GroupTalk.mentionedIds("@工作助手 你怎么看", roster))
+    }
+
+    @Test
+    fun plainMessageMentionsNobody() {
+        assertTrue(GroupTalk.mentionedIds("你们俩怎么看这件事", roster).isEmpty())
+    }
+
+    @Test
+    fun mentionsComeBackInGroupOrderNotTextOrder() {
+        // 文本里先提了工作助手，但群里的顺序是小星在前——发言顺序要按群里的来
+        val ids = GroupTalk.mentionedIds("@工作助手 和 @小星 都说说", roster)
+        assertEquals(listOf("a-xing", "a-work"), ids)
+    }
+
+    @Test
+    fun longerNameWinsSoShorterOneDoesNotEatIt() {
+        val short = Agent(id = "a-x", name = "小星", glyph = "星", persona = "", modelId = "deepseek:0")
+        val long = Agent(id = "a-xx", name = "小星星", glyph = "星", persona = "", modelId = "deepseek:0")
+
+        val ids = GroupTalk.mentionedIds("@小星星 你来", listOf(short, long))
+
+        assertEquals(listOf("a-xx"), ids, "@「小星星」不该被认成 @「小星」")
+    }
+
+    @Test
+    fun mentioningSomeoneOutsideTheGroupIsJustText() {
+        assertTrue(GroupTalk.mentionedIds("@所有人 来看", roster).isEmpty())
+    }
+
+    @Test
+    fun addressedPromptTellsTheMemberToAnswerDirectly() {
+        val plain = GroupTalk.promptFor(group, work, 1, roster, ResponseMode.Standard)
+        val called = GroupTalk.promptFor(group, work, 1, roster, ResponseMode.Standard, addressed = true)
+
+        assertFalse(plain.contains("点名找的就是你"))
+        assertTrue(called.contains("点名找的就是你"))
+    }
 }

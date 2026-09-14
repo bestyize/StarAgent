@@ -32,6 +32,36 @@ internal object GroupTalk {
         TalkPlan(memberCount = group.memberIds.size, rounds = group.rounds)
 
     /**
+     * 从用户这条消息里找出被 @ 到的成员，按群里的顺序返回。
+     *
+     * 按名字长度从长到短匹配：不然「小星」会把「小星星」吃掉一半。
+     * 一个都没匹配上就返回空——那就是普通消息，照常轮流。
+     */
+    fun mentionedIds(text: String, roster: List<Agent>): List<String> {
+        if (!text.contains('@')) return emptyList()
+
+        val byLength = roster.sortedByDescending { it.name.length }
+        val hit = mutableSetOf<String>()
+        var index = 0
+        while (index < text.length) {
+            if (text[index] != '@') {
+                index++
+                continue
+            }
+            val member = byLength.firstOrNull { text.startsWith(it.name, index + 1) }
+            if (member == null) {
+                // 认不出来的 @（比如 @所有人、@一个不存在的名字）当普通文本
+                index++
+                continue
+            }
+            hit += member.id
+            index += 1 + member.name.length
+        }
+        // 按群里的顺序返回，发言顺序才是稳定的
+        return roster.filter { it.id in hit }.map { it.id }
+    }
+
+    /**
      * 群聊历史。
      *
      * 关键约定：**自己说的当 Assistant，别人说的当 User 并带上「【名字】」前缀**。
@@ -102,6 +132,7 @@ internal object GroupTalk {
         round: Int,
         roster: List<Agent>,
         mode: ResponseMode,
+        addressed: Boolean = false,
     ): String = buildString {
         append("你是「").append(self.name).append("」。")
         if (self.persona.isNotBlank()) {
@@ -119,6 +150,9 @@ internal object GroupTalk {
         append("\n现在是第 ").append(round).append(" / ").append(group.rounds).append(" 轮，轮到你发言。")
 
         append("\n\n【怎么发言】")
+        if (addressed) {
+            append("\n- 用户这条消息点名找的就是你，直接回答他的问题，不要只说「我补充一点」。")
+        }
         append("\n- 只代表你自己。不要替其他成员说话，也不要复述或总结他们刚说过的话。")
         append("\n- 别人已经讲过的点不要重复；有分歧就直接指出来，有补充就讲你这个角度看到的东西。")
         append("\n- 最多 3 句，说完就停，把话头留给下一位。")
