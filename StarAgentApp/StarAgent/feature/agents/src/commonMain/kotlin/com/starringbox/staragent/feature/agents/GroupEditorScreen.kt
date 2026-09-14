@@ -116,9 +116,14 @@ fun GroupEditorScreen(navigator: Navigator, groupId: String?) {
             if (state.agents.isEmpty()) {
                 EmptyHint("先去首页创建几个智能体，才能组群。")
             } else {
-                // 至少两位才谈得上"互相讨论"
+                // 选无可选时要说清楚原因：只有两位智能体、而且都已经在群里的话，
+                // 光看这份名单会以为"拉不进人"，其实是要先去建新的。
                 Text(
-                    text = "至少选 2 位。发言按下面的顺序依次进行。",
+                    text = if (state.agents.all { it.id in memberIds }) {
+                        "其他智能体都已经在群里了。想加新的，先去首页创建一个。"
+                    } else {
+                        "至少选 2 位。发言按下面的顺序依次进行。"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = StarPalette.TextMuted,
                     modifier = Modifier.padding(bottom = 8.dp),
