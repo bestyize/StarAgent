@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +57,8 @@ import com.starringbox.staragent.feature.settings.ProviderDetailScreen
 import com.starringbox.staragent.feature.settings.SkillsScreen
 import com.starringbox.staragent.feature.tasks.TaskCenterScreen
 import com.starringbox.staragent.feature.tasks.TaskDetailScreen
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 
 /**
  * 应用外壳：注入主题与状态，承载导航宿主与底部导航。
@@ -71,6 +74,21 @@ fun App() {
             // 系统返回键接进导航栈：还有上一页就返回，到底了才交回系统（退出）。
             // 不接这一步的话，在二级页按返回会直接退出 App。
             PlatformBackHandler(enabled = navigator.canGoBack) { navigator.pop() }
+
+            // 定时任务的心跳。只在 App 开着时跑——关着期间刚好错过的那次，
+            // 下次打开时会被补上（runDueTasks 会把过期的排期一次跑掉）。
+            LaunchedEffect(state) {
+                while (true) {
+                    try {
+                        state.runDueTasks()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // 一次执行出错不该让心跳停掉：停了就再也不会跑任何任务，而且没有任何提示
+                    }
+                    delay(TASK_HEARTBEAT_MILLIS)
+                }
+            }
 
             Box(
                 modifier = Modifier
@@ -91,6 +109,9 @@ fun App() {
         }
     }
 }
+
+/** 任务的检查间隔。任务时间精度是分钟，半分钟看一眼足够，也不会白烧 CPU。 */
+private const val TASK_HEARTBEAT_MILLIS = 30_000L
 
 /**
  * 页面转场用 tween 而不是 spring：整屏位移下弹簧的过冲会让页面"弹"一下，时长也不可预期。

@@ -46,7 +46,6 @@ import com.starringbox.staragent.core.model.Recurrence
 import com.starringbox.staragent.core.model.TaskPriority
 import com.starringbox.staragent.core.model.TaskStatus
 import com.starringbox.staragent.core.model.defaultScheduleFor
-import com.starringbox.staragent.core.model.nextRunLabelFor
 
 private val CategoryOptions = listOf("工作", "成长", "健康", "生活", "系统")
 private val RemindOptions = listOf("不提醒", "提前 5 分钟", "提前 10 分钟", "提前 30 分钟", "提前 1 小时")
@@ -160,7 +159,7 @@ fun TaskDetailScreen(navigator: Navigator, taskId: String?) {
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
                     // 有上次才显示上次——新建的任务没有历史
                     existing?.lastRunLabel?.let { InfoRow(StarIconGlyph.Check, "上次", it) }
-                    InfoRow(StarIconGlyph.Repeat, "下次", nextRunLabelFor(recurrence, schedule))
+                    InfoRow(StarIconGlyph.Repeat, "下次", state.nextRunPreview(recurrence, schedule))
                 }
             }
 

@@ -30,15 +30,21 @@ import com.starringbox.staragent.core.model.ResponseMode
 import com.starringbox.staragent.core.model.Skill
 import com.starringbox.staragent.core.model.TaskDraft
 import com.starringbox.staragent.core.model.TaskStatus
+import com.starringbox.staragent.core.model.describeMoment
+import com.starringbox.staragent.core.model.describeNextRun
+import com.starringbox.staragent.core.model.nextRunAtFor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.datetime.TimeZone
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.jsonArray
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * 应用的单一状态源。
@@ -525,10 +531,9 @@ class AppState(
 
     /** 用户点「创建」才真正落一条任务——草稿只是建议。 */
     fun confirmDraft(agentId: String, draft: TaskDraft) {
-        val task = draft.toTask(
-            id = nextId("task"),
-            agentId = agentId,
-            nextRunLabel = nextRunLabelFor(draft.recurrence, draft.scheduleLabel),
+        // 排期统一走 scheduled：它同时算出"给人看的文案"和"调度用的时刻"
+        val task = scheduled(
+            draft.toTask(id = nextId("task"), agentId = agentId, nextRunLabel = "")
         )
         tasks.add(0, task)
         messagesOf(agentId).add(
@@ -720,15 +725,185 @@ class AppState(
     /**
      * 任务详情页保存用。新建和更新走同一条路：列表里没有这条就插到最前面。
      *
-     * **"下次执行"在这里统一重算**——用户一改类型或时间，存档里那个旧时刻就是错的，
-     * 卡片上会一直显示一个对不上的时间。
+     * **下一次执行的时刻和文案在这里统一重算**——用户一改类型或时间，原来那个就是错的。
      */
     fun saveTask(task: AgentTask) {
-        val normalized = task.copy(
-            nextRunLabel = nextRunLabelFor(task.recurrence, task.scheduleLabel),
-        )
+        val scheduled = scheduled(task)
         val index = tasks.indexOfFirst { it.id == task.id }
-        if (index >= 0) tasks[index] = normalized else tasks.add(0, normalized)
+        if (index >= 0) tasks[index] = scheduled else tasks.add(0, scheduled)
+        persistState()
+    }
+
+    /** 编辑页的实时预览：按当前时间算出"下次什么时候跑"。 */
+    fun nextRunPreview(recurrence: Recurrence, scheduleLabel: String): String {
+        val current = now()
+        return describeNextRun(
+            nextRunAtFor(recurrence, scheduleLabel, current, zone()),
+            recurrence, current, zone(),
+        )
+    }
+
+    private fun now(): Instant = Clock.System.now()
+
+    private fun zone(): TimeZone = TimeZone.currentSystemDefault()
+
+    /**
+     * 给任务排好下一次：调度用的**时刻**（[AgentTask.nextRunAt]）和给人看的**文案**一起算。
+     *
+     * 两者必须同时更新。只改文案的话，界面上字变了、真正用来判断该不该跑的时刻还是旧的。
+     */
+    private fun scheduled(task: AgentTask): AgentTask {
+        val current = now()
+        val at = nextRunAtFor(task.recurrence, task.scheduleLabel, current, zone())
+        return task.copy(
+            nextRunAt = at?.toEpochMilliseconds(),
+            nextRunLabel = describeNextRun(at, task.recurrence, current, zone()),
+        )
+    }
+
+    // ── 定时执行 ────────────────────────────────
+
+    /**
+     * 跑掉到点的任务。界面层每半分钟调一次。
+     *
+     * **没有平台后台调度**：App 关着的时候不会跑。关着期间刚好错过的那次，会在下次打开时补跑
+     * ——补的是"一次"，不会把错过的每一天都补一遍。
+     */
+    suspend fun runDueTasks() {
+        scheduleUnplanned()
+
+        val boundary = now().toEpochMilliseconds()
+        // 取快照再跑：跑的过程中任务会被改（改状态、排下一期）
+        val due = tasks.filter {
+            it.status == TaskStatus.Active && (it.nextRunAt ?: Long.MAX_VALUE) <= boundary
+        }
+        // 串行跑：每个任务都是一次模型调用，并发发出去既没必要也更容易撞上同一个会话
+        due.forEach { runTask(it) }
+    }
+
+    /**
+     * 给还没排期的任务补上排期。旧存档里的、以及从对话里建出来的任务都没有 [AgentTask.nextRunAt]。
+     *
+     * 只排到"将来的下一次"，不因为它是很久以前建的就把错过的那几次全补一遍——
+     * 第一次打开新版本时刷出一串执行，比不执行更吓人。
+     */
+    private fun scheduleUnplanned() {
+        tasks.indices.forEach { index ->
+            val task = tasks[index]
+            val needsSchedule = task.status == TaskStatus.Active &&
+                task.nextRunAt == null &&
+                task.recurrence != Recurrence.Conditional
+            if (needsSchedule) tasks[index] = scheduled(task)
+        }
+    }
+
+    /** 跑一次任务：让它的智能体真的做一遍，结果落回那条对话。 */
+    private suspend fun runTask(task: AgentTask) {
+        val agent = agent(task.agentId) ?: return
+
+        // 这个智能体正在跟用户对话时不插队——两路流会往同一条对话里写
+        if (isBusy(task.agentId)) return
+
+        val endpoint = endpointFor(agent)
+        if (endpoint == null) {
+            // 没配模型也得把期排下去，否则它会一直停在"到点"，每半分钟重试一次
+            reschedule(task, lastRun = "没跑：没有可用的模型")
+            return
+        }
+
+        val conversation = messagesOf(task.agentId)
+        conversation.add(
+            ChatMessage(
+                id = nextId("m"),
+                author = Author.Agent,
+                body = MessageBody.Notice("定时任务「${task.title}」到点了", isError = false),
+                timeLabel = "刚刚",
+            )
+        )
+
+        val placeholder = ChatMessage(nextId("m"), Author.Agent, MessageBody.Text(""), "刚刚")
+        conversation.add(placeholder)
+        val index = conversation.lastIndex
+
+        // 历史里不含刚加的这两条：Notice 和空文本都会被 historyFor 过滤掉
+        val history = historyFor(task.agentId) + LlmTurn(LlmRole.User, taskInstruction(task))
+
+        busy[task.agentId] = true
+        val buffer = StringBuilder()
+        var failure: String? = null
+        try {
+            stream(endpoint, history).collect { event ->
+                when (event) {
+                    is ChatStreamEvent.Delta -> {
+                        buffer.append(event.text)
+                        conversation[index] = placeholder.copy(body = MessageBody.Text(buffer.toString()))
+                    }
+
+                    is ChatStreamEvent.Failed -> failure = event.message
+                    ChatStreamEvent.Completed -> Unit
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            if (buffer.isEmpty()) conversation[index] = placeholder.copy(body = MessageBody.Notice("已停止"))
+            throw cancelled
+        } finally {
+            busy[task.agentId] = false
+        }
+
+        val raw = buffer.toString()
+        val failureMessage = failure
+        val ran = failureMessage == null && raw.isNotBlank()
+
+        conversation[index] = when {
+            failureMessage != null ->
+                placeholder.copy(body = MessageBody.Notice(failureMessage, isError = true))
+
+            raw.isBlank() ->
+                placeholder.copy(body = MessageBody.Notice("模型没有返回内容", isError = true))
+
+            // 任务跑的这一次不该再长出任务草稿卡片——它自己就是一个任务
+            else -> when (val outcome = resolveReply(raw, allowTasks = false)) {
+                is ReplyOutcome.Plain -> placeholder.copy(body = MessageBody.Text(outcome.text))
+                is ReplyOutcome.AsTask -> placeholder.copy(body = MessageBody.Text(outcome.text))
+            }
+        }
+
+        val finished = now()
+        val stamp = "${describeMoment(finished, finished, zone())} ${if (ran) "已完成" else "执行失败"}"
+        reschedule(task, lastRun = stamp)
+    }
+
+    /** 交给模型的任务指令。带上备注——它本来就是"要提醒自己注意什么"。 */
+    private fun taskInstruction(task: AgentTask): String = buildString {
+        append("【定时任务】").append(task.title)
+        append("\n时间：").append(task.scheduleLabel)
+        task.note?.takeIf { it.isNotBlank() }?.let { append("\n备注：").append(it) }
+        append("\n\n现在到点了，请把这件事实实在在做一遍，直接给出结果。")
+    }
+
+    /**
+     * 收尾：记下"上次"，并把期排到下一次。
+     *
+     * 一次性任务跑成功就到此为止（状态置为完成，不再排期）；失败或没跑成的仍然留着，
+     * 否则用户再也看不到它出过问题。
+     */
+    private fun reschedule(task: AgentTask, lastRun: String) {
+        val index = tasks.indexOfFirst { it.id == task.id }
+        if (index < 0) return
+        val current = tasks[index]
+
+        val updated = if (current.recurrence == Recurrence.Once && lastRun.endsWith("已完成")) {
+            current.copy(
+                status = TaskStatus.Done,
+                lastRunLabel = lastRun,
+                nextRunAt = null,
+                nextRunLabel = "已完成",
+            )
+        } else {
+            scheduled(current.copy(lastRunLabel = lastRun))
+        }
+
+        tasks[index] = updated
         persistState()
     }
 
@@ -832,13 +1007,6 @@ class AppState(
             append(TaskBlock.INSTRUCTION)
         }
     }
-
-    /**
-     * "下次执行"的文案。真正的算法在模型层的 [nextRunLabelFor]——
-     * 放在那边是为了让任务编辑页也能实时预览，而不用先保存再回列表里对。
-     */
-    private fun nextRunLabelFor(recurrence: Recurrence, scheduleLabel: String): String =
-        com.starringbox.staragent.core.model.nextRunLabelFor(recurrence, scheduleLabel)
 
     // ── 持久化 ──────────────────────────────────
 

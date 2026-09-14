@@ -31,6 +31,8 @@ kotlin {
         commonMain.dependencies {
             // api：上层（core:llm、core:data、各 feature）能直接用 MediaAsset，不必各自再声明一次
             api(project(":core:media"))
+            // api：任务的下一次执行时刻要在数据层和界面层都用
+            api(libs.kotlinx.datetime)
             implementation(libs.kotlinx.serialization.json)
         }
     }
