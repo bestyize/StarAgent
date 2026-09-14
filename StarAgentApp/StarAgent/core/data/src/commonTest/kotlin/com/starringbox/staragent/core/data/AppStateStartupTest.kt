@@ -2,7 +2,6 @@ package com.starringbox.staragent.core.data
 
 import com.starringbox.staragent.core.model.AgentGroup
 import com.starringbox.staragent.core.model.MessageBody
-import com.starringbox.staragent.core.storage.LocalStore
 import com.starringbox.staragent.core.storage.LocalStores
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -21,28 +20,6 @@ import kotlin.test.assertTrue
  * 所以每个用例都构造两次 AppState：第一次落盘，第二次走还原路径。
  */
 class AppStateStartupTest {
-
-    private class MemoryStore : LocalStore {
-        private val texts = mutableMapOf<String, String>()
-        private val blobs = mutableMapOf<String, ByteArray>()
-
-        override fun readText(name: String): String? = texts[name]
-
-        override fun writeText(name: String, text: String) {
-            texts[name] = text
-        }
-
-        override fun readBytes(name: String): ByteArray? = blobs[name]
-
-        override fun writeBytes(name: String, bytes: ByteArray) {
-            blobs[name] = bytes
-        }
-
-        override fun delete(name: String) {
-            texts.remove(name)
-            blobs.remove(name)
-        }
-    }
 
     /** LocalStores 是全局单例，跑完换回一个干净的，免得影响同模块的其它测试。 */
     @AfterTest

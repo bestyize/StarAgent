@@ -104,10 +104,8 @@ fun TaskCenterScreen(navigator: Navigator) {
                     }
                     CircleIconButton(
                         glyph = StarIconGlyph.Plus,
-                        onClick = {
-                            // 新建之后直接进编辑页——只往列表里塞一条任务，用户看不到任何反馈
-                            state.addQuickTask()?.let { navigator.push(Route.TaskDetail(it)) }
-                        },
+                        // 进新建页而不是先塞一条——先建后改的话，用户中途返回会留下垃圾任务
+                        onClick = { navigator.push(Route.TaskDetail(null)) },
                         tint = Color.White,
                         containerColor = StarPalette.Indigo,
                         size = 38.dp,

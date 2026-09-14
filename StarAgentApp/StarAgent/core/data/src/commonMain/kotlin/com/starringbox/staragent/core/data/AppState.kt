@@ -528,7 +528,7 @@ class AppState(
         val task = draft.toTask(
             id = nextId("task"),
             agentId = agentId,
-            nextRunLabel = nextRunFor(draft),
+            nextRunLabel = nextRunLabelFor(draft.recurrence, draft.scheduleLabel),
         )
         tasks.add(0, task)
         messagesOf(agentId).add(
@@ -717,10 +717,18 @@ class AppState(
 
     fun task(id: String): AgentTask? = tasks.firstOrNull { it.id == id }
 
-    /** 任务详情页保存用。 */
-    fun updateTask(task: AgentTask) {
+    /**
+     * 任务详情页保存用。新建和更新走同一条路：列表里没有这条就插到最前面。
+     *
+     * **"下次执行"在这里统一重算**——用户一改类型或时间，存档里那个旧时刻就是错的，
+     * 卡片上会一直显示一个对不上的时间。
+     */
+    fun saveTask(task: AgentTask) {
+        val normalized = task.copy(
+            nextRunLabel = nextRunLabelFor(task.recurrence, task.scheduleLabel),
+        )
         val index = tasks.indexOfFirst { it.id == task.id }
-        if (index >= 0) tasks[index] = task
+        if (index >= 0) tasks[index] = normalized else tasks.add(0, normalized)
         persistState()
     }
 
@@ -734,13 +742,19 @@ class AppState(
      * 新建一个空白任务，返回它的 id 供界面跳到编辑页。
      * 没有智能体可挂时返回 null。
      */
-    fun addQuickTask(): String? {
-        val agentId = agents.firstOrNull()?.id ?: return null
-        val task = AgentTask(nextId("task"), agentId, "新的托管任务", Recurrence.Once, "今天 10:00", "今天 10:00")
-        tasks.add(0, task)
-        persistState()
-        return task.id
-    }
+    /**
+     * 新建一个空任务。**只建在内存里、不落盘**——用户可能只是想看看编辑页，
+     * 直接写进列表的话，返回时就会留下一条叫"新的托管任务"的垃圾。
+     * 落盘交给 [saveTask]。
+     */
+    fun newTask(agentId: String): AgentTask = AgentTask(
+        id = nextId("task"),
+        agentId = agentId,
+        title = "",
+        recurrence = Recurrence.Once,
+        scheduleLabel = "",
+        nextRunLabel = "",
+    )
 
     fun addMemory(agentId: String, category: MemoryCategory, text: String) {
         val trimmed = text.trim()
@@ -819,21 +833,12 @@ class AppState(
         }
     }
 
-    private fun nextRunFor(draft: TaskDraft): String {
-        val time = Regex("""(\d{1,2}:\d{2})""")
-            .find(draft.scheduleLabel)
-            ?.groupValues
-            ?.get(1)
-            ?.let { if (it.length == 4) "0$it" else it }
-            ?: "09:00"
-        return when (draft.recurrence) {
-            Recurrence.Once -> "待触发"
-            Recurrence.Daily -> "明天 $time"
-            Recurrence.Weekly -> "下周一 $time"
-            Recurrence.Monthly -> "下月 1 日 $time"
-            Recurrence.Conditional -> "满足条件时触发"
-        }
-    }
+    /**
+     * "下次执行"的文案。真正的算法在模型层的 [nextRunLabelFor]——
+     * 放在那边是为了让任务编辑页也能实时预览，而不用先保存再回列表里对。
+     */
+    private fun nextRunLabelFor(recurrence: Recurrence, scheduleLabel: String): String =
+        com.starringbox.staragent.core.model.nextRunLabelFor(recurrence, scheduleLabel)
 
     // ── 持久化 ──────────────────────────────────
 

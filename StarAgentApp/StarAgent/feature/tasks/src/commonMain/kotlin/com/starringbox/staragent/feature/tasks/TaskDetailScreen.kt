@@ -3,7 +3,6 @@ package com.starringbox.staragent.feature.tasks
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,44 +32,55 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.starringbox.staragent.core.data.LocalAppState
+import com.starringbox.staragent.core.designsystem.component.EmptyHint
 import com.starringbox.staragent.core.designsystem.component.IconTile
 import com.starringbox.staragent.core.designsystem.component.SectionLabel
 import com.starringbox.staragent.core.designsystem.component.StarCard
-import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.component.StarTextField
 import com.starringbox.staragent.core.designsystem.component.StarTopBar
+import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.navigation.Navigator
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
+import com.starringbox.staragent.core.model.Recurrence
 import com.starringbox.staragent.core.model.TaskPriority
 import com.starringbox.staragent.core.model.TaskStatus
+import com.starringbox.staragent.core.model.defaultScheduleFor
+import com.starringbox.staragent.core.model.nextRunLabelFor
 
 private val CategoryOptions = listOf("工作", "成长", "健康", "生活", "系统")
 private val RemindOptions = listOf("不提醒", "提前 5 分钟", "提前 10 分钟", "提前 30 分钟", "提前 1 小时")
 
 /**
- * 任务详情，对应设计稿右侧那张"任务详情示例"。
+ * 任务详情 / 新建任务。[taskId] 为 null 表示新建。
  *
- * 从对话里建出来的任务只有标题和时间，分类、优先级、提醒、备注都是空的——
- * 这一页就是让用户把这些补齐，所以整体做成可直接编辑，而不是只读再点"编辑"。
+ * 新建**不预先往列表里塞一条再让人改**——那样用户中途退回，列表里就留下一条叫
+ * "新的托管任务"的垃圾。这里先在本地把参数填好，点保存才落盘。
+ *
+ * 类型和时间都可改，且"下次执行"就地实时重算：改完立刻知道它什么时候会跑，
+ * 不用保存后回列表里对。
  */
 @Composable
-fun TaskDetailScreen(navigator: Navigator, taskId: String) {
+fun TaskDetailScreen(navigator: Navigator, taskId: String?) {
     val state = LocalAppState.current
-    val task = state.task(taskId)
-    if (task == null) {
-        StarTopBar(title = "任务", onBack = { navigator.pop() })
-        return
+    val existing = taskId?.let { state.task(it) }
+    val isNew = existing == null
+
+    var title by remember(taskId) { mutableStateOf(existing?.title.orEmpty()) }
+    var recurrence by remember(taskId) { mutableStateOf(existing?.recurrence ?: Recurrence.Daily) }
+    var schedule by remember(taskId) {
+        mutableStateOf(existing?.scheduleLabel ?: defaultScheduleFor(Recurrence.Daily))
     }
+    var agentId by remember(taskId) {
+        mutableStateOf(existing?.agentId ?: state.agents.firstOrNull()?.id.orEmpty())
+    }
+    var note by remember(taskId) { mutableStateOf(existing?.note.orEmpty()) }
+    var priority by remember(taskId) { mutableStateOf(existing?.priority) }
+    var category by remember(taskId) { mutableStateOf(existing?.categoryLabel) }
+    var remind by remember(taskId) { mutableStateOf(existing?.remindLabel) }
+    var active by remember(taskId) { mutableStateOf(existing?.status != TaskStatus.Paused) }
 
-    var title by remember(taskId) { mutableStateOf(task.title) }
-    var note by remember(taskId) { mutableStateOf(task.note.orEmpty()) }
-    var priority by remember(taskId) { mutableStateOf(task.priority) }
-    var category by remember(taskId) { mutableStateOf(task.categoryLabel) }
-    var remind by remember(taskId) { mutableStateOf(task.remindLabel) }
-    var active by remember(taskId) { mutableStateOf(task.status == TaskStatus.Active) }
-
-    val agentName = state.agent(task.agentId)?.name
+    val canSave = title.isNotBlank() && agentId.isNotBlank()
 
     Column(
         Modifier
@@ -79,8 +88,8 @@ fun TaskDetailScreen(navigator: Navigator, taskId: String) {
             .verticalScroll(rememberScrollState()),
     ) {
         StarTopBar(
-            title = "任务详情",
-            subtitle = agentName,
+            title = if (isNew) "新建任务" else "任务详情",
+            subtitle = state.agent(agentId)?.name,
             onBack = { navigator.pop() },
         )
 
@@ -106,35 +115,65 @@ fun TaskDetailScreen(navigator: Navigator, taskId: String) {
                         StarTextField(
                             value = title,
                             onValueChange = { title = it },
-                            placeholder = "任务名称",
+                            placeholder = "要托管什么事",
                             containerColor = StarPalette.SurfaceAlt,
                         )
                     }
-                    Spacer(Modifier.width(12.dp))
-                    Switch(
-                        checked = active,
-                        onCheckedChange = { active = it },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = StarPalette.Indigo,
-                            checkedBorderColor = StarPalette.Indigo,
-                        ),
-                    )
+                    // 新建的任务没有"启用/暂停"可言，保存时默认就是启用
+                    if (!isNew) {
+                        Spacer(Modifier.width(12.dp))
+                        Switch(
+                            checked = active,
+                            onCheckedChange = { active = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = StarPalette.Indigo,
+                                checkedBorderColor = StarPalette.Indigo,
+                            ),
+                        )
+                    }
                 }
             }
 
+            Spacer(Modifier.height(20.dp))
+            SectionLabel("类型")
+            ChipRow(Recurrence.entries.map { it.label }, recurrence.label) { label ->
+                val picked = Recurrence.entries.first { it.label == label }
+                // 时间描述还没被手动改过，就跟着类型换成对应的示例——
+                // 否则切到"每周"还留着"今天 10:00"，用户得自己拼格式
+                if (schedule.isBlank() || schedule == defaultScheduleFor(recurrence)) {
+                    schedule = defaultScheduleFor(picked)
+                }
+                recurrence = picked
+            }
+
+            Spacer(Modifier.height(20.dp))
+            SectionLabel(if (recurrence == Recurrence.Conditional) "触发条件" else "时间")
+            StarTextField(
+                value = schedule,
+                onValueChange = { schedule = it },
+                placeholder = defaultScheduleFor(recurrence),
+            )
+
             Spacer(Modifier.height(16.dp))
             StarCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    InfoRow(StarIconGlyph.Task, "时间", task.scheduleLabel)
-                    InfoRow(StarIconGlyph.Book, "类型", task.recurrence.label)
-                    // 先落到局部变量：跨模块的属性没法智能转换
-                    val lastRun = task.lastRunLabel
-                    if (lastRun != null) {
-                        InfoRow(StarIconGlyph.Check, "上次", lastRun)
-                    }
-                    InfoRow(StarIconGlyph.Repeat, "下次", task.nextRunLabel)
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                    // 有上次才显示上次——新建的任务没有历史
+                    existing?.lastRunLabel?.let { InfoRow(StarIconGlyph.Check, "上次", it) }
+                    InfoRow(StarIconGlyph.Repeat, "下次", nextRunLabelFor(recurrence, schedule))
                 }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            SectionLabel("由谁执行")
+            if (state.agents.isEmpty()) {
+                EmptyHint("还没有智能体，先去首页创建一个")
+            } else {
+                AgentChipRow(
+                    names = state.agents.map { it.id to it.name },
+                    selectedId = agentId,
+                    onSelect = { agentId = it },
+                )
             }
 
             Spacer(Modifier.height(20.dp))
@@ -189,11 +228,14 @@ fun TaskDetailScreen(navigator: Navigator, taskId: String) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(StarPalette.Indigo)
-                    .clickable {
-                        state.updateTask(
-                            task.copy(
-                                title = title.trim().ifBlank { task.title },
+                    .background(if (canSave) StarPalette.Indigo else StarPalette.SurfaceAlt)
+                    .clickable(enabled = canSave) {
+                        state.saveTask(
+                            (existing ?: state.newTask(agentId)).copy(
+                                title = title.trim(),
+                                recurrence = recurrence,
+                                scheduleLabel = schedule.trim().ifBlank { defaultScheduleFor(recurrence) },
+                                agentId = agentId,
                                 note = note.trim().ifBlank { null },
                                 priority = priority,
                                 categoryLabel = category,
@@ -206,27 +248,33 @@ fun TaskDetailScreen(navigator: Navigator, taskId: String) {
                     .padding(vertical = 14.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("保存", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                Text(
+                    text = if (isNew) "创建" else "保存",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (canSave) Color.White else StarPalette.TextFaint,
+                )
             }
 
-            Spacer(Modifier.height(10.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(StarPalette.Surface)
-                    .clickable {
-                        state.removeTask(task.id)
-                        navigator.pop()
-                    }
-                    .padding(vertical = 14.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = "删除任务",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = StarPalette.Danger,
-                )
+            if (!isNew) {
+                Spacer(Modifier.height(10.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(StarPalette.Surface)
+                        .clickable {
+                            state.removeTask(existing.id)
+                            navigator.pop()
+                        }
+                        .padding(vertical = 14.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "删除任务",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = StarPalette.Danger,
+                    )
+                }
             }
 
             Spacer(Modifier.height(28.dp))
@@ -239,7 +287,7 @@ private fun InfoRow(glyph: StarIconGlyph, label: String, value: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 7.dp),
+            .padding(vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         StarIcon(icon = glyph, iconSize = 15.dp, tint = StarPalette.TextFaint, strokeWidth = 2f)
@@ -256,6 +304,34 @@ private fun InfoRow(glyph: StarIconGlyph, label: String, value: String) {
             fontWeight = FontWeight.Medium,
             color = StarPalette.Text,
         )
+    }
+}
+
+/** 智能体选择。用 id 而不是名字做判定——两个智能体重名也不会选错。 */
+@Composable
+private fun AgentChipRow(names: List<Pair<String, String>>, selectedId: String, onSelect: (String) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        names.forEach { (id, name) ->
+            val isSelected = id == selectedId
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(if (isSelected) StarPalette.Indigo else StarPalette.SurfaceAlt)
+                    .clickable { onSelect(id) }
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+            ) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (isSelected) Color.White else StarPalette.TextMuted,
+                )
+            }
+        }
     }
 }
 

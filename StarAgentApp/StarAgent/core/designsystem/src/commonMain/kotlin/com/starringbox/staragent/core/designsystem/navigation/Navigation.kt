@@ -25,8 +25,8 @@ sealed interface Route {
     /** 任务中心。 */
     data object Tasks : Route
 
-    /** 某个任务的详情与编辑。 */
-    data class TaskDetail(val taskId: String) : Route
+    /** 某个任务的详情与编辑；传 null 表示新建。 */
+    data class TaskDetail(val taskId: String?) : Route
 
     /** 我的（设置）。 */
     data object Me : Route

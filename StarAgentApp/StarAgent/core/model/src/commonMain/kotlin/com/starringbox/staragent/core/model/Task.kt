@@ -33,6 +33,40 @@ enum class TaskPriority(val label: String) {
 }
 
 /**
+ * 按重复方式和时间描述算出"下次执行"的文案。
+ *
+ * 时间是从描述里取的——任务的时间本来就只是一个自由文本
+ * （"每天 09:00"、"当连接 Wi-Fi 时"），取不到具体时刻就退回 09:00。
+ *
+ * 放在模型层是为了让编辑页能实时预览：改了类型或时间立刻看到下次什么时候跑，
+ * 而不用先保存再回列表里对。
+ */
+fun nextRunLabelFor(recurrence: Recurrence, scheduleLabel: String): String {
+    val time = Regex("""(\d{1,2}:\d{2})""")
+        .find(scheduleLabel)
+        ?.groupValues
+        ?.get(1)
+        ?.let { if (it.length == 4) "0$it" else it }
+        ?: "09:00"
+    return when (recurrence) {
+        Recurrence.Once -> "待触发"
+        Recurrence.Daily -> "明天 $time"
+        Recurrence.Weekly -> "下周一 $time"
+        Recurrence.Monthly -> "下月 1 日 $time"
+        Recurrence.Conditional -> "满足条件时触发"
+    }
+}
+
+/** 每种类型新建时的默认时间描述，也是输入框的占位文案。 */
+fun defaultScheduleFor(recurrence: Recurrence): String = when (recurrence) {
+    Recurrence.Once -> "今天 10:00"
+    Recurrence.Daily -> "每天 09:00"
+    Recurrence.Weekly -> "每周一 09:00"
+    Recurrence.Monthly -> "每月 1 日 09:00"
+    Recurrence.Conditional -> "当连接 Wi-Fi 时"
+}
+
+/**
  * 托管任务。用户交代一次，智能体长期负责。
  * 任务由对话创建，因此始终回指 [agentId]，结果也回流到那条对话。
  *

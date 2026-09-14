@@ -5,7 +5,6 @@ import com.starringbox.staragent.core.llm.LlmEndpoint
 import com.starringbox.staragent.core.llm.LlmTurn
 import com.starringbox.staragent.core.model.Author
 import com.starringbox.staragent.core.model.MessageBody
-import com.starringbox.staragent.core.storage.LocalStore
 import com.starringbox.staragent.core.storage.LocalStores
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -26,28 +25,6 @@ import kotlin.test.assertTrue
  * 靠 `AppState` 构造函数上那个 stream 缝注入假的模型调用——不用网络也能把整条链路跑一遍。
  */
 class GroupTalkFlowTest {
-
-    private class MemoryStore : LocalStore {
-        private val texts = mutableMapOf<String, String>()
-        private val blobs = mutableMapOf<String, ByteArray>()
-
-        override fun readText(name: String): String? = texts[name]
-
-        override fun writeText(name: String, text: String) {
-            texts[name] = text
-        }
-
-        override fun readBytes(name: String): ByteArray? = blobs[name]
-
-        override fun writeBytes(name: String, bytes: ByteArray) {
-            blobs[name] = bytes
-        }
-
-        override fun delete(name: String) {
-            texts.remove(name)
-            blobs.remove(name)
-        }
-    }
 
     @AfterTest
     fun resetStores() {
