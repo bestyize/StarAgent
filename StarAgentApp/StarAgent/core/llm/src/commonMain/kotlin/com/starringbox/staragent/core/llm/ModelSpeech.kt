@@ -166,6 +166,8 @@ class ModelSynthesizer(private val endpoint: () -> SpeechEndpoint?) : Synthesize
         }
     }
 
+    override fun stop() = Players.stop()
+
     private suspend fun synthesize(speech: SpeechEndpoint, model: String, text: String): ByteArray {
         val response = httpClient().post(speech.baseUrl.trimEnd('/') + "/audio/speech") {
             header(HttpHeaders.Authorization, "Bearer ${speech.apiKey}")

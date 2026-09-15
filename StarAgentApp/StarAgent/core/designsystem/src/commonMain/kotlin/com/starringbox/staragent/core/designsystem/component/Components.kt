@@ -196,6 +196,68 @@ fun StarActionSheet(
 }
 
 /**
+ * 二次确认弹窗。
+ *
+ * 破坏性操作不该点一下就算数——误触的代价是不可逆的。
+ *
+ * 用自己的 Dialog 而不是 Material 的 AlertDialog：这个项目一路用自绘组件保持视觉一致，
+ * 混进来一个 Material 弹窗会像是别的 App 弹出来的。
+ */
+@Composable
+fun StarConfirmDialog(
+    title: String,
+    message: String,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            // 点面板外面就是取消，和系统弹窗的习惯一致
+            Box(Modifier.fillMaxSize().clickable { onDismiss() })
+
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = 44.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(StarPalette.SurfaceFloat)
+                    .padding(20.dp),
+            ) {
+                Text(title, style = MaterialTheme.typography.titleMedium, color = StarPalette.Text)
+                Spacer(Modifier.height(8.dp))
+                Text(message, style = MaterialTheme.typography.bodyMedium, color = StarPalette.TextMuted)
+                Spacer(Modifier.height(20.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(StarPalette.SurfaceFloatElevated)
+                            .clickable { onDismiss() }
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("取消", style = MaterialTheme.typography.bodyLarge, color = StarPalette.Text)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(StarPalette.Danger)
+                            .clickable { onConfirm() }
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(confirmLabel, style = MaterialTheme.typography.bodyLarge, color = Color.White)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
  * 页面顶部品牌栏：左侧标题，右侧搜索与新建。
  * 设计稿里首页、记忆、智能体页共用这个头，所以抽在这里，不要各写一份。
  */

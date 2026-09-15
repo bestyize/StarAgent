@@ -3,6 +3,7 @@ package com.starringbox.staragent.feature.settings
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,9 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,12 +28,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
@@ -70,20 +66,27 @@ private fun colorOf(category: MemoryCategory): Color = when (category) {
 
 /**
  * 记忆与成长页，按设计稿的三段结构组织：
- * 引导区（问候 + 随手记）→ 我的记忆（五个分类）→ 成长概览与自我优化循环 → 记忆明细。
+ * 引导区 → 我的记忆（分类 + 智能体两层筛选）→ 成长概览与自我优化循环 → 记忆明细。
+ *
+ * **记忆只能从对话里来**。这里原本有个手动输入框，但它记下的东西和智能体在对话里
+ * 记下的东西是两回事——前者模型根本不知道，后者才是"它认识你"。留着一个写进去也没人
+ * 读得着的入口，只会让人以为记忆是靠手填的，所以去掉了。
  */
 @Composable
 fun MemoryScreen(navigator: Navigator) {
     val state = LocalAppState.current
     val scroll = rememberScrollState()
-    val promptFocus = remember { FocusRequester() }
 
-    var draft by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf(MemoryCategory.Preference) }
-    var agentId by remember { mutableStateOf(state.agents.firstOrNull()?.id.orEmpty()) }
-    var filter by remember { mutableStateOf<MemoryCategory?>(null) }
+    var categoryFilter by remember { mutableStateOf<MemoryCategory?>(null) }
+    var agentFilter by remember { mutableStateOf<String?>(null) }
 
-    val visible = state.memories.filter { filter == null || it.category == filter }
+    // 两个筛选是叠的：先按智能体收窄，再按分类收窄。
+    // 分类卡片上的数字走的是**收窄之后**的集合——那几张卡片本身就是筛选器，
+    // 数字和点进去看到的东西对不上会很别扭。
+    val ofAgent = state.memories.filter { agentFilter == null || it.agentId == agentFilter }
+    val visible = ofAgent.filter { categoryFilter == null || it.category == categoryFilter }
+    // 一条记忆都没有的智能体不出现：筛选器上列出一堆点了是空的东西没有意义
+    val agentsWithMemories = state.agents.filter { agent -> state.memories.any { it.agentId == agent.id } }
 
     Column(
         Modifier
@@ -95,27 +98,26 @@ fun MemoryScreen(navigator: Navigator) {
             subtitle = "S T A R   R I N G",
         )
 
-        GreetingBlock(
-            draft = draft,
-            onDraftChange = { draft = it },
-            category = category,
-            onCategoryChange = { category = it },
-            agentId = agentId,
-            onAgentChange = { agentId = it },
-            agents = state.agents.map { it.id to it.name },
-            focus = promptFocus,
-            onSubmit = {
-                state.addMemory(agentId, category, draft)
-                draft = ""
-            },
-        )
+        GreetingBlock()
 
         Spacer(Modifier.height(24.dp))
         MyMemories(
-            memories = state.memories,
-            selected = filter,
-            onSelect = { filter = if (filter == it) null else it },
+            memories = ofAgent,
+            selected = categoryFilter,
+            onSelect = { categoryFilter = if (categoryFilter == it) null else it },
+            // 只管分类这一层。智能体那层有它自己的「全部」，各清各的才不会有意外。
+            onShowAll = { categoryFilter = null },
         )
+
+        if (agentsWithMemories.size > 1) {
+            Spacer(Modifier.height(14.dp))
+            AgentFilter(
+                agents = agentsWithMemories.map { it.id to it.name },
+                selected = agentFilter,
+                onSelect = { agentFilter = if (agentFilter == it) null else it },
+                onShowAll = { agentFilter = null },
+            )
+        }
 
         Spacer(Modifier.height(24.dp))
         GrowthOverview(memories = state.memories, agentCount = state.agents.size)
@@ -128,6 +130,11 @@ fun MemoryScreen(navigator: Navigator) {
             memories = visible,
             agentName = { id -> state.agent(id)?.name },
             onDelete = { state.removeMemory(it) },
+            emptyHint = if (state.memories.isEmpty()) {
+                "这里还空着。和智能体聊聊，值得留下的事它会自己记下来。"
+            } else {
+                "这个筛选条件下还没有记忆。"
+            },
         )
 
         Spacer(Modifier.height(28.dp))
@@ -137,17 +144,7 @@ fun MemoryScreen(navigator: Navigator) {
 // ── 引导区 ──────────────────────────────────────
 
 @Composable
-private fun GreetingBlock(
-    draft: String,
-    onDraftChange: (String) -> Unit,
-    category: MemoryCategory,
-    onCategoryChange: (MemoryCategory) -> Unit,
-    agentId: String,
-    onAgentChange: (String) -> Unit,
-    agents: List<Pair<String, String>>,
-    focus: FocusRequester,
-    onSubmit: () -> Unit,
-) {
+private fun GreetingBlock() {
     Column(Modifier.padding(horizontal = 20.dp)) {
         Text(
             text = "你好，",
@@ -160,79 +157,38 @@ private fun GreetingBlock(
             color = StarPalette.Text,
         )
         Spacer(Modifier.height(6.dp))
+        // 手动记录的入口去掉之后，得说清楚记忆是从哪来的——
+        // 否则这一页看起来就是个"只能看、不知道怎么往里加"的清单
         Text(
-            text = "每一段记忆，都在让你更好",
+            text = "记忆来自你和智能体的对话——聊到值得留下的事，它会自己记下来。",
             style = MaterialTheme.typography.bodyMedium,
             color = StarPalette.TextMuted,
         )
+    }
+}
 
-        Spacer(Modifier.height(16.dp))
+// ── 智能体筛选 ──────────────────────────────────
+
+@Composable
+private fun AgentFilter(
+    agents: List<Pair<String, String>>,
+    selected: String?,
+    onSelect: (String) -> Unit,
+    onShowAll: () -> Unit,
+) {
+    Column(Modifier.padding(horizontal = 20.dp)) {
+        Text("只看谁的记忆", style = MaterialTheme.typography.labelMedium, color = StarPalette.TextFaint)
+        Spacer(Modifier.height(6.dp))
+        // 有几个智能体说不准，横排会溢出，所以让它能横向滚
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(StarPalette.Surface)
-                .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            BasicTextField(
-                value = draft,
-                onValueChange = onDraftChange,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = StarPalette.Text),
-                cursorBrush = SolidColor(StarPalette.Indigo),
-                modifier = Modifier
-                    .weight(1f)
-                    .focusRequester(focus),
-                decorationBox = { inner ->
-                    Box {
-                        if (draft.isEmpty()) {
-                            Text(
-                                text = "我一直在这里，记住重要的你。",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = StarPalette.TextFaint,
-                            )
-                        }
-                        inner()
-                    }
-                },
-            )
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(if (draft.isNotBlank()) StarPalette.Indigo else StarPalette.SurfaceSunken)
-                    .clickable(enabled = draft.isNotBlank(), onClick = onSubmit),
-                contentAlignment = Alignment.Center,
-            ) {
-                StarIcon(
-                    icon = StarIconGlyph.Send,
-                    iconSize = 17.dp,
-                    tint = if (draft.isNotBlank()) Color.White else StarPalette.TextFaint,
-                )
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-        Text("归到哪一类", style = MaterialTheme.typography.labelMedium, color = StarPalette.TextFaint)
-        Spacer(Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            MemoryCategory.entries.forEach { entry ->
-                ChoiceChip(
-                    label = entry.label,
-                    selected = category == entry,
-                    onClick = { onCategoryChange(entry) },
-                )
-            }
-        }
-
-        if (agents.size > 1) {
-            Spacer(Modifier.height(10.dp))
-            Text("属于哪个智能体", style = MaterialTheme.typography.labelMedium, color = StarPalette.TextFaint)
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                agents.forEach { (id, name) ->
-                    ChoiceChip(label = name, selected = agentId == id, onClick = { onAgentChange(id) })
-                }
+            ChoiceChip(label = "全部", selected = selected == null, onClick = onShowAll)
+            agents.forEach { (id, name) ->
+                ChoiceChip(label = name, selected = selected == id, onClick = { onSelect(id) })
             }
         }
     }
@@ -245,6 +201,7 @@ private fun MyMemories(
     memories: List<MemoryItem>,
     selected: MemoryCategory?,
     onSelect: (MemoryCategory) -> Unit,
+    onShowAll: () -> Unit,
 ) {
     Column(Modifier.padding(horizontal = 20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -259,7 +216,7 @@ private fun MyMemories(
                     text = "显示全部",
                     style = MaterialTheme.typography.labelMedium,
                     color = StarPalette.Indigo,
-                    modifier = Modifier.clickable { onSelect(selected) },
+                    modifier = Modifier.clickable { onShowAll() },
                 )
             }
         }
@@ -551,6 +508,7 @@ private fun MemoryList(
     memories: List<MemoryItem>,
     agentName: (String) -> String?,
     onDelete: (String) -> Unit,
+    emptyHint: String,
 ) {
     Column(Modifier.padding(horizontal = 20.dp)) {
         Text(
@@ -562,7 +520,7 @@ private fun MemoryList(
 
         if (memories.isEmpty()) {
             Text(
-                text = "这里还空着。上面那句话框里记一条试试。",
+                text = emptyHint,
                 style = MaterialTheme.typography.bodySmall,
                 color = StarPalette.TextFaint,
                 modifier = Modifier.padding(vertical = 12.dp),

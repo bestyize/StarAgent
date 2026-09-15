@@ -291,6 +291,17 @@ class AppState(
         persistState()
     }
 
+    /**
+     * 清空这条会话的全部聊天记录。
+     *
+     * 只清对话，**不动记忆**：记忆是智能体"认识你"的部分，是另一回事，
+     * 清聊天记录不该顺手把它一起抹掉。
+     */
+    fun clearMessages(agentId: String) {
+        conversations[agentId]?.clear()
+        persistState()
+    }
+
     fun tasksOf(agentId: String): List<AgentTask> = tasks.filter { it.agentId == agentId }
 
     fun memoriesOf(agentId: String): List<MemoryItem> = memories.filter { it.agentId == agentId }
@@ -581,21 +592,46 @@ class AppState(
 
         // 模型如果判断出这是可托管的任务，会附一个任务块——把它变成草稿卡片。
         // 但这个智能体没开任务能力时，即便模型多吐了块，也只把块抹掉，不给用户看原始 JSON。
-        when (val outcome = resolveReply(raw, agent.canScheduleTasks)) {
-            is ReplyOutcome.Plain ->
-                conversation[index] = placeholder.copy(body = MessageBody.Text(outcome.text))
+        val outcome = resolveReply(raw, agent.canScheduleTasks)
+        val spoken = when (outcome) {
+            is ReplyOutcome.Plain -> outcome.text
+            is ReplyOutcome.AsTask -> outcome.text
+        }
 
-            is ReplyOutcome.AsTask -> {
-                conversation[index] = placeholder.copy(body = MessageBody.Text(outcome.text))
-                conversation.add(
-                    ChatMessage(
-                        id = nextId("m"),
-                        author = Author.Agent,
-                        body = MessageBody.Draft(outcome.draft),
-                        timeLabel = "刚刚",
-                    )
+        // 记忆块从剥完任务块的正文里再剥一层：两件事可以同时发生
+        //（「以后每周一提醒我复盘」既可以建任务，也值得记住这个习惯）。
+        val memory = MemoryBlock.extract(spoken)
+        val answer = when {
+            memory == null -> spoken
+            // 只回了一个记忆块、没有正文时补一句，否则气泡会是空的
+            memory.remainingText.isBlank() -> "好的，我记下了。"
+            else -> memory.remainingText
+        }
+        conversation[index] = placeholder.copy(body = MessageBody.Text(answer))
+
+        if (outcome is ReplyOutcome.AsTask) {
+            conversation.add(
+                ChatMessage(
+                    id = nextId("m"),
+                    author = Author.Agent,
+                    body = MessageBody.Draft(outcome.draft),
+                    timeLabel = "刚刚",
                 )
-            }
+            )
+        }
+
+        // 落库之后在对话里留一张卡片：记忆是最容易变成隐形功能的能力，
+        // 不说一声的话，用户根本不知道它记住了什么。
+        memory?.items?.forEach { item ->
+            addMemory(agent.id, item.category, item.text)
+            conversation.add(
+                ChatMessage(
+                    id = nextId("m"),
+                    author = Author.Agent,
+                    body = MessageBody.MemoryNote(item.text),
+                    timeLabel = "刚刚",
+                )
+            )
         }
 
         // 一轮回复结束才落盘：流式过程中每个字都写一次磁盘没有必要
@@ -1075,10 +1111,24 @@ class AppState(
                 ResponseMode.Deep -> "回答前充分思考，给出推理过程与依据，必要时分点展开。"
             }
         )
+        // 已经记住的事要回灌进来，否则"记住"就只是把它存进了某个用户看不见也问不着的地方。
+        // 取最近的若干条而不是全部：记忆会越攒越多，全塞进去既挤占上下文，
+        // 也会让早期的琐事一直压着近期的对话。
+        val known = memoriesOf(agent.id).take(MAX_PROMPT_MEMORIES)
+        if (known.isNotEmpty()) {
+            append("\n\n【你已经记得的关于他的事】")
+            known.forEach { append('\n').append("- ").append(it.text) }
+            append("\n自然地用上这些，不要刻意复述，也不要逐条罗列。")
+        }
+
         if (agent.canScheduleTasks) {
             append("\n\n")
             append(TaskBlock.INSTRUCTION)
         }
+        // 记忆不跟着任务开关走：任务是"替不替你干活"，记忆是"认不认识你"，
+        // 陪聊型的智能体同样该记得住你说过的事。
+        append("\n\n")
+        append(MemoryBlock.INSTRUCTION)
     }
 
     // ── 持久化 ──────────────────────────────────
@@ -1185,6 +1235,14 @@ class AppState(
     }
 
     private companion object {
+        /**
+         * 回灌进提示词的记忆条数上限。
+         *
+         * 取最近的那些。记忆只增不减，全塞进去既挤占上下文，也会让半年前的琐事
+         * 一直压着这两天的事——那反而不像"记得你"了。
+         */
+        const val MAX_PROMPT_MEMORIES = 20
+
         const val KEY_DEFAULT_MODEL = "defaultModel"
         const val KEY_RESPONSE_MODE = "responseMode"
         const val KEY_CUSTOM_IDS = "customIds"

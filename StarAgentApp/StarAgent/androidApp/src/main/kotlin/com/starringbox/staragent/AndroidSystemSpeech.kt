@@ -183,6 +183,12 @@ class AndroidSystemSynthesizer(context: Context) : Synthesizer {
 
     override val ready: Boolean get() = readyState
 
+    override fun stop() {
+        // 系统合成是自己排队播放的，停它只能通过引擎本身。
+        // 没初始化好时 engine 还是 null，停止是空操作，不该抛。
+        runCatching { engine?.stop() }
+    }
+
     override suspend fun speak(text: String): SpeechOutcome<Unit> {
         val trimmed = text.trim()
         // 没什么可念的算成功——空回复不是错误

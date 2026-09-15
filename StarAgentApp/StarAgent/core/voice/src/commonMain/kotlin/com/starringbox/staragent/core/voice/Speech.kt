@@ -53,4 +53,12 @@ interface Synthesizer {
 
     /** 念出来。文本为空时直接算成功（没什么可念的）。 */
     suspend fun speak(text: String): SpeechOutcome<Unit>
+
+    /**
+     * 打断正在念的内容。没在念时是空操作。
+     *
+     * 这件事**必须由契约提供**，不能指望调用方去管：设备合成的播放由系统自己排，
+     * 走服务商的那条由 [Players] 播，两条路各停各的，上层没法用一个通用的办法打断。
+     */
+    fun stop()
 }

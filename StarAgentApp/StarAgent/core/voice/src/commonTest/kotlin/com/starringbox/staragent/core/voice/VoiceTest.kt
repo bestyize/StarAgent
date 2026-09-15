@@ -172,6 +172,26 @@ class VoiceTest {
         assertEquals(0, synthesizer.calls, "没内容可念不该真的去调合成")
     }
 
+    /**
+     * 停止要打到**每一条**后端上。
+     *
+     * 这条补的是真机上的一个漏：离开对话页时朗读还在响。原来只停了走服务商的那条
+     * （Players.stop()），而设备合成是系统自己排队播放的，压根没人停它——
+     * 而自动模式下默认走的就是它。
+     */
+    @Test
+    fun stoppingSpeakingReachesEveryBackend() {
+        val device = FakeSynthesizer()
+        val model = FakeSynthesizer()
+        Voice.installDevice(synthesizer = device)
+        Voice.installModel(synthesizer = model)
+
+        Voice.stopSpeaking()
+
+        assertEquals(1, device.stops, "设备那路没被停——它才是默认在响的那条")
+        assertEquals(1, model.stops)
+    }
+
     @Test
     fun stoppingWithoutStartingSaysSoInsteadOfReturningNothing() = runTest {
         Voice.installModel(FakeTranscriber(text = "x"))
@@ -194,10 +214,15 @@ class VoiceTest {
 
     private class FakeSynthesizer : Synthesizer {
         var calls = 0
+        var stops = 0
         override val ready: Boolean get() = true
         override suspend fun speak(text: String): SpeechOutcome<Unit> {
             calls++
             return SpeechOutcome.Ok(Unit)
+        }
+
+        override fun stop() {
+            stops++
         }
     }
 }

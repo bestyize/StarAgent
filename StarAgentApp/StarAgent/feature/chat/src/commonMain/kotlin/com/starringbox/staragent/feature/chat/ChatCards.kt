@@ -1,5 +1,11 @@
 package com.starringbox.staragent.feature.chat
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -403,23 +409,54 @@ internal fun NoticeCard(text: String, isError: Boolean) {
 /**
  * 等待首个字符出现时的占位。
  *
- * [speakerName] 只有群聊会传——群里的占位要说清楚"现在轮到谁了"，
- * 否则用户看着一串「···」不知道是卡住了还是在等某个人。
+ * 三个点错峰呼吸，后面跟一句说明。**只有动画是不够的**：一串跳动的点能表达"在动"，
+ * 但说不清在动什么——用户没法区分"它在想"和"界面卡住了"。补上文字才读得懂。
+ *
+ * [speakerName] 只有群聊会传——群里的占位要说清楚"现在轮到谁了"。
  */
 @Composable
 internal fun ThinkingRow(speakerName: String? = null) {
+    val transition = rememberInfiniteTransition(label = "thinking")
+    val label = if (speakerName.isNullOrBlank()) "正在思考" else "$speakerName 正在思考"
+
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-        Box(
+        Row(
             modifier = Modifier
                 .clip(BubbleShapeAgent)
                 .background(StarPalette.Surface)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (speakerName.isNullOrBlank()) "···" else "$speakerName 正在发言 ···",
+                text = label,
                 style = MaterialTheme.typography.bodyLarge,
                 color = StarPalette.TextFaint,
             )
+            Spacer(Modifier.width(8.dp))
+            repeat(3) { index ->
+                // 错峰：每个点比前一个晚 170ms。三个点同相位地一起明暗，看起来像整块在闪，
+                // 错开才像"一个接一个"的推进感。
+                val alpha by transition.animateFloat(
+                    initialValue = 0.22f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(
+                            durationMillis = 520,
+                            delayMillis = index * 170,
+                            easing = LinearEasing,
+                        ),
+                        repeatMode = RepeatMode.Reverse,
+                    ),
+                    label = "thinking-dot-$index",
+                )
+                if (index > 0) Spacer(Modifier.width(4.dp))
+                Box(
+                    Modifier
+                        .size(5.dp)
+                        .clip(CircleShape)
+                        .background(StarPalette.TextFaint.copy(alpha = alpha)),
+                )
+            }
         }
     }
 }

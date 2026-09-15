@@ -93,9 +93,16 @@ object Voice {
         return synthesizer.speak(text)
     }
 
-    /** 打断正在念的内容。设备合成的播放由系统自己管，这里只需要打断走服务商的那条。 */
+    /**
+     * 打断正在念的内容。
+     *
+     * 两条路都停，不去判断"刚才是谁在念"——停止本身是幂等的，猜错反而会漏掉一路。
+     * 不这么写的话，换过引擎设置、或者自动模式下设备那路顶上来之后，
+     * 停的就永远是另一条。
+     */
     fun stopSpeaking() {
-        Players.stop()
+        deviceSynthesizer?.stop()
+        modelSynthesizer?.stop()
     }
 
     /**

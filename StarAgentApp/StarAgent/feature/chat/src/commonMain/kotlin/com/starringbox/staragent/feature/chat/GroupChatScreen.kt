@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -110,6 +111,11 @@ fun GroupChatScreen(navigator: Navigator, groupId: String) {
                 }
             }
         }
+    }
+
+    // 离开这一页就别再念了。同单聊页，理由见 ChatScreen。
+    DisposableEffect(state) {
+        onDispose { state.stopSpeaking() }
     }
 
     // 按住说话。转写成功直接发到群里，群里照样按轮流/点名去讨论。

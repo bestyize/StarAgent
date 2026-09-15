@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,11 +42,14 @@ import androidx.compose.ui.unit.dp
 import com.starringbox.staragent.core.data.LocalAppState
 import com.starringbox.staragent.core.designsystem.component.AgentAvatar
 import com.starringbox.staragent.core.designsystem.component.CircleIconButton
+import com.starringbox.staragent.core.designsystem.component.StarActionSheet
+import com.starringbox.staragent.core.designsystem.component.StarConfirmDialog
 import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.navigation.Navigator
 import com.starringbox.staragent.core.designsystem.navigation.Route
 import com.starringbox.staragent.core.designsystem.component.StarImageViewer
+import com.starringbox.staragent.core.designsystem.component.StarSheetAction
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.media.MediaAsset
 import com.starringbox.staragent.core.media.MediaPickers
@@ -79,6 +83,9 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
     val listState = rememberLazyListState()
     val clipboard = LocalClipboardManager.current
     var sheetOpen by remember { mutableStateOf(false) }
+    // 右上角「更多」的操作面板。和设置面板分开两个状态：一个是菜单，一个是被菜单打开的设置。
+    var menuOpen by remember { mutableStateOf(false) }
+    var confirmClear by remember { mutableStateOf(false) }
     var turn by remember { mutableStateOf<Job?>(null) }
     var picked by remember { mutableStateOf<ChatMessage?>(null) }
     // 全屏图片查看：记住是哪条消息、从第几张开始看
@@ -124,6 +131,12 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
         }
     }
 
+    // 离开这一页就别再念了。朗读是跟着这条会话走的，人都走了还在响很突兀；
+    // 而且朗读是后台在播，不主动停的话它会一直念完为止。
+    DisposableEffect(state) {
+        onDispose { state.stopSpeaking() }
+    }
+
     // 按住说话。转写成功直接发出去——"语音对话"不该还要再点一次发送。
     val voice = rememberVoiceHold(
         state = state,
@@ -143,8 +156,7 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
                 agent = agent,
                 statusText = "${state.modelLabel(agent.modelId)} · ${state.activeChannelLabel()}",
                 onBack = { navigator.pop() },
-                onEdit = { navigator.push(Route.AgentEditor(agent.id)) },
-                onStatusClick = { sheetOpen = true },
+                onMore = { menuOpen = true },
             )
 
             LazyColumn(
@@ -242,13 +254,50 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
         // 录音浮层。放在最外层，盖住消息列表和输入坞。
         VoiceHoldOverlay(voice.phase)
 
-        if (sheetOpen) {
-            AgentStatusSheet(
-                agent = agent,
-                onDismiss = { sheetOpen = false },
-                onPickModel = { state.setAgentModel(agentId, it) },
+        // 右上角「更多」。顶栏原本有两个入口（状态位=设置、三点=编辑），
+        // 现在并成一个菜单——顶栏只留一个按钮，状态位退回成纯展示。
+        if (menuOpen) {
+            StarActionSheet(
+                actions = listOf(
+                    StarSheetAction("设置对话"),
+                    StarSheetAction("编辑智能体"),
+                    // 破坏性的放最后并标红：这是菜单里唯一不可逆的一项
+                    StarSheetAction("清除聊天记录", destructive = true),
+                ),
+                onAction = { index ->
+                    // 先关菜单再开下一个：两个面板叠着出现会互相顶掉
+                    menuOpen = false
+                    when (index) {
+                        0 -> sheetOpen = true
+                        1 -> navigator.push(Route.AgentEditor(agent.id))
+                        2 -> confirmClear = true
+                    }
+                },
+                onDismiss = { menuOpen = false },
             )
         }
+
+        if (confirmClear) {
+            StarConfirmDialog(
+                title = "清除聊天记录",
+                message = "这条会话里的消息会全部删除，删了找不回来。它记住的事不受影响。",
+                confirmLabel = "删除",
+                onConfirm = {
+                    state.clearMessages(agentId)
+                    confirmClear = false
+                },
+                onDismiss = { confirmClear = false },
+            )
+        }
+
+        // 常驻组合、由 visible 驱动：关掉时要留在树里把退场动画播完。
+        // 它自身在隐藏时不留任何可见内容，也不吃触摸。
+        AgentStatusSheet(
+            agent = agent,
+            visible = sheetOpen,
+            onDismiss = { sheetOpen = false },
+            onPickModel = { state.setAgentModel(agentId, it) },
+        )
 
         // 全屏看图。放在最外层，盖住底栏与输入坞。
         (viewingMessage?.body as? MessageBody.Image)?.let { body ->
@@ -545,15 +594,18 @@ internal fun ConfigureModelBanner(onClick: () -> Unit) {
 
 /**
  * 顶栏常驻状态位。把"模型自由"和"IM 连接"两个卖点做成**持续可见的状态**，
- * 而不是藏在设置里的开关——点它就能当场切换。
+ * 而不是藏在设置里的开关。
+ *
+ * 它自己不再是入口：模型、渠道、语音这些统一收到右上角「更多」里的「设置对话」，
+ * 顶栏只负责告诉你现在是什么状态。所以连那个下拉小箭头也去掉了——
+ * 留着它就还是个按钮的样子。
  */
 @Composable
 private fun ChatHeader(
     agent: Agent,
     statusText: String,
     onBack: () -> Unit,
-    onEdit: () -> Unit,
-    onStatusClick: () -> Unit,
+    onMore: () -> Unit,
 ) {
     Column {
         Row(
@@ -582,12 +634,7 @@ private fun ChatHeader(
                     maxLines = 1,
                 )
                 Spacer(Modifier.height(2.dp))
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable { onStatusClick() },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         Modifier
                             .size(6.dp)
@@ -601,16 +648,9 @@ private fun ChatHeader(
                         color = StarPalette.TextMuted,
                         maxLines = 1,
                     )
-                    Spacer(Modifier.width(3.dp))
-                    StarIcon(
-                        icon = StarIconGlyph.ChevronDown,
-                        iconSize = 12.dp,
-                        tint = StarPalette.TextFaint,
-                        strokeWidth = 2.2f,
-                    )
                 }
             }
-            CircleIconButton(glyph = StarIconGlyph.More, onClick = onEdit)
+            CircleIconButton(glyph = StarIconGlyph.More, onClick = onMore)
         }
         Box(
             Modifier

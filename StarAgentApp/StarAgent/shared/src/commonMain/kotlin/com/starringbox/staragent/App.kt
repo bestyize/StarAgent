@@ -18,12 +18,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -98,7 +102,11 @@ fun App() {
                     // 顶栏的底色要一直铺到状态栏后面，内容再用 statusBarsPadding() 躲开。
                     // 在这里统一内缩的话，状态栏那一条就只能是背景色，
                     // 顶栏看起来像"没顶到边"。
-                    .navigationBarsPadding(),
+                    //
+                    // 底部取**导航栏与软键盘的较大者**，不是两个相加：键盘弹起时它本来就盖住了
+                    // 导航栏，加起来会多空一条。只写 navigationBarsPadding() 的话键盘完全不躲——
+                    // edge-to-edge 下键盘是叠上来的，输入坞底下会被啃掉一截。
+                    .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)),
             ) {
                 Column(Modifier.fillMaxSize()) {
                     Box(Modifier.weight(1f)) {

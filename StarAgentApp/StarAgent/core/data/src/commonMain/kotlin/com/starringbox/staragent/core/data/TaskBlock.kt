@@ -103,7 +103,7 @@ internal fun resolveReply(raw: String, allowTasks: Boolean): ReplyOutcome {
     )
 }
 
-private fun JsonElement?.asText(): String? {
+internal fun JsonElement?.asText(): String? {
     if (this == null || this is JsonNull) return null
     return (this as? JsonPrimitive)?.content
 }

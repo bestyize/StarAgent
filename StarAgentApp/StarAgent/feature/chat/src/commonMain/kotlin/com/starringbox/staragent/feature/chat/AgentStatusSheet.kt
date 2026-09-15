@@ -1,10 +1,16 @@
 package com.starringbox.staragent.feature.chat
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -32,6 +38,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,6 +72,15 @@ private const val SHEET_MAX_FRACTION = 0.86f
 /** 往下拽多少就松手关闭。 */
 private val DISMISS_DRAG = 110.dp
 
+/** 面板滑入的时长。和页面转场同一档（App.kt 的 SlideSpec 也是 280），节奏才一致。 */
+private const val SHEET_ENTER_MILLIS = 280
+
+/** 出场比入场快：关东西要干脆，开东西可以稍慢。 */
+private const val SHEET_EXIT_MILLIS = 200
+
+/** 蒙层的淡入淡出，跟出场同步。 */
+private const val SCRIM_FADE_MILLIS = 200
+
 /**
  * 对话页顶部状态位的展开面板。
  *
@@ -76,10 +92,15 @@ private val DISMISS_DRAG = 110.dp
  * 内容必须能滚——这个面板塞了响应模式、模型、渠道、语音四节，
  * 高度早就超过一屏了。不封顶又不给滚的话，[Column] 会把最后一个子元素
  * 按剩余空间压扁，"完成"两个字就会被截成一条。
+ *
+ * [visible] 而不是由调用方 `if` 掉：面板要能**滑出去**，就得在消失的过程中还留在组合树里。
+ * 调用方一直组合它即可，关掉时它自己播完退场动画。蒙层和面板分开做动画——
+ * 蒙层是整屏的，跟着面板一起滑会把整块屏幕一起推上去。
  */
 @Composable
 internal fun AgentStatusSheet(
     agent: Agent,
+    visible: Boolean,
     onDismiss: () -> Unit,
     onPickModel: (String) -> Unit,
 ) {
@@ -90,30 +111,53 @@ internal fun AgentStatusSheet(
     val dismissAt = with(LocalDensity.current) { DISMISS_DRAG.toPx() }
     var sheetHeight by remember { mutableStateOf(0f) }
 
+    // 这个组件不再随开关进出组合树了，所以拖拽位移得自己归零：
+    // 上次是拖到底关掉的，不重置的话再打开时面板会带着旧位移，一进来就在屏幕外。
+    LaunchedEffect(visible) {
+        if (visible) dragOffset.snapTo(0f)
+    }
+
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val cap = maxHeight * SHEET_MAX_FRACTION
         // 跟着下拉的进度把蒙层一起淡掉：手还没松，已经能看出"这一下是要关掉它"
         val progress = if (sheetHeight > 0f) (dragOffset.value / sheetHeight).coerceIn(0f, 1f) else 0f
 
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.32f * (1f - progress)))
-                .clickable(interactionSource = swallow, indication = null) { onDismiss() },
-        )
-
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .heightIn(max = cap)
-                .offset { IntOffset(0, dragOffset.value.roundToInt()) }
-                .onSizeChanged { sheetHeight = it.height.toFloat() }
-                .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                .background(StarPalette.Surface)
-                .clickable(interactionSource = swallow, indication = null) { }
-                .dragToDismiss(dragOffset, scope, dismissAt, sheetHeight = { sheetHeight }, onDismiss = onDismiss),
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(tween(SCRIM_FADE_MILLIS)),
+            exit = fadeOut(tween(SCRIM_FADE_MILLIS)),
         ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.32f * (1f - progress)))
+                    .clickable(interactionSource = swallow, indication = null) { onDismiss() },
+            )
+        }
+
+        AnimatedVisibility(
+            visible = visible,
+            enter = slideInVertically(
+                animationSpec = tween(SHEET_ENTER_MILLIS, easing = FastOutSlowInEasing),
+                initialOffsetY = { it },
+            ),
+            exit = slideOutVertically(
+                animationSpec = tween(SHEET_EXIT_MILLIS, easing = FastOutSlowInEasing),
+                targetOffsetY = { it },
+            ),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = cap)
+                    .offset { IntOffset(0, dragOffset.value.roundToInt()) }
+                    .onSizeChanged { sheetHeight = it.height.toFloat() }
+                    .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                    .background(StarPalette.Surface)
+                    .clickable(interactionSource = swallow, indication = null) { }
+                    .dragToDismiss(dragOffset, scope, dismissAt, sheetHeight = { sheetHeight }, onDismiss = onDismiss),
+            ) {
             DragHandle()
 
             Column(
@@ -139,6 +183,7 @@ internal fun AgentStatusSheet(
                 contentAlignment = Alignment.Center,
             ) {
                 Text("完成", style = MaterialTheme.typography.titleMedium, color = Color.White)
+            }
             }
         }
     }
