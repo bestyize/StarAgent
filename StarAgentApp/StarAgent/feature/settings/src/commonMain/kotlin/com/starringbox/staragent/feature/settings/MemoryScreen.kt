@@ -93,8 +93,6 @@ fun MemoryScreen(navigator: Navigator) {
         StarPageHeader(
             title = "星环智能 Agent",
             subtitle = "S T A R   R I N G",
-            onSearch = { filter = null },
-            onCreate = { promptFocus.requestFocus() },
         )
 
         GreetingBlock(

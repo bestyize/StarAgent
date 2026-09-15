@@ -61,8 +61,6 @@ fun MeScreen(navigator: Navigator) {
         StarPageHeader(
             title = "星环智能 Agent",
             subtitle = "S T A R   R I N G",
-            onSearch = { navigator.switchTab(Route.Agents) },
-            onCreate = { navigator.push(Route.AgentEditor(null)) },
         )
 
         Spacer(Modifier.height(26.dp))
