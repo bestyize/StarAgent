@@ -22,7 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -94,7 +94,11 @@ fun App() {
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
-                    .safeDrawingPadding(),
+                    // 只让开底部。顶部交给各页自己的顶栏去处理：
+                    // 顶栏的底色要一直铺到状态栏后面，内容再用 statusBarsPadding() 躲开。
+                    // 在这里统一内缩的话，状态栏那一条就只能是背景色，
+                    // 顶栏看起来像"没顶到边"。
+                    .navigationBarsPadding(),
             ) {
                 Column(Modifier.fillMaxSize()) {
                     Box(Modifier.weight(1f)) {

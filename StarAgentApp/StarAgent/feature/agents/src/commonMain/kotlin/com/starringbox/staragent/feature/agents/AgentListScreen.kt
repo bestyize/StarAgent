@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -73,7 +74,7 @@ fun AgentListScreen(navigator: Navigator) {
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(0xFFE7EFFF), StarPalette.Bg)))) {
             Box(Modifier.align(Alignment.TopEnd).padding(end = 24.dp, top = 12.dp).width(110.dp).height(110.dp).clip(CircleShape).background(Brush.radialGradient(listOf(Color(0xFFBFCBFF), Color.Transparent))))
-            Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
+            Column(Modifier.statusBarsPadding().padding(horizontal = 20.dp, vertical = 18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("星环", style = MaterialTheme.typography.headlineSmall, color = StarPalette.Text)

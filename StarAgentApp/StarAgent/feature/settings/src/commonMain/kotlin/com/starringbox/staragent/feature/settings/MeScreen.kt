@@ -65,48 +65,6 @@ fun MeScreen(navigator: Navigator) {
             onCreate = { navigator.push(Route.AgentEditor(null)) },
         )
 
-        Column(Modifier.padding(horizontal = 20.dp)) {
-            Text(
-                text = "智能体，让一切更简单",
-                style = MaterialTheme.typography.headlineSmall,
-                color = StarPalette.Text,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "创建 · 连接 · 扩展 · 与 AI 一起成长",
-                style = MaterialTheme.typography.bodySmall,
-                color = StarPalette.TextMuted,
-            )
-            Spacer(Modifier.height(14.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(StarPalette.Surface)
-                    .clickable { navigator.switchTab(Route.Agents) }
-                    .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                StarIcon(StarIconGlyph.Search, iconSize = 16.dp, tint = StarPalette.TextFaint)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "搜索智能体、技能或解决方案…",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = StarPalette.TextFaint,
-                    modifier = Modifier.weight(1f),
-                )
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(StarPalette.Indigo),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    StarIcon(StarIconGlyph.ChevronRight, iconSize = 16.dp, tint = Color.White)
-                }
-            }
-        }
-
         Spacer(Modifier.height(26.dp))
         MyAgentsModule(state, navigator)
 

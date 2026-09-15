@@ -35,5 +35,11 @@ kotlin {
             implementation(libs.compose.material3)
             implementation(libs.compose.ui)
         }
+
+        // 只测不依赖界面的那部分：按住说话的松手判断（holdOutcome）。
+        // 手势本身要有屏幕才能跑，那部分靠真机验证。
+        commonTest.dependencies {
+            implementation(libs.kotlin.test)
+        }
     }
 }

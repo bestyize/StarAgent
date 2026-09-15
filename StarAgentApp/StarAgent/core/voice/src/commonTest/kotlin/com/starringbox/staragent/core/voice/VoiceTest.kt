@@ -138,6 +138,22 @@ class VoiceTest {
         assertEquals("模型听出来的", (Voice.stopListening() as SpeechOutcome.Ok).value)
     }
 
+    /**
+     * 只装设备那一路就够用——**一个服务商都不配也要能语音输入**。
+     *
+     * 这是 Android 的真实处境：系统识别不要 Key、不花钱，功能不该反过来被
+     * "配没配服务商"卡住。权限更不能算进来：不这么写，没权限 → 入口不显示 →
+     * 申请权限的唯一入口就是那个入口 → 死环。
+     */
+    @Test
+    fun aDeviceBackendAloneIsEnoughWithNoProviderConfigured() = runTest {
+        Voice.installDevice(FakeTranscriber(text = "设备听出来的"))
+
+        assertTrue(Voice.canListen, "有系统识别就该能语音输入，与配没配服务商无关")
+        Voice.startListening()
+        assertEquals("设备听出来的", (Voice.stopListening() as SpeechOutcome.Ok).value)
+    }
+
     @Test
     fun forcingAnUnreadyBackendDoesNotSilentlyUseTheOther() {
         Voice.installDevice(FakeTranscriber(text = "设备听出来的"))

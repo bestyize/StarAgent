@@ -28,6 +28,7 @@ enum class StarIconGlyph {
     Send,
     Mic,
     Camera,
+    Keyboard,
     Check,
     Repeat,
     ChevronRight,
@@ -166,6 +167,18 @@ fun StarIcon(
                 roundRect(3f, 6.5f, 21f, 19.5f, 3.2f)
                 circle(12f, 13f, 3.4f)
                 poly(listOf(8.5f to 6.5f, 10f to 4f, 14f to 4f, 15.5f to 6.5f))
+            }
+
+            StarIconGlyph.Keyboard -> {
+                roundRect(2f, 6f, 22f, 18f, 2.8f)
+                // 两排键帽用点表示，下面一条空格键
+                listOf(5.6f, 9.0f, 12.4f, 15.8f, 19.2f).forEach { x ->
+                    circle(x, 10.1f, 0.8f, filled = true)
+                }
+                listOf(6.6f, 12f, 17.4f).forEach { x ->
+                    circle(x, 13.3f, 0.8f, filled = true)
+                }
+                line(8.8f, 16.1f, 15.2f, 16.1f)
             }
 
             StarIconGlyph.Check -> poly(listOf(5f to 12.5f, 10f to 17.5f, 19f to 7f))

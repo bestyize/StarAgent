@@ -101,17 +101,20 @@ object Voice {
     /**
      * 说清楚为什么不能听。
      *
-     * 刻意区分"没权限"和"没配服务商"——这两种情况用户要做的事完全不同，
+     * 刻意区分"这台设备的系统识别起不来"和"没配服务商"——这两种情况用户要做的事完全不同，
      * 一句"语音不可用"等于没说。
+     *
+     * 注意这里**不提权限**：权限被拒时 [start] 会自己给出提示，走不到这儿来
+     * （见 [Transcriber.ready] 关于"权限不算能力"的约定）。
      */
     private fun whyNoListening(): String = when {
         deviceTranscriber != null && modelTranscriber != null ->
-            "语音输入现在用不了：系统识别没有麦克风权限，大模型也没配好。去「我的 → 模型服务」配一家支持语音的服务商，或者给 App 麦克风权限。"
+            "语音输入现在用不了：这台设备的系统识别起不来，大模型那路也没配。去「我的 → 模型服务」配一家支持语音的服务商（智谱或 OpenAI）。"
 
         modelTranscriber != null ->
             "语音输入需要先在「我的 → 模型服务」配一家支持语音的服务商（智谱或 OpenAI）。"
 
-        deviceTranscriber != null -> "需要麦克风权限才能语音输入。"
+        deviceTranscriber != null -> "这台设备的系统识别用不了。"
 
         else -> "这个平台还没有接入语音输入。"
     }

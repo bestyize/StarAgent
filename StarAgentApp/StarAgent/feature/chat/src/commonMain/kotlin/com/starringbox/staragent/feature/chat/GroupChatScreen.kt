@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -75,8 +76,6 @@ fun GroupChatScreen(navigator: Navigator, groupId: String) {
     var viewingIndex by remember { mutableStateOf(0) }
     var attachments by remember { mutableStateOf<List<MediaAsset>>(emptyList()) }
     var notice by remember { mutableStateOf<DockNotice?>(null) }
-    // 正在听。Voice 里的那个是普通变量（不是 Compose 状态），界面自己记一份。
-    var listening by remember { mutableStateOf(false) }
     val busy = state.isGroupBusy(groupId)
     val ready = state.groupReady(group)
 
@@ -112,6 +111,19 @@ fun GroupChatScreen(navigator: Navigator, groupId: String) {
             }
         }
     }
+
+    // 按住说话。转写成功直接发到群里，群里照样按轮流/点名去讨论。
+    val voice = rememberVoiceHold(
+        state = state,
+        scope = scope,
+        onHeard = { text ->
+            turn = scope.launch {
+                state.sendToGroup(groupId, text)
+                readReplyAloud()
+            }
+        },
+        onProblem = { notice = DockNotice(it, isError = true) },
+    )
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -211,38 +223,23 @@ fun GroupChatScreen(navigator: Navigator, groupId: String) {
                 onStop = { turn?.cancel() },
                 mentions = members,
                 canVoice = state.canListen,
-                listening = listening,
-                onVoiceToggle = {
+                voiceMode = voice.mode,
+                recognizing = voice.phase == HoldPhase.Transcribing,
+                onVoiceModeChange = {
                     notice = null
-                    if (listening) {
-                        listening = false
-                        turn = scope.launch {
-                            when (val heard = state.stopListening()) {
-                                // 转写成功直接发到群里，群里照样按轮流/点名去讨论
-                                is SpeechOutcome.Ok -> {
-                                    state.sendToGroup(groupId, heard.value)
-                                    readReplyAloud()
-                                }
-
-                                is SpeechOutcome.Failed ->
-                                    notice = DockNotice(heard.message, isError = true)
-                            }
-                        }
-                    } else {
-                        listening = true
-                        scope.launch {
-                            when (val started = state.startListening()) {
-                                is SpeechOutcome.Ok -> Unit
-                                is SpeechOutcome.Failed -> {
-                                    listening = false
-                                    notice = DockNotice(started.message, isError = true)
-                                }
-                            }
-                        }
-                    }
+                    voice.onModeChange(it)
                 },
+                onHoldStart = {
+                    notice = null
+                    voice.onStart()
+                },
+                onHoldCancelZone = voice.onCancelZone,
+                onHoldRelease = voice.onRelease,
             )
         }
+
+        // 录音浮层。放在最外层，盖住消息列表和输入坞。
+        VoiceHoldOverlay(voice.phase)
 
         // 全屏看图。放在最外层，盖住输入坞。
         (viewingMessage?.body as? MessageBody.Image)?.let { body ->
@@ -286,6 +283,8 @@ private fun GroupHeader(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(StarPalette.Surface)
+                // 底色往上铺到状态栏后面，内容躲开状态栏。见 App.kt 里关于顶栏归属的说明。
+                .statusBarsPadding()
                 .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

@@ -4,6 +4,21 @@
     <!-- 语音输入要录音。这是危险权限，运行时申请（见 AndroidVoiceRecorder）。 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!--
+      探测系统识别与朗读靠的是 queryIntentServices，而从 Android 11 起应用默认
+      看不见别的包的 service。不声明这两条，App 进程里会得出"这台设备没有语音能力"
+      的结论——哪怕系统明明装了识别引擎（小米是 com.xiaomi.mibrain.speech）。
+      单纯声明权限不够，这是两回事。
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

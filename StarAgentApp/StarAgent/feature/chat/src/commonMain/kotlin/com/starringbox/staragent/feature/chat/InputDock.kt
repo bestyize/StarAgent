@@ -38,7 +38,10 @@ import com.starringbox.staragent.core.model.Agent
 
 /**
  * 输入坞：文字 / 语音 / 拍照三合一。
- * 语音和拍照是**输入方式的补充**，不另开独立模式——避免用户在多个入口之间迷路。
+ *
+ * 语音走微信那套：点麦克风把输入框切成「按住说话」横条，按住说、松手发、上滑取消。
+ * 这里**刻意切成独立模式**——按住说话和打字是两种互斥的输入方式，同框并存只会互相误触。
+ * 拍照不切模式，它仍是补充。
  *
  * 待发送的图片显示在文字行上方，可以逐张移除。
  *
@@ -57,9 +60,20 @@ internal fun InputDock(
     mentions: List<Agent> = emptyList(),
     /** 能不能语音输入。不能时麦克风入口整个不显示，而不是留个点了没反应的按钮。 */
     canVoice: Boolean = false,
-    /** 正在听。界面据此把按钮换成停止、输入框换成提示。 */
-    listening: Boolean = false,
-    onVoiceToggle: () -> Unit = {},
+    /** 是不是「按住说话」模式。切过去之后输入框变成一条按住说话的横条——微信那种。 */
+    voiceMode: Boolean = false,
+    /**
+     * 上一段还在识别，这期间不许再按——识别器只有一个回调位，中途再按会丢掉上一次的结果。
+     *
+     * **只包含"识别中"**，不含正在录音。把录音也算进来的话，按下的瞬间横条就会被禁用，
+     * 而 `holdToTalk` 是靠 `enabled` 当 key 的，key 一变手势协程就被取消——
+     * 松手事件永远等不到，麦克风一直开着。
+     */
+    recognizing: Boolean = false,
+    onVoiceModeChange: (Boolean) -> Unit = {},
+    onHoldStart: () -> Unit = {},
+    onHoldCancelZone: (Boolean) -> Unit = {},
+    onHoldRelease: (cancelled: Boolean, heldMillis: Long) -> Unit = { _, _ -> },
 ) {
     var text by remember { mutableStateOf("") }
     // 只有图片、没有文字也要能发
@@ -96,55 +110,66 @@ internal fun InputDock(
         ) {
             if (canVoice) {
                 CircleIconButton(
-                    glyph = if (listening) StarIconGlyph.Pause else StarIconGlyph.Mic,
-                    onClick = onVoiceToggle,
+                    glyph = if (voiceMode) StarIconGlyph.Keyboard else StarIconGlyph.Mic,
+                    onClick = { onVoiceModeChange(!voiceMode) },
                     size = 38.dp,
-                    tint = if (listening) StarPalette.Danger else StarPalette.TextMuted,
+                    tint = if (voiceMode) StarPalette.Indigo else StarPalette.TextMuted,
                 )
                 Spacer(Modifier.width(6.dp))
             }
 
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(StarPalette.SurfaceAlt)
-                    .padding(horizontal = 14.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                BasicTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    enabled = !busy && !listening,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = StarPalette.Text),
-                    cursorBrush = SolidColor(StarPalette.Indigo),
-                    maxLines = 4,
-                    modifier = Modifier.weight(1f),
-                    decorationBox = { inner ->
-                        Box {
-                            if (text.isEmpty()) {
-                                Text(
-                                    text = when {
-                                        listening -> "正在听…再点一下结束"
-                                        busy -> "正在回复…"
-                                        else -> "说点什么…"
-                                    },
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = StarPalette.TextFaint,
-                                )
-                            }
-                            inner()
-                        }
+            if (voiceMode) {
+                HoldToTalkBar(
+                    label = when {
+                        recognizing -> "识别中…"
+                        enabled && !busy -> "按住 说话"
+                        else -> "正在回复…"
                     },
+                    enabled = enabled && !busy && !recognizing,
+                    onStart = onHoldStart,
+                    onCancelZone = onHoldCancelZone,
+                    onRelease = onHoldRelease,
+                    modifier = Modifier.weight(1f),
                 )
-                if (canPickImage) {
-                    Spacer(Modifier.width(8.dp))
-                    StarIcon(
-                        icon = StarIconGlyph.Camera,
-                        iconSize = 18.dp,
-                        tint = if (enabled && !busy) StarPalette.TextMuted else StarPalette.TextFaint,
-                        modifier = Modifier.clickable(enabled = enabled && !busy) { onPickImage() },
+            } else {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(StarPalette.SurfaceAlt)
+                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    BasicTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        enabled = !busy,
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = StarPalette.Text),
+                        cursorBrush = SolidColor(StarPalette.Indigo),
+                        maxLines = 4,
+                        modifier = Modifier.weight(1f),
+                        decorationBox = { inner ->
+                            Box {
+                                if (text.isEmpty()) {
+                                    Text(
+                                        text = if (busy) "正在回复…" else "说点什么…",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = StarPalette.TextFaint,
+                                    )
+                                }
+                                inner()
+                            }
+                        },
                     )
+                    if (canPickImage) {
+                        Spacer(Modifier.width(8.dp))
+                        StarIcon(
+                            icon = StarIconGlyph.Camera,
+                            iconSize = 18.dp,
+                            tint = if (enabled && !busy) StarPalette.TextMuted else StarPalette.TextFaint,
+                            modifier = Modifier.clickable(enabled = enabled && !busy) { onPickImage() },
+                        )
+                    }
                 }
             }
 
@@ -182,6 +207,37 @@ internal fun InputDock(
                 }
             }
         }
+    }
+}
+
+/**
+ * 「按住说话」那条横条。
+ *
+ * 手感上要贴近微信，所以它比输入框矮一点、文字居中，按下去不做任何视觉反馈——
+ * 真正的反馈是屏幕中央浮出来的那个录音浮层。
+ */
+@Composable
+private fun HoldToTalkBar(
+    label: String,
+    enabled: Boolean,
+    onStart: () -> Unit,
+    onCancelZone: (Boolean) -> Unit,
+    onRelease: (cancelled: Boolean, heldMillis: Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(if (enabled) StarPalette.SurfaceAlt else StarPalette.SurfaceSunken)
+            .holdToTalk(enabled, onStart, onCancelZone, onRelease)
+            .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (enabled) StarPalette.Text else StarPalette.TextFaint,
+        )
     }
 }
 

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -209,6 +210,9 @@ fun StarPageHeader(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            // 页面底色本来就铺满全屏，这里只需要把内容让开状态栏。
+            // 应用是 edge-to-edge 的，顶部那一条由各页自己的头部去填——见 App.kt 的说明。
+            .statusBarsPadding()
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -324,6 +328,8 @@ fun StarTopBar(
         modifier = modifier
             .fillMaxWidth()
             .background(Brush.verticalGradient(listOf(Color(0xFFEFF4FF), StarPalette.Bg)))
+            // 渐变往上铺到状态栏后面，内容躲开状态栏——顶栏看起来才是"顶到边的"
+            .statusBarsPadding()
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

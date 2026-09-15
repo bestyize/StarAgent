@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -86,9 +87,6 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
     // 待发送的图片，以及一条提示（选图被拒 / 保存结果共用）
     var attachments by remember { mutableStateOf<List<MediaAsset>>(emptyList()) }
     var notice by remember { mutableStateOf<DockNotice?>(null) }
-    // 正在听。Voice 里的那个是普通变量（不是 Compose 状态），
-    // 所以界面自己记一份来驱动按钮和提示文案。
-    var listening by remember { mutableStateOf(false) }
     val busy = state.isBusy(agentId)
     val configured = state.endpointFor(agent) != null
 
@@ -125,6 +123,19 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
             }
         }
     }
+
+    // 按住说话。转写成功直接发出去——"语音对话"不该还要再点一次发送。
+    val voice = rememberVoiceHold(
+        state = state,
+        scope = scope,
+        onHeard = { text ->
+            turn = scope.launch {
+                state.send(agentId, text, emptyList())
+                readReplyAloud()
+            }
+        },
+        onProblem = { notice = DockNotice(it, isError = true) },
+    )
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -213,38 +224,23 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
                 },
                 onStop = { turn?.cancel() },
                 canVoice = state.canListen,
-                listening = listening,
-                onVoiceToggle = {
+                voiceMode = voice.mode,
+                recognizing = voice.phase == HoldPhase.Transcribing,
+                onVoiceModeChange = {
                     notice = null
-                    if (listening) {
-                        listening = false
-                        turn = scope.launch {
-                            when (val heard = state.stopListening()) {
-                                // 转写成功就直接发出去——"语音对话"不该还要再点一次发送
-                                is SpeechOutcome.Ok -> {
-                                    state.send(agentId, heard.value, emptyList())
-                                    readReplyAloud()
-                                }
-
-                                is SpeechOutcome.Failed ->
-                                    notice = DockNotice(heard.message, isError = true)
-                            }
-                        }
-                    } else {
-                        listening = true
-                        scope.launch {
-                            when (val started = state.startListening()) {
-                                is SpeechOutcome.Ok -> Unit
-                                is SpeechOutcome.Failed -> {
-                                    listening = false
-                                    notice = DockNotice(started.message, isError = true)
-                                }
-                            }
-                        }
-                    }
+                    voice.onModeChange(it)
                 },
+                onHoldStart = {
+                    notice = null
+                    voice.onStart()
+                },
+                onHoldCancelZone = voice.onCancelZone,
+                onHoldRelease = voice.onRelease,
             )
         }
+
+        // 录音浮层。放在最外层，盖住消息列表和输入坞。
+        VoiceHoldOverlay(voice.phase)
 
         if (sheetOpen) {
             AgentStatusSheet(
@@ -564,6 +560,8 @@ private fun ChatHeader(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(StarPalette.Surface)
+                // 底色往上铺到状态栏后面，内容躲开状态栏。见 App.kt 里关于顶栏归属的说明。
+                .statusBarsPadding()
                 .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

@@ -56,8 +56,15 @@ class AndroidSystemTranscriber(
     private fun granted(): Boolean =
         context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
+    /**
+     * 这台机器有没有系统识别——**不看权限**。
+     *
+     * 权限不算能力，只是还没申请过而已，点一下就会弹窗（见 [start]）。把它算进来会绕成死环：
+     * 没权限 → 这路不算可用 → 麦克风入口不渲染 → 没有入口去申请 → 永远没权限。
+     * 录音器那边（[com.starringbox.staragent.core.voice.Recorders]）是同样的立场。
+     */
     override val ready: Boolean
-        get() = SpeechRecognizer.isRecognitionAvailable(context) && granted()
+        get() = SpeechRecognizer.isRecognitionAvailable(context)
 
     override suspend fun start(): Boolean {
         if (!SpeechRecognizer.isRecognitionAvailable(context)) return false
