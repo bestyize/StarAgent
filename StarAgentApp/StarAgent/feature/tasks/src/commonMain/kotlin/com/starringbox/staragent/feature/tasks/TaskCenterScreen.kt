@@ -137,9 +137,6 @@ fun TaskCenterScreen(navigator: Navigator) {
                         }
                     },
                 )
-                Spacer(Modifier.height(22.dp))
-                Text("让重要的事，在对的时间自然发生", style = MaterialTheme.typography.titleLarge, color = StarPalette.Text)
-                Text("用 AI 帮你规划、执行、追踪每一个任务，把精力留给更有价值的生活。", style = MaterialTheme.typography.bodyMedium, color = StarPalette.TextMuted, modifier = Modifier.padding(top = 5.dp))
             }
         }
 

@@ -77,14 +77,10 @@ fun AgentListScreen(navigator: Navigator) {
             Column(Modifier.statusBarsPadding().padding(horizontal = 20.dp, vertical = 18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("星环", style = MaterialTheme.typography.headlineSmall, color = StarPalette.Text)
-                        Text("${state.agents.size} 个智能体 · ${state.groups.size} 个群组", style = MaterialTheme.typography.bodyLarge, color = StarPalette.TextMuted)
+                        Text("星环智能", style = MaterialTheme.typography.headlineSmall, color = StarPalette.Text)
                     }
                     CircleIconButton(glyph = StarIconGlyph.Plus, onClick = { navigator.push(Route.AgentEditor(null)) }, size = 44.dp, tint = Color.White, containerColor = StarPalette.Indigo)
                 }
-                Spacer(Modifier.height(12.dp))
-                Text("智能体，让一切更简单", style = MaterialTheme.typography.headlineSmall, color = StarPalette.Text)
-                Text("创建 · 连接 · 扩展 · 与 AI 一起成长", style = MaterialTheme.typography.bodySmall, color = StarPalette.TextMuted)
             }
         }
 
