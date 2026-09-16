@@ -5,7 +5,7 @@ import com.starringbox.staragent.core.llm.LlmEndpoint
 import com.starringbox.staragent.core.llm.LlmTurn
 import com.starringbox.staragent.core.model.Author
 import com.starringbox.staragent.core.model.MessageBody
-import com.starringbox.staragent.core.storage.LocalStores
+import com.starringbox.staragent.core.platform.storage.LocalStores
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow

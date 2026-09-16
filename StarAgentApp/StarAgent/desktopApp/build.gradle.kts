@@ -8,9 +8,8 @@ plugins {
 
 dependencies {
     implementation(project(":shared"))
-    implementation(project(":core:media"))
-    implementation(project(":core:storage"))
-    implementation(project(":core:voice"))
+    // 各端平台能力由装配层一次装齐；core:platform 由它带进来
+    implementation(project(":core:bootstrap"))
 
     implementation(compose.desktop.currentOs)
     implementation(libs.kotlinx.coroutinesSwing)

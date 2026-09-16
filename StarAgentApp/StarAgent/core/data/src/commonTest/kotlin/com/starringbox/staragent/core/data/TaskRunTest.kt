@@ -4,7 +4,7 @@ import com.starringbox.staragent.core.llm.ChatStreamEvent
 import com.starringbox.staragent.core.model.MessageBody
 import com.starringbox.staragent.core.model.Recurrence
 import com.starringbox.staragent.core.model.TaskStatus
-import com.starringbox.staragent.core.storage.LocalStores
+import com.starringbox.staragent.core.platform.storage.LocalStores
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest

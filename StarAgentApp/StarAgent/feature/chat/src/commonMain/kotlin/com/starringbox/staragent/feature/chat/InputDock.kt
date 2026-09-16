@@ -33,7 +33,7 @@ import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.component.StarImage
 import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
-import com.starringbox.staragent.core.media.MediaAsset
+import com.starringbox.staragent.core.model.MediaAsset
 import com.starringbox.staragent.core.model.Agent
 
 /**

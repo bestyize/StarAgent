@@ -1,13 +1,13 @@
 package com.starringbox.staragent.core.llm
 
-import com.starringbox.staragent.core.voice.Players
-import com.starringbox.staragent.core.voice.Recorders
-import com.starringbox.staragent.core.voice.SpeechOutcome
-import com.starringbox.staragent.core.voice.Synthesizer
-import com.starringbox.staragent.core.voice.Transcriber
-import com.starringbox.staragent.core.voice.VoiceClip
-import com.starringbox.staragent.core.voice.VoiceRules
-import com.starringbox.staragent.core.voice.Wav
+import com.starringbox.staragent.core.platform.voice.Players
+import com.starringbox.staragent.core.platform.voice.Recorders
+import com.starringbox.staragent.core.platform.voice.SpeechOutcome
+import com.starringbox.staragent.core.platform.voice.Synthesizer
+import com.starringbox.staragent.core.platform.voice.Transcriber
+import com.starringbox.staragent.core.platform.voice.VoiceClip
+import com.starringbox.staragent.core.platform.voice.VoiceRules
+import com.starringbox.staragent.core.platform.voice.Wav
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.header

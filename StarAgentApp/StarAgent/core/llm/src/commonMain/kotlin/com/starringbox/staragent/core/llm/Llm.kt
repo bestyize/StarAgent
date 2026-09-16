@@ -1,6 +1,6 @@
 package com.starringbox.staragent.core.llm
 
-import com.starringbox.staragent.core.media.MediaAsset
+import com.starringbox.staragent.core.model.MediaAsset
 import com.starringbox.staragent.core.model.LlmProtocol
 
 /** 一次请求所需的全部信息。由服务商配置 + 当前智能体选定的模型解析得到。 */

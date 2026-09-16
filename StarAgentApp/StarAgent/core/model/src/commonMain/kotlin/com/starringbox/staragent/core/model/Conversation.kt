@@ -1,7 +1,7 @@
 package com.starringbox.staragent.core.model
 
 import kotlinx.serialization.Serializable
-import com.starringbox.staragent.core.media.MediaAsset
+import com.starringbox.staragent.core.model.MediaAsset
 
 @Serializable
 enum class Author { User, Agent }

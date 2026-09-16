@@ -15,11 +15,11 @@ import com.starringbox.staragent.core.llm.LlmTurn
 import com.starringbox.staragent.core.llm.ModelSynthesizer
 import com.starringbox.staragent.core.llm.ModelTranscriber
 import com.starringbox.staragent.core.llm.SpeechEndpoint
-import com.starringbox.staragent.core.media.MediaAsset
-import com.starringbox.staragent.core.storage.LocalStores
-import com.starringbox.staragent.core.voice.SpeechOutcome
-import com.starringbox.staragent.core.voice.Voice
-import com.starringbox.staragent.core.voice.VoiceSource
+import com.starringbox.staragent.core.model.MediaAsset
+import com.starringbox.staragent.core.platform.storage.LocalStores
+import com.starringbox.staragent.core.platform.voice.SpeechOutcome
+import com.starringbox.staragent.core.platform.voice.Voice
+import com.starringbox.staragent.core.platform.voice.VoiceSource
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.AgentGroup
 import com.starringbox.staragent.core.model.AgentTask

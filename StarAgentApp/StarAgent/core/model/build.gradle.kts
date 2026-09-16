@@ -10,7 +10,7 @@ plugins {
  * 领域模型层：纯 Kotlin，不依赖 Compose、不依赖平台。
  * 所有功能模块共享这里的类型定义。
  *
- * 依赖 :core:media 是因为消息体里要能承载图片——
+ * 依赖 :core:platform 是因为消息体里要能承载图片——
  * 媒体资源本身（含编码规则）统一由那一层定义，这里只引用，不重复造。
  */
 kotlin {
@@ -29,11 +29,11 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            // api：上层（core:llm、core:data、各 feature）能直接用 MediaAsset，不必各自再声明一次
-            api(project(":core:media"))
             // api：任务的下一次执行时刻要在数据层和界面层都用
             api(libs.kotlinx.datetime)
-            implementation(libs.kotlinx.serialization.json)
+            // api：MediaAsset 是本模块的公开类型且标了 @Serializable，
+            // 用它序列化的上层模块要看得到 KSerializer 这些类型
+            api(libs.kotlinx.serialization.json)
         }
     }
 }

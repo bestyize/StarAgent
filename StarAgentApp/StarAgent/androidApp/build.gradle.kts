@@ -12,10 +12,8 @@ kotlin {
 }
 dependencies {
     implementation(project(":shared"))
-    implementation(project(":core:data"))
-    implementation(project(":core:media"))
-    implementation(project(":core:storage"))
-    implementation(project(":core:voice"))
+    // 各端平台能力由装配层一次装齐；core:data / core:platform 都由它带进来
+    implementation(project(":core:bootstrap"))
 
     implementation(libs.androidx.activity.compose)
 

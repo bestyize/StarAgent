@@ -1,6 +1,6 @@
 package com.starringbox.staragent.core.llm
 
-import com.starringbox.staragent.core.media.MediaAsset
+import com.starringbox.staragent.core.model.MediaAsset
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject

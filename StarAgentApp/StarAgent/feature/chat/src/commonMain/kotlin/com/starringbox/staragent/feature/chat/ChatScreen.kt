@@ -51,17 +51,17 @@ import com.starringbox.staragent.core.designsystem.navigation.Route
 import com.starringbox.staragent.core.designsystem.component.StarImageViewer
 import com.starringbox.staragent.core.designsystem.component.StarSheetAction
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
-import com.starringbox.staragent.core.media.MediaAsset
-import com.starringbox.staragent.core.media.MediaPickers
-import com.starringbox.staragent.core.media.MediaRules
-import com.starringbox.staragent.core.media.MediaSavers
-import com.starringbox.staragent.core.media.suggestedFileName
+import com.starringbox.staragent.core.model.MediaAsset
+import com.starringbox.staragent.core.platform.media.MediaPickers
+import com.starringbox.staragent.core.platform.media.MediaRules
+import com.starringbox.staragent.core.platform.media.MediaSavers
+import com.starringbox.staragent.core.platform.media.suggestedFileName
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.Author
 import com.starringbox.staragent.core.model.ChatMessage
 import com.starringbox.staragent.core.model.MessageBody
 import com.starringbox.staragent.core.model.TaskDraft
-import com.starringbox.staragent.core.voice.SpeechOutcome
+import com.starringbox.staragent.core.platform.voice.SpeechOutcome
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 

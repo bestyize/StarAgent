@@ -1,6 +1,6 @@
 package com.starringbox.staragent.core.data
 
-import com.starringbox.staragent.core.media.MediaAsset
+import com.starringbox.staragent.core.model.MediaAsset
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.AgentGroup
 import com.starringbox.staragent.core.model.AgentTask
@@ -9,7 +9,7 @@ import com.starringbox.staragent.core.model.ChatMessage
 import com.starringbox.staragent.core.model.MemoryItem
 import com.starringbox.staragent.core.model.MessageBody
 import com.starringbox.staragent.core.model.Skill
-import com.starringbox.staragent.core.storage.LocalStore
+import com.starringbox.staragent.core.platform.storage.LocalStore
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 

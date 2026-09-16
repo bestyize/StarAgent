@@ -34,11 +34,13 @@ Key 只保存在本机（桌面 `java.util.prefs`、Android `SharedPreferences`�
 ```
 StarAgent/
 ├── core/                    核心层：不含业务界面，被所有功能模块依赖
-│   ├── media/               多模态基础能力：资源表示、编码、校验、选取契约（零平台依赖）
 │   ├── model/               领域模型（纯 Kotlin，不依赖 Compose）
 │   ├── designsystem/        主题、图标、通用组件、导航契约
+│   ├── platform/            平台能力层：本地存储 / 选图保存 / 语音
+│   │                        （内部分包，三端实现各在自己的源集里）
 │   ├── llm/                 模型接入：协议实现 + 流式解析（不依赖 Compose）
-│   └── data/                应用状态、模型服务配置、对话流
+│   ├── data/                应用状态、模型服务配置、对话流
+│   └── bootstrap/           装配层：启动时把各端的平台能力一次装起来
 │
 ├── feature/                 功能层：一个模块 = 一块完整功能
 │   ├── agents/              智能体：列表、创建、配置
@@ -69,10 +71,13 @@ StarAgent/
                     │  core:designsystem │  主题 / 图标 / 组件 / 导航契约
                     │      core:data     │  状态 / 模型配置 / 对话流
                     │      core:llm      │  协议实现 + 流式解析
-                    │     core:model     │  领域模型
-                    │     core:media     │  多模态基础能力（叶子模块）
+                    │    core:platform   │  存储 / 选图保存 / 语音
+                    │     core:model     │  领域模型（零平台依赖）
                     └────────────────────┘
 ```
+
+`core:bootstrap` 不在上面这张图里——**它只被各端入口依赖**，`shared` 和功能模块都不碰它，
+详见下面「平台相关代码」。
 
 规则：
 
@@ -88,40 +93,56 @@ StarAgent/
 
 ## 平台相关代码
 
-一期几乎全是 `commonMain`，只有两处需要按平台实现：
+按平台实现的代码集中在 `core:platform` 里；各端入口**只负责把它们装起来**：
 
 | 位置 | 桌面 | Android | iOS |
 | --- | --- | --- | --- |
 | `core:llm` 的 HTTP 引擎 | CIO | OkHttp | Darwin |
 | `core:data` 的本地键值存储 | `java.util.prefs` | `SharedPreferences` | `NSUserDefaults` |
-| 选图 / 保存（**放在各端入口模块**） | `desktopApp` | `androidApp` | 尚未接入 |
+| `core:platform` 本地存储 | `DesktopLocalStore` | `AndroidLocalStore` | 尚未接入 |
+| `core:platform` 选图 / 保存 | `DesktopMediaPicker/Saver` | `AndroidMediaPicker/Saver` | 尚未接入 |
+| `core:platform` 语音 | 录音 + 播放 | 四样齐全（录放 + 系统识别/合成） | 四样已写，未在真机验证 |
 
-Android 上 `SettingsStore` 需要 Context，由 `MainActivity` 调 `AndroidAppContext.install(applicationContext)` 注入；
-选图与保存因为都要挂在 Activity 的 result 回调上，也在同一处注册。
+**装配集中在 `core:bootstrap`**：各端入口只调一次 `PlatformInstall.install(...)`——
+Android 传 `Context` 和 `ActivityResultCaller`（**必须在 `super.onCreate` 之前**），
+桌面和 iOS 不传参。Android 上 `SettingsStore` 需要的 Context 也由它注入。
+
+为什么把"实现"和"什么时候装"分成两层：实现在 `core:platform` 各自的源集里，
+装配在 `core:bootstrap` 里。合在一起的话，各端入口要自己记住装哪几样、按什么顺序；
+分开之后入口只剩一行，漏装一样会很明显。
 
 ---
 
 ## 多模态
 
-图片能力集中在 `:core:media`，它的职责边界划得很死——**只负责"拿到一张图，并把它变成可传输的形式"**：
+图片能力在 `core:platform` 的 media 包下，职责边界划得很死——**只负责"拿到一张图，并把它变成可传输的形式"**。
+资源表示本身则在 `core:model`：
 
 ```
-core/media
-├── MediaAsset   资源表示（bytes + mimeType），带 base64() / dataUrl() 两种编码
+core:model
+└── MediaAsset   资源表示（bytes + mimeType），带 base64() / dataUrl() 两种编码
+
+core:platform  的 media 包
 ├── MediaRules   格式与体积准入规则，不合格的在本地就挡下来
 ├── MediaPicker  选取契约 + 注册表
 └── MediaSaver   保存契约 + 注册表
 ```
 
+`MediaAsset` 放在 `core:model` 而不是平台层，是因为它是**领域类型**：
+`MessageBody.Image` 和 `LlmTurn.images` 都要用它。反过来让领域模型去依赖平台能力层是错的，
+所以它上移之后 `core:model` 仍然零平台依赖——原来那条 `api(core:media)` 已经去掉了，
+改成 `core:platform` 依赖 `core:model`。
+
 **为什么选图不做成 `expect/actual`**：Android 的选图必须挂在 Activity 的 `registerForActivityResult` 上，
 用 `expect` 函数凭空造一个出来是做不到的。所以改成"平台注册、上层取用"——
-各端入口把实现推进 `MediaPickers`，媒体模块本身**不认识任何平台**。
+各端实现放在 `core:platform` 各自的源集里，由 `core:bootstrap` 装进注册表；
+契约所在的 `commonMain` 本身不认识任何平台。语音也是同一套形状，理由见那边 `Recorder.kt` 的注释。
 
 依赖方向因此是单向且干净的：
 
 ```
-core:media  ←  core:model  ←  core:llm / core:data / feature:*
-   （叶子，只依赖协程）        （只管按协议把图编成 payload）
+core:model  ←  core:platform  ←  core:bootstrap
+（叶子，零平台依赖）  （存储 / 选图 / 语音）   （只被各端入口依赖）
 ```
 
 界面侧 `StarImage` 只接收 `ByteArray`、不接收 `MediaAsset`，

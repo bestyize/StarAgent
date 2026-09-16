@@ -61,7 +61,7 @@ import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.ResponseMode
-import com.starringbox.staragent.core.voice.VoiceSource
+import com.starringbox.staragent.core.platform.voice.VoiceSource
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch

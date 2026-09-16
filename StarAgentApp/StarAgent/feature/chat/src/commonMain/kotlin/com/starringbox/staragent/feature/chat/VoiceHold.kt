@@ -39,8 +39,8 @@ import com.starringbox.staragent.core.data.AppState
 import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
-import com.starringbox.staragent.core.voice.SpeechOutcome
-import com.starringbox.staragent.core.voice.VoiceRules
+import com.starringbox.staragent.core.platform.voice.SpeechOutcome
+import com.starringbox.staragent.core.platform.voice.VoiceRules
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job

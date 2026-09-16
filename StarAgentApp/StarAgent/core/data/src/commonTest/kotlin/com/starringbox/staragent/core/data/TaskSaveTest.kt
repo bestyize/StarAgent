@@ -2,7 +2,7 @@ package com.starringbox.staragent.core.data
 
 import com.starringbox.staragent.core.model.Recurrence
 import com.starringbox.staragent.core.model.defaultScheduleFor
-import com.starringbox.staragent.core.storage.LocalStores
+import com.starringbox.staragent.core.platform.storage.LocalStores
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals

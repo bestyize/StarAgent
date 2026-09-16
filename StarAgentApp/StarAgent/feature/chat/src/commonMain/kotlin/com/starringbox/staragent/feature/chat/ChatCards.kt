@@ -43,7 +43,7 @@ import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.component.StarTag
 import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
-import com.starringbox.staragent.core.media.MediaAsset
+import com.starringbox.staragent.core.model.MediaAsset
 import com.starringbox.staragent.core.model.AgentTask
 import com.starringbox.staragent.core.model.Artifact
 import com.starringbox.staragent.core.model.ExecutionStep

@@ -1,6 +1,6 @@
 package com.starringbox.staragent.core.data
 
-import com.starringbox.staragent.core.storage.LocalStore
+import com.starringbox.staragent.core.platform.storage.LocalStore
 
 /**
  * 内存版存储，测试里替代平台实现。

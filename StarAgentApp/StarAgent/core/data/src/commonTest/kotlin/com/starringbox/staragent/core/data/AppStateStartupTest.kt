@@ -2,7 +2,7 @@ package com.starringbox.staragent.core.data
 
 import com.starringbox.staragent.core.model.AgentGroup
 import com.starringbox.staragent.core.model.MessageBody
-import com.starringbox.staragent.core.storage.LocalStores
+import com.starringbox.staragent.core.platform.storage.LocalStores
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals

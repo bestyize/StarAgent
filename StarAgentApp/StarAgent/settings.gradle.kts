@@ -39,18 +39,17 @@ include(":shared")
 // ── 核心层 ─────────────────────────────────────
 // model        领域模型，纯 Kotlin，不依赖 Compose
 // designsystem 设计系统：主题、图标、通用组件、导航契约
-// media        多模态基础能力：媒体资源的表示、编码与选取
-// storage      本地存储：按名字读写文本与字节（零平台依赖）
+// platform     平台能力层：本地存储 / 选图保存 / 语音（内部分包，三端实现各在自己的源集）
 // llm          模型接入：协议实现 + 流式解析（无 Compose 依赖）
 // data         应用状态与数据源（一期为内存实现 + 本地偏好存储）
 include(":core:model")
 include(":core:designsystem")
-include(":core:media")
-// voice        语音能力：识别/合成的统一契约（设备能力或大模型，由入口注入）
-include(":core:voice")
-include(":core:storage")
+include(":core:platform")
 include(":core:llm")
 include(":core:data")
+// bootstrap    装配层：启动时把各端的平台能力一次装起来
+//              （各端实现在 core:platform 里，这里只管"什么时候装"）
+include(":core:bootstrap")
 
 // ── 公共层 ─────────────────────────────────────
 include(":common:apptheme")
