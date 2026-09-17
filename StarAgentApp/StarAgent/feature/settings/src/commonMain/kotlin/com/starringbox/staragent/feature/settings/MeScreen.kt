@@ -61,6 +61,7 @@ fun MeScreen(navigator: Navigator) {
         StarPageHeader(
             title = "星环智能 Agent",
             subtitle = "S T A R   R I N G",
+            onSettings = { navigator.push(Route.Settings) },
         )
 
         Spacer(Modifier.height(26.dp))

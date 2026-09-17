@@ -15,6 +15,9 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 enum class StarIconGlyph {
     Chat,
@@ -44,6 +47,8 @@ enum class StarIconGlyph {
     Export,
     Chip,
     Info,
+    Gear,
+    Folder,
 }
 
 /**
@@ -274,6 +279,26 @@ fun StarIcon(
                 line(12f, 11f, 12f, 16.5f)
                 circle(12f, 7.8f, 0.9f, filled = true)
             }
+
+            StarIconGlyph.Gear -> {
+                // 齿圈 + 八颗齿。均匀撒一圈短线就够认出来了，
+                // 真去画渐开线在这个尺寸上反而糊成一团。
+                circle(12f, 12f, 5.4f)
+                repeat(8) { index ->
+                    val radians = index * 45.0 * PI / 180.0
+                    val dx = cos(radians).toFloat()
+                    val dy = sin(radians).toFloat()
+                    line(12f + dx * 5.4f, 12f + dy * 5.4f, 12f + dx * 8.4f, 12f + dy * 8.4f)
+                }
+            }
+
+            StarIconGlyph.Folder -> poly(
+                listOf(
+                    3.5f to 19.5f, 3.5f to 5.5f, 9.5f to 5.5f,
+                    11.5f to 8f, 20.5f to 8f, 20.5f to 19.5f,
+                ),
+                close = true,
+            )
         }
     }
 }

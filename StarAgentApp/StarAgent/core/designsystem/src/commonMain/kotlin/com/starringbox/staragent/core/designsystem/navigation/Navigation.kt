@@ -48,6 +48,20 @@ sealed interface Route {
 
     /** 技能管理。 */
     data object Skills : Route
+
+    /** 设置。从「我的」页右上角的齿轮进来。 */
+    data object Settings : Route
+
+    /**
+     * 文件浏览器：看存档那棵目录树。
+     *
+     * [path] 是**相对根目录的路径**，空串表示根。它是路由参数而不是页面内部状态——
+     * 这样系统返回键天然就是"上一层目录"，和别处的返回语义一致。
+     *
+     * 一个路径既可能是目录也可能是文件：是文件时同一个页面渲染它的只读预览，
+     * 于是返回键也就顺势是"回到所在目录"。
+     */
+    data class StorageBrowser(val path: String) : Route
 }
 
 /**

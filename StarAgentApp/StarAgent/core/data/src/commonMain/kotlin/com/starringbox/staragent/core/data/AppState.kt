@@ -229,6 +229,14 @@ class AppState(
 
     // ── 会话查询 ────────────────────────────────
 
+    /**
+     * 有几段**有内容的**会话（单聊 + 群聊）。设置页的统计用。
+     *
+     * 只数非空的：清空过的对话在存档里还会留一个空文件（那是"这条对话存在过"的记录），
+     * 但对着用户说"你有 12 段会话"时，空的不该算进去。
+     */
+    val conversationCount: Int get() = conversations.count { it.value.isNotEmpty() }
+
     fun agent(id: String): Agent? = agents.firstOrNull { it.id == id }
 
     fun deleteAgent(id: String) {

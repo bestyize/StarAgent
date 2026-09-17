@@ -113,6 +113,55 @@ Android 传 `Context` 和 `ActivityResultCaller`（**必须在 `super.onCreate` 
 
 ---
 
+## 存档
+
+内容存成**一棵目录树**，不是一份大 JSON：
+
+```
+~/.staragent/                      Android 上是 /data/data/<包名>/files/staragent/
+├── layout.json                    版本 + 列表顺序。最后写，它的存在 = 这棵树完整
+├── config.json                    渠道、已安装的技能
+├── agents/<id>/
+│   ├── SOUL.md                    人格正文，用户手写的那部分
+│   ├── agent.json                 名字/图标/配色/模型/技能/置顶/能否托管任务
+│   └── MEMORY.md                  记忆，按五个分类分节
+├── skills/<id>/SKILL.md
+├── groups/<id>.json
+├── sessions/agents/<id>.jsonl     一行一条消息
+├── sessions/groups/<id>.jsonl
+├── tasks/tasks.json
+├── media/<id>.<ext>
+└── backups/
+    ├── state.v1.json              迁移前的旧存档，原样留档
+    └── broken/                    读不出来的文件挪到这
+```
+
+**为什么拆开**：单份 `state.json` 的失败模式是"一个字节坏 → 整份读不出 → 退回种子 →
+用户内容全没"。拆开之后坏一个只坏一个，其余照常加载，坏文件进 `backups/broken/`
+并在设置页里报出来。顺带解决两件事：只有变了的文件会被重写（不是每次改动重写全部），
+以及智能体成了一个能被单独带走的文件夹。
+
+几个不那么显然的决定：
+
+- **`SOUL.md` 和 `agent.json` 是两个文件**。前者是用户手写的散文，后者是 App 会改的状态。
+  合成一个的话，用户每点一次"置顶"，App 就要重写一遍他手写的字。
+- **列表顺序记在 `layout.json` 里**。扫描目录只能得到字母序，而顺序在界面上是可见的。
+  顺序坏了只坏观感、不会少数据，所以放在这份元信息里而不是每个实体自己的文件里。
+- **`sessions/` 分 agents 和 groups 两层**。会话键里有 `group:g-1`，而 `:` 在 Windows
+  文件名里非法——分层是不用做键编码就绕开它的办法。
+- **`layout.json` 最后写**。中途断电时下次启动看到的还是"只有旧的 `state.json`、
+  没有 `layout.json`"，于是重新迁一遍——幂等，而且旧数据一直没被删。
+- **密钥不进这棵树**。API Key 留在 `SettingsStore` 里：设置页的文件浏览器能预览文件内容，
+  把密钥放进可浏览的树等于一点就能看到明文。
+
+`LocalStore`（`core:platform` 的 storage 包）只有"按名字读写 + 列举 + 大小 + 根路径"，
+不认识 JSON、不认识任何业务类型——怎么组织数据是 `core:data` 的事，见 `StateTree.kt`。
+
+**看它长什么样**：「我的」右上角齿轮 → 设置 → 右上角文件夹，或者直接去
+`~/.staragent/` 用文件管理器打开。
+
+---
+
 ## 多模态
 
 图片能力在 `core:platform` 的 media 包下，职责边界划得很死——**只负责"拿到一张图，并把它变成可传输的形式"**。

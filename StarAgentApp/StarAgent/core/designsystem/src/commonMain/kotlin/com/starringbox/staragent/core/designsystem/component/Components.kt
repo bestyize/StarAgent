@@ -258,7 +258,7 @@ fun StarConfirmDialog(
 }
 
 /**
- * 页面顶部品牌栏：左侧标题，右侧搜索与新建。
+ * 页面顶部品牌栏：左侧标题，右侧搜索 / 新建 / 设置。
  * 设计稿里首页、记忆、智能体页共用这个头，所以抽在这里，不要各写一份。
  */
 @Composable
@@ -268,6 +268,7 @@ fun StarPageHeader(
     modifier: Modifier = Modifier,
     onSearch: (() -> Unit)? = null,
     onCreate: (() -> Unit)? = null,
+    onSettings: (() -> Unit)? = null,
 ) {
     Row(
         modifier = modifier
@@ -301,6 +302,15 @@ fun StarPageHeader(
                 size = 40.dp,
                 tint = Color.White,
                 containerColor = StarPalette.Indigo,
+            )
+        }
+        if (onSettings != null) {
+            Spacer(Modifier.width(6.dp))
+            CircleIconButton(
+                glyph = StarIconGlyph.Gear,
+                onClick = onSettings,
+                size = 40.dp,
+                tint = StarPalette.Text,
             )
         }
     }

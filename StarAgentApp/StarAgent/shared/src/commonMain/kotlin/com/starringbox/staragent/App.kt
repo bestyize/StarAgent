@@ -58,7 +58,9 @@ import com.starringbox.staragent.feature.settings.MeScreen
 import com.starringbox.staragent.feature.settings.MemoryScreen
 import com.starringbox.staragent.feature.settings.ModelConfigScreen
 import com.starringbox.staragent.feature.settings.ProviderDetailScreen
+import com.starringbox.staragent.feature.settings.SettingsScreen
 import com.starringbox.staragent.feature.settings.SkillsScreen
+import com.starringbox.staragent.feature.settings.StorageBrowserScreen
 import com.starringbox.staragent.feature.tasks.TaskCenterScreen
 import com.starringbox.staragent.feature.tasks.TaskDetailScreen
 import kotlinx.coroutines.CancellationException
@@ -187,6 +189,8 @@ private fun RouteHost(navigator: Navigator) {
             Route.Memories -> MemoryScreen(navigator)
             Route.Channels -> ChannelsScreen(navigator)
             Route.Skills -> SkillsScreen(navigator)
+            Route.Settings -> SettingsScreen(navigator)
+            is Route.StorageBrowser -> StorageBrowserScreen(navigator, route.path)
         }
     }
 }

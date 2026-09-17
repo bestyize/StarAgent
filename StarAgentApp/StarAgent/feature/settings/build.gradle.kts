@@ -27,6 +27,10 @@ kotlin {
             api(project(":core:designsystem"))
             implementation(project(":core:model"))
             implementation(project(":core:data"))
+            // 文件浏览器要直接问设备"能存哪些东西"（LocalStores.list / size / rootPath）。
+            // core:data 用的是 implementation，传不过来，所以这里得显式写一条——
+            // 和 feature:chat 里那条注释是同一个坑。
+            implementation(project(":core:platform"))
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)
