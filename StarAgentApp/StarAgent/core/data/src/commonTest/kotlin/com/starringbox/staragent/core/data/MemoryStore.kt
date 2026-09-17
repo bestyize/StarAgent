@@ -12,15 +12,36 @@ internal class MemoryStore : LocalStore {
     private val texts = mutableMapOf<String, String>()
     private val blobs = mutableMapOf<String, ByteArray>()
 
+    /**
+     * 写过多少次。
+     *
+     * 目录树存的是一堆小文件，**只写变了的**才不至于比原来那一份 JSON 更慢——
+     * 那件事没法从"最终内容对不对"上看出来，只能数写入次数。
+     */
+    var textWrites = 0
+        private set
+    var byteWrites = 0
+        private set
+
+    fun resetWriteCounts() {
+        textWrites = 0
+        byteWrites = 0
+    }
+
+    /** 现在存着哪些路径。断言"某棵子树没留下东西"时用。 */
+    fun paths(): List<String> = (texts.keys + blobs.keys).sorted()
+
     override fun readText(name: String): String? = texts[name]
 
     override fun writeText(name: String, text: String) {
+        textWrites++
         texts[name] = text
     }
 
     override fun readBytes(name: String): ByteArray? = blobs[name]
 
     override fun writeBytes(name: String, bytes: ByteArray) {
+        byteWrites++
         blobs[name] = bytes
     }
 

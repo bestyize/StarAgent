@@ -92,6 +92,23 @@ class AppState(
 
     private var idSeq = 0
 
+    /**
+     * 整个 AppState 共用**一个** persister。
+     *
+     * 它记着"上次写出去的是什么"，才能只写变了的文件——每次新建一个的话这份记忆就没了，
+     * 25 个实体文件会每次全量重写，比原来那一份 JSON 还慢。
+     */
+    private val persister: StatePersister? =
+        if (LocalStores.available) StatePersister(LocalStores.current) else null
+
+    /**
+     * 上次启动有几个文件没能用（坏掉的已经挪到 `backups/broken/`）。
+     *
+     * 以前这类事是静默的；现在至少能显示出来，让"内容不见了"变成"内容坏了，在这"。
+     */
+    var loadIssues by mutableStateOf(0)
+        private set
+
     init {
         // 内置服务商是结构不是内容：用户配的 Key 和模型清单存在 SettingsStore 里，
         // 这一层每次启动都要重建，否则走存档还原时服务商列表是空的。
@@ -100,14 +117,18 @@ class AppState(
         // 演示内容（智能体、任务、记忆…）是另一回事：有存档就还原，没有才灌种子。
         // 这一步是"删掉的会话冷启又回来"的根因所在——原先每次启动都无条件灌种子，
         // 用户的删除自然就白删了。
-        val restored = if (LocalStores.available) StatePersister(LocalStores.current).load() else null
+        //
+        // 存档现在是目录树；`fromLegacyFile` 表示这次读到的还是旧的那份 `state.json`，
+        // 树还没建——下面补的那次落盘就是迁移本身。
+        val loaded = persister?.load()
 
-        if (restored != null) {
+        if (loaded != null) {
             // id 计数器（idSeq）不落盘，重启后从 0 开始，新消息就会拿到跟存档里
             // 已有消息相同的 id——列表里出现重复 key，LazyColumn 会直接崩。
             // 所以还原前先修一遍：计数器顶到已有 id 之上，已经撞上的重新编号。
-            val (saved, counter) = normalizeIds(restored)
+            val (saved, counter) = normalizeIds(loaded.state)
             idSeq = counter
+            loadIssues = loaded.issues
 
             agents.addAll(saved.agents)
             tasks.addAll(saved.tasks)
@@ -119,7 +140,7 @@ class AppState(
 
             // 修过 id 就顺手落盘，否则这份存档每次启动都要重修一遍。
             // 必须等上面填完再写——persistState 是从这些列表里取的，提前调会写出空存档。
-            if (saved != restored) persistState()
+            if (saved != loaded.state || loaded.fromLegacyFile) persistState()
         } else {
             Seed.populateDemo(this)
             // 首次运行立刻落盘：否则用户这次删的东西，下次启动又会被种子灌回来
@@ -140,8 +161,7 @@ class AppState(
 
     /** 把当前状态落盘。没装存储实现（iOS）时整段跳过。 */
     private fun persistState() {
-        if (!LocalStores.available) return
-        StatePersister(LocalStores.current).save(
+        persister?.save(
             PersistedState(
                 agents = agents.toList(),
                 tasks = tasks.toList(),
