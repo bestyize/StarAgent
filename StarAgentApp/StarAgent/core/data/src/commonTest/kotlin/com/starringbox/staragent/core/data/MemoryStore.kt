@@ -28,4 +28,19 @@ internal class MemoryStore : LocalStore {
         texts.remove(name)
         blobs.remove(name)
     }
+
+    /** 和真实实现一样：递归列出，返回相对根目录的路径。 */
+    override fun list(prefix: String): List<String> {
+        val p = prefix.trimEnd('/')
+        return (texts.keys + blobs.keys)
+            .filter { p.isEmpty() || it == p || it.startsWith("$p/") }
+            .distinct()
+            .sorted()
+    }
+
+    override fun size(name: String): Long? =
+        texts[name]?.encodeToByteArray()?.size?.toLong() ?: blobs[name]?.size?.toLong()
+
+    /** 内存里没有"目录"这回事——正好用来测"没有根路径可显示"那条分支。 */
+    override val rootPath: String? get() = null
 }
