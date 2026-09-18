@@ -84,8 +84,9 @@ fun AgentEditorScreen(navigator: Navigator, agentId: String?) {
     var canScheduleTasks by remember { mutableStateOf(editing?.canScheduleTasks ?: false) }
 
     // 直接算，不用 remember 缓存——服务商配置随时可能变，缓存反而容易过期。
+    // 只列能对话的：识别/合成/审核模型也在 models 里，选中它们聊天必然失败。
     val modelChoices = state.providers.flatMap { provider ->
-        provider.models.mapIndexed { index, label -> state.modelKey(provider.id, index) to label }
+        provider.chatChoices.map { (index, label) -> state.modelKey(provider.id, index) to label }
     }
 
     Column(Modifier.fillMaxSize()) {

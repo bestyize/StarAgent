@@ -1,5 +1,7 @@
 package com.starringbox.staragent.core.platform.voice
 
+import kotlin.math.sqrt
+
 /**
  * 最小的 WAV 封装。
  *
@@ -18,6 +20,9 @@ object Wav {
     const val CHANNELS = 1
     const val BITS_PER_SAMPLE = 16
     const val HEADER_BYTES = 44
+
+    /** 一帧 20ms。取的是音节的时间尺度：比一个字短，比一次停顿长。 */
+    const val FRAME_MILLIS = 20
 
     /** 把裸 PCM 包成一个可传输的 WAV 文件。 */
     fun wrap(pcm: ByteArray): ByteArray {
@@ -57,6 +62,46 @@ object Wav {
 
         return dataSize.toLong() * 1000 / byteRate
     }
+
+    /**
+     * 有声帧的占比：切成 [FRAME_MILLIS] 一帧，数其中响度过 [floor] 的帧。
+     *
+     * 逐帧算而不是整段算一个均值，是因为均值会被稀释：一句两个字的话摊到
+     * 三十秒里，整段 RMS 和一段安静没什么区别。逐帧看的话，说话的那几帧照样是响的。
+     * 用帧 RMS 而不是峰值也是同一个道理反过来——一次桌面磕碰的峰值很高，
+     * 但它只占一帧，摊到帧里立刻显出来它不是说话。
+     *
+     * [floor] 是满量程的占比（1.0 = 削顶）。不是 WAV、或者短到不足一帧时返回
+     * null：**判断不了就不下判断**，让调用方按"没有依据"处理，而不是按"没声音"。
+     */
+    fun voicedFraction(bytes: ByteArray, floor: Double): Double? {
+        if (bytes.size < HEADER_BYTES) return null
+        if (bytes.decodeToString(0, 4) != "RIFF" || bytes.decodeToString(8, 12) != "WAVE") return null
+
+        // 头里写的长度可能和实际字节数不一致（录音被截断就是这样），取小的那个
+        val declared = bytes.intLe(40)
+        val available = bytes.size - HEADER_BYTES
+        val dataBytes = if (declared in 1..available) declared else available
+
+        val perFrame = SAMPLE_RATE * FRAME_MILLIS / 1000
+        val frames = dataBytes / 2 / perFrame
+        if (frames <= 0) return null
+
+        var voiced = 0
+        for (frame in 0 until frames) {
+            var energy = 0.0
+            val base = HEADER_BYTES + frame * perFrame * 2
+            for (i in 0 until perFrame) {
+                val sample = bytes.sampleLe(base + i * 2) / FULL_SCALE
+                energy += sample * sample
+            }
+            if (sqrt(energy / perFrame) >= floor) voiced++
+        }
+        return voiced.toDouble() / frames
+    }
+
+    /** 16 位有符号的满量程。 */
+    private const val FULL_SCALE = 32_768.0
 }
 
 private fun ByteArray.putAscii(offset: Int, text: String) {
@@ -73,6 +118,12 @@ private fun ByteArray.putIntLe(offset: Int, value: Int) {
 private fun ByteArray.putShortLe(offset: Int, value: Int) {
     this[offset] = (value and 0xFF).toByte()
     this[offset + 1] = ((value shr 8) and 0xFF).toByte()
+}
+
+/** 一个 16 位小端有符号采样。要带符号——按无符号读会把负半周当成极大值。 */
+private fun ByteArray.sampleLe(offset: Int): Int {
+    val raw = (this[offset].toInt() and 0xFF) or ((this[offset + 1].toInt() and 0xFF) shl 8)
+    return raw.toShort().toInt()
 }
 
 private fun ByteArray.intLe(offset: Int): Int =

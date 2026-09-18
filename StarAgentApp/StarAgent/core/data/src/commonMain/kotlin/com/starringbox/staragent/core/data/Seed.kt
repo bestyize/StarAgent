@@ -113,6 +113,27 @@ internal object Seed {
                     ),
                 ),
                 ModelProvider(
+                    id = "groq",
+                    name = "Groq",
+                    protocol = LlmProtocol.OpenAi,
+                    openAiBaseUrl = "https://api.groq.com/openai/v1",
+                    // 对话模型清单**故意留空**：Groq 上架的是各家开源模型，名字换得很勤，
+                    // 预填一份过期的名字比不填更坏——用户会拿它去发请求然后吃一个 404。
+                    // 详情页的「获取模型列表」会真去拉一次当前可用的，这里不猜。
+                    models = emptyList(),
+                    // 识别走的还是 OpenAI 那套形状（/audio/transcriptions、multipart、取 text），
+                    // 所以 core:llm 一行都不用改。默认给 turbo：速度与质量的平衡点。
+                    asrModel = "whisper-large-v3-turbo",
+                    // 只列**真机拉到的那份清单里确实有**的。文档上还有个
+                    // distil-whisper-large-v3-en，但 2026-09 实际拉回来的清单里没有它——
+                    // 预填一个不存在的模型，用户选中就是一个 404。
+                    // 拉过清单之后 asrChoices 会以真实清单为准，这里只是没拉之前的兜底。
+                    asrModels = listOf("whisper-large-v3"),
+                    // 合成**先不填**：Groq 确实有 /audio/speech，但当前那条模型线
+                    // （PlayAI-TTS 已换成 Orpheus）的模型名与音色取值没能核实到，
+                    // 填错的直接后果是 400。留空让朗读自动去选智谱或 OpenAI。
+                ),
+                ModelProvider(
                     id = "openai",
                     name = "OpenAI",
                     protocol = LlmProtocol.OpenAi,

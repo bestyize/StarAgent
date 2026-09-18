@@ -33,6 +33,8 @@ import androidx.compose.ui.unit.dp
 import com.starringbox.staragent.core.data.AppState
 import com.starringbox.staragent.core.data.LocalAppState
 import com.starringbox.staragent.core.designsystem.component.AgentAvatar
+import com.starringbox.staragent.core.designsystem.component.SettingsRow
+import com.starringbox.staragent.core.designsystem.component.StarCard
 import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.component.StarPageHeader
 import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
@@ -44,6 +46,7 @@ import com.starringbox.staragent.core.model.Channel
 import com.starringbox.staragent.core.model.LlmProtocol
 import com.starringbox.staragent.core.model.ModelProvider
 import com.starringbox.staragent.core.model.Skill
+import com.starringbox.staragent.core.platform.voice.Voice
 
 /**
  * 「我的」页，按设计稿做成模块化工作台：
@@ -72,6 +75,9 @@ fun MeScreen(navigator: Navigator) {
 
         Spacer(Modifier.height(26.dp))
         ModelModule(state, navigator)
+
+        Spacer(Modifier.height(26.dp))
+        SpeechModule(state, navigator)
 
         Spacer(Modifier.height(26.dp))
         ChannelModule(state, navigator)
@@ -344,6 +350,56 @@ private fun ProviderTile(provider: ModelProvider, onClick: () -> Unit) {
             color = if (provider.configured) StarPalette.Success else StarPalette.TextFaint,
         )
     }
+}
+
+// ── 语音识别 ────────────────────────────────────
+
+/**
+ * 和「模型接入」平级的一节：语音识别走哪条路。
+ *
+ * 这里只摆一行摘要 + 一个入口，不把三选塞进来——选服务商还要能看到"哪家待配置"、
+ * 能选识别模型，那是一页的信息量。副标题直接说**现在实际会走哪条**，
+ * 而不是"去配置"这种没信息的字。
+ */
+@Composable
+private fun SpeechModule(state: AppState, navigator: Navigator) {
+    val usable = state.asrProviders().count { it.supportsAsr }
+
+    ModuleHeader(
+        glyph = StarIconGlyph.Mic,
+        title = "语音识别",
+        badge = "$usable/${state.asrProviders().size}",
+        actionLabel = "配置",
+        onAction = { navigator.push(Route.SpeechConfig) },
+        onMore = { navigator.push(Route.SpeechConfig) },
+    )
+    Spacer(Modifier.height(12.dp))
+    Box(Modifier.padding(horizontal = 20.dp)) {
+        StarCard(modifier = Modifier.fillMaxWidth()) {
+            SettingsRow(
+                glyph = StarIconGlyph.Mic,
+                title = state.asrSummary,
+                subtitle = speechSubtitle(state),
+                tint = if (state.canListen) StarPalette.Indigo else StarPalette.TextFaint,
+                onClick = { navigator.push(Route.SpeechConfig) },
+            )
+        }
+    }
+}
+
+/**
+ * 这一行副标题要回答的是"现在能不能按麦克风，不能的话卡在哪"。
+ *
+ * 三种不能用的原因分开说，因为用户要做的事完全不同：**没配服务商**去这一页选一家；
+ * **没有麦克风**（桌面常态）怎么配都不会好；**系统识别起不来**是设备那一路的事。
+ * 一句"还用不了"会让一个配好了 Key 的人反复回去检查 Key。
+ */
+private fun speechSubtitle(state: AppState): String = when {
+    state.canListen -> "麦克风按钮已经可用"
+    state.asrEndpoint() == null && !Voice.deviceListenInstalled ->
+        "还没配服务商：点进去选一家（Groq、智谱或 OpenAI）"
+    !Voice.canRecord && !Voice.deviceListenInstalled -> "这台机器没有可用的麦克风，录不了音"
+    else -> "还用不了：点进去看识别方式"
 }
 
 // ── IM 渠道 ─────────────────────────────────────

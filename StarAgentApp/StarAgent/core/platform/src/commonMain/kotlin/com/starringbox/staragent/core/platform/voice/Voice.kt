@@ -47,6 +47,34 @@ object Voice {
     /** 现在能不能朗读。 */
     val canSpeak: Boolean get() = pickSynthesizer() != null
 
+    /**
+     * **这台设备有没有系统识别这条路**——装了就算有，不看 `ready`。
+     *
+     * 设置页拿它决定「系统能力」这个选项能不能选。刻意不用 [deviceListenReady]：
+     * 那个在权限还没申请时就是 false，用它当开关等于"没授权 → 选项禁用 →
+     * 永远没机会授权"（[Transcriber.ready] 那条约定的同一个坑，只是搬到了设置页）。
+     *
+     * 为 false 才是真的没有：桌面和 iOS 压根没装系统识别，
+     * 这时设置页该说"这台设备不支持"，而不是让用户选一个选不动的东西。
+     */
+    val deviceListenInstalled: Boolean get() = deviceTranscriber != null
+
+    /** 系统识别现在能不能真的用起来。只用来给提示文案，不用来禁选项。 */
+    val deviceListenReady: Boolean get() = deviceTranscriber?.ready == true
+
+    /** 模型那一路现在能不能听。为 false 通常是"还没配 Key 或没选识别模型"。 */
+    val modelListenReady: Boolean get() = modelTranscriber?.ready == true
+
+    /**
+     * 这台机器有没有能用的采集设备。
+     *
+     * 走服务商识别时**录音是我们自己的**，没有麦克风就一步都走不了——
+     * 而这跟"没配服务商"是完全不同的两件事，用户要做的动作也不同。
+     * 设置页拿它区分这两种"用不了"，不然会让一个配好了 Key 的人
+     * 反复去检查 Key。
+     */
+    val canRecord: Boolean get() = Recorders.available
+
     /** 正在听。界面据此把输入区换成"正在听…"。 */
     val isListening: Boolean get() = listening != null
 
@@ -115,11 +143,16 @@ object Voice {
      * （见 [Transcriber.ready] 关于"权限不算能力"的约定）。
      */
     private fun whyNoListening(): String = when {
+        // 服务商识别是唯一的路，而这台机器没有麦克风——再怎么配 Key 也不会好。
+        // 这一条必须排在"没配服务商"前面，否则会让配好了的人去反复检查 Key。
+        deviceTranscriber == null && modelTranscriber != null && !Recorders.available ->
+            "这台机器没有可用的麦克风，录不了音，所以语音输入用不了。"
+
         deviceTranscriber != null && modelTranscriber != null ->
-            "语音输入现在用不了：这台设备的系统识别起不来，大模型那路也没配。去「我的 → 模型服务」配一家支持语音的服务商（智谱或 OpenAI）。"
+            "语音输入现在用不了：这台设备的系统识别起不来，大模型那路也没配。去「我的 → 语音识别」选一家支持识别的服务商（Groq、智谱或 OpenAI）。"
 
         modelTranscriber != null ->
-            "语音输入需要先在「我的 → 模型服务」配一家支持语音的服务商（智谱或 OpenAI）。"
+            "语音输入需要先在「我的 → 语音识别」选一家支持识别的服务商（Groq、智谱或 OpenAI）。"
 
         deviceTranscriber != null -> "这台设备的系统识别用不了。"
 

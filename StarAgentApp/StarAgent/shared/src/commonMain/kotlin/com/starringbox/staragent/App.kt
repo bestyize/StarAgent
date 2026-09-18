@@ -60,6 +60,7 @@ import com.starringbox.staragent.feature.settings.ModelConfigScreen
 import com.starringbox.staragent.feature.settings.ProviderDetailScreen
 import com.starringbox.staragent.feature.settings.SettingsScreen
 import com.starringbox.staragent.feature.settings.SkillsScreen
+import com.starringbox.staragent.feature.settings.SpeechConfigScreen
 import com.starringbox.staragent.feature.settings.StorageBrowserScreen
 import com.starringbox.staragent.feature.tasks.TaskCenterScreen
 import com.starringbox.staragent.feature.tasks.TaskDetailScreen
@@ -186,6 +187,7 @@ private fun RouteHost(navigator: Navigator) {
             is Route.AgentEditor -> AgentEditorScreen(navigator, route.agentId)
             Route.ModelConfig -> ModelConfigScreen(navigator)
             is Route.ProviderDetail -> ProviderDetailScreen(navigator, route.providerId)
+            Route.SpeechConfig -> SpeechConfigScreen(navigator)
             Route.Memories -> MemoryScreen(navigator)
             Route.Channels -> ChannelsScreen(navigator)
             Route.Skills -> SkillsScreen(navigator)

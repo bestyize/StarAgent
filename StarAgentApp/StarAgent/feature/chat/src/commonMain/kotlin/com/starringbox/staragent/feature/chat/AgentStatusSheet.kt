@@ -295,7 +295,9 @@ private fun SheetBody(agent: Agent, onPickModel: (String) -> Unit) {
         )
     } else {
         usable.forEach { provider ->
-            provider.models.forEachIndexed { index, label ->
+            // 只摆能对话的。拉回来的清单里混着识别/合成/审核模型，
+            // 选中一个 whisper 去聊天就是一句一个 400——语音识别在「我的 → 语音识别」里配。
+            provider.chatChoices.forEach { (index, label) ->
                 val key = state.modelKey(provider.id, index)
                 val selected = key == agent.modelId
                 Row(

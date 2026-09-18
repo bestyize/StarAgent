@@ -83,6 +83,18 @@ class AppState(
     var voiceSource by mutableStateOf<VoiceSource?>(null)
         private set
 
+    /**
+     * 用哪家服务商做语音识别。null = 自动（取第一家可用的）。
+     *
+     * 只管识别。合成一直是自动选的——见 [ttsEndpoint]。
+     */
+    var speechProviderId by mutableStateOf<String?>(null)
+        private set
+
+    /** 识别用哪个模型。null = 用那家的预设。存的是模型名本身，不是下标。 */
+    var asrModelId by mutableStateOf<String?>(null)
+        private set
+
     /** 回复要不要念出来。默认关——朗读会真的产生费用，不能默默开始花钱。 */
     var speakReplies by mutableStateOf(false)
         private set
@@ -150,8 +162,8 @@ class AppState(
         // 语音的模型后端在这里装：它要用"用户当前配置的服务商"，
         // 所以只有数据层装得了。设备能力那一路由各端入口装（Android 有，桌面没有）。
         Voice.installModel(
-            transcriber = ModelTranscriber { speechEndpoint() },
-            synthesizer = ModelSynthesizer { speechEndpoint() },
+            transcriber = ModelTranscriber { asrEndpoint() },
+            synthesizer = ModelSynthesizer { ttsEndpoint() },
         )
 
         // 兜底默认模型取第一家的第一个；没有服务商时留空，交给 SettingsStore 里用户自己的选择
@@ -363,18 +375,50 @@ class AppState(
     // ── 语音 ────────────────────────────────────
 
     /**
-     * 当前用来做语音的服务商。
+     * 界面上能出现在「语音识别」页里的服务商：**填了识别模型的那些**。
      *
-     * 取第一个**既配好了 Key、又带语音模型**的——十家里只有智谱和 OpenAI 有语音接口，
-     * 其余几家（含 DeepSeek）的 asrModel/ttsModel 是空的，自然被跳过。
+     * 刻意不筛 Key——没配 Key 的也要列出来，页面才能把"这家能做识别，但你还没配 Key"
+     * 说清楚并给一个去配置的入口。只列已配好的话，用户根本不知道 Groq 是个选项。
      */
-    fun speechEndpoint(): SpeechEndpoint? {
-        val provider = providers.firstOrNull { it.supportsSpeech } ?: return null
+    fun asrProviders(): List<ModelProvider> = providers.filter { it.asrModel != null }
+
+    /**
+     * 用来做**识别**的服务商，按用户在语音识别页里选的那家。
+     *
+     * [speechProviderId] 为 null（没选过）或指向一家已经不能用的（Key 被清掉、
+     * 自定义服务商被删）时，退回第一家可用的——设置项失效不该让语音直接哑掉。
+     */
+    private fun asrProvider(): ModelProvider? =
+        speechProviderId?.let { id -> providers.firstOrNull { it.id == id && it.supportsAsr } }
+            ?: providers.firstOrNull { it.supportsAsr }
+
+    /**
+     * 识别用的接口信息。
+     *
+     * 只填 [SpeechEndpoint.asrModel]——**合成那条另算**，见 [ttsEndpoint]。
+     * 具体模型按用户选的来；选过的那个后来从清单里消失了（换了预设版本），
+     * 退回这家的预设模型。
+     */
+    fun asrEndpoint(): SpeechEndpoint? {
+        val provider = asrProvider() ?: return null
+        val baseUrl = provider.baseUrlFor(provider.protocol) ?: return null
+        val model = asrModelId?.takeIf { it in provider.asrChoices } ?: provider.asrModel
+        return SpeechEndpoint(baseUrl = baseUrl, apiKey = provider.apiKey, asrModel = model)
+    }
+
+    /**
+     * 合成用的接口信息。取第一家配好 Key 且有合成模型的。
+     *
+     * **和识别分开取**，这不是重复代码：两条能力并不总在同一家。Groq 只有识别，
+     * 合起来取的话，用户把识别设成 Groq 就会连朗读一起失去——
+     * 而他并没有要求改朗读。识别是用户选的，合成保持自动。
+     */
+    fun ttsEndpoint(): SpeechEndpoint? {
+        val provider = providers.firstOrNull { it.supportsTts } ?: return null
         val baseUrl = provider.baseUrlFor(provider.protocol) ?: return null
         return SpeechEndpoint(
             baseUrl = baseUrl,
             apiKey = provider.apiKey,
-            asrModel = provider.asrModel,
             ttsModel = provider.ttsModel,
             ttsVoice = provider.ttsVoice,
         )
@@ -405,6 +449,45 @@ class AppState(
         voiceSource = source
         SettingsStore.put(KEY_VOICE_SOURCE, source?.name.orEmpty())
     }
+
+    /**
+     * 选做识别的服务商。传 null 回到自动。
+     *
+     * 换家的同时把模型选择清掉：模型名是**跟着服务商**的，
+     * `whisper-large-v3-turbo` 拿到智谱去就是个不存在的模型。
+     */
+    fun selectSpeechProvider(id: String?) {
+        speechProviderId = id
+        SettingsStore.put(KEY_SPEECH_PROVIDER, id.orEmpty())
+        selectAsrModel(null)
+    }
+
+    /** 选识别模型。传 null 回到这家的预设。 */
+    fun selectAsrModel(model: String?) {
+        asrModelId = model
+        SettingsStore.put(KEY_ASR_MODEL, model.orEmpty())
+    }
+
+    /**
+     * 语音识别现在实际会走哪条路，一句话说清。「我的」页那行副标题用它。
+     *
+     * 顺序照 [Voice] 的选取逻辑来，否则副标题会跟真实行为不一致——
+     * 那比不显示更糟。
+     */
+    val asrSummary: String
+        get() {
+            val device = Voice.deviceListenInstalled
+            val provider = asrProvider()
+            return when {
+                voiceSource == VoiceSource.Device && device -> "系统能力"
+                voiceSource == VoiceSource.Device -> "系统能力 · 这台设备不支持"
+                voiceSource == VoiceSource.Model && provider != null -> provider.name
+                voiceSource == VoiceSource.Model -> "大模型 · 待配置"
+                device -> "自动 · 优先系统能力"
+                provider != null -> "自动 · ${provider.name}"
+                else -> "还没有可用的识别"
+            }
+        }
 
     /** 同理，不能叫 setSpeakReplies。 */
     fun setReadingReplies(enabled: Boolean) {
@@ -1184,6 +1267,12 @@ class AppState(
             ?.let { selectVoiceSource(it) }
         speakReplies = SettingsStore.get(KEY_SPEAK_REPLIES) == "true"
 
+        // 识别服务商与模型。这两个只是"偏好"，指向的东西不在了也不校验——
+        // asrEndpoint() 每次都会重新核对一遍，那里退回自动。在这儿校验反而不对：
+        // 还原时 providers 的 Key 才刚灌完，此刻的可用性不代表用起来那一刻的。
+        speechProviderId = SettingsStore.get(KEY_SPEECH_PROVIDER)?.takeIf { it.isNotBlank() }
+        asrModelId = SettingsStore.get(KEY_ASR_MODEL)?.takeIf { it.isNotBlank() }
+
         SettingsStore.get(KEY_RESPONSE_MODE)
             ?.let { saved -> ResponseMode.entries.firstOrNull { it.name == saved } }
             ?.let { responseMode = it }
@@ -1275,6 +1364,8 @@ class AppState(
         const val KEY_RESPONSE_MODE = "responseMode"
         const val KEY_CUSTOM_IDS = "customIds"
         const val KEY_VOICE_SOURCE = "voiceSource"
+        const val KEY_SPEECH_PROVIDER = "speechProvider"
+        const val KEY_ASR_MODEL = "asrModel"
         const val KEY_SPEAK_REPLIES = "speakReplies"
         const val KEY_SEED_VERSION = "seedVersion"
 
@@ -1283,7 +1374,7 @@ class AppState(
          * **每次改动 Seed 里的预置模型，就把这个数字 +1**——
          * 否则老用户本机缓存的那份清单会一直盖住新预设。
          */
-        const val SEED_VERSION = 2
+        const val SEED_VERSION = 3
     }
 }
 

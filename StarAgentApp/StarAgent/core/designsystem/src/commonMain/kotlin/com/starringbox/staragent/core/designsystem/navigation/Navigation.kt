@@ -40,6 +40,9 @@ sealed interface Route {
     /** 某个服务商的详情：API Key、模型列表、默认模型；providerId 为 null 表示新增。 */
     data class ProviderDetail(val providerId: String?) : Route
 
+    /** 语音识别配置：选服务商（或系统能力）与识别模型。 */
+    data object SpeechConfig : Route
+
     /** 记忆管理。 */
     data object Memories : Route
 

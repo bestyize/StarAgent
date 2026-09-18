@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Hardened Runtime 的权限清单。
+
+	  jpackage 在 Apple Silicon 上一定会给包签名（arm64 的可执行文件不签名跑不起来），
+	  签的时候带上 runtime 标记，也就是 Hardened Runtime 开着。而 Hardened Runtime 的
+	  规矩是：受保护资源要在这里显式声明，没声明的直接拒绝——连授权框都不会弹。
+
+	  所以这份文件必须自己写：jpackage 默认那份只有下面三条 JVM 的，
+	  没有麦克风。少了它，Info.plist 里的 NSMicrophoneUsageDescription 也白搭。
+	-->
+
+	<!-- 麦克风。语音输入靠它，缺了就是"录不到音"。 -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+
+	<!--
+	  下面三条是 JVM 自己要的，照抄 jpackage 的默认值。
+	  漏掉任何一条 App 直接起不来：JIT 要生成并执行运行期代码，
+	  而 JDK 带的那些 .dylib 不是我们签的。
+	-->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>
