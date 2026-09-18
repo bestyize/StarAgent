@@ -61,6 +61,7 @@ import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.ResponseMode
+import com.starringbox.staragent.core.platform.voice.Voice
 import com.starringbox.staragent.core.platform.voice.VoiceSource
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
@@ -402,23 +403,46 @@ private fun SheetBody(agent: Agent, onPickModel: (String) -> Unit) {
 
     Spacer(Modifier.height(10.dp))
     // 引擎选择。默认「自动」：优先系统能力，它不要 Key、不花钱。
+    //
+    // 走不通的那条不给点，和语音设置页同一个规则（那边有完整说明）：
+    // 指定某一档是**独占**的，没配服务商时点一下「大模型」，
+    // 会把本来能用的设备识别整个关掉，而界面看着毫无变化。
+    val deviceInstalled = Voice.deviceListenInstalled
+    val modelReady = Voice.modelListenReady
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         val choices = listOf(null, VoiceSource.Device, VoiceSource.Model)
         choices.forEach { source ->
+            val enabled = when (source) {
+                VoiceSource.Device -> deviceInstalled
+                VoiceSource.Model -> modelReady
+                null -> true
+            }
             val selected = state.voiceSource == source
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(if (selected) StarPalette.Indigo else StarPalette.SurfaceAlt)
-                    .clickable { state.selectVoiceSource(source) }
+                    .background(
+                        when {
+                            selected -> StarPalette.Indigo
+                            enabled -> StarPalette.SurfaceAlt
+                            else -> StarPalette.SurfaceSunken
+                        }
+                    )
+                    .then(
+                        if (enabled) Modifier.clickable { state.selectVoiceSource(source) } else Modifier
+                    )
                     .padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = source?.label ?: "自动",
                     style = MaterialTheme.typography.labelLarge,
-                    color = if (selected) Color.White else StarPalette.TextMuted,
+                    color = when {
+                        selected -> Color.White
+                        enabled -> StarPalette.TextMuted
+                        else -> StarPalette.TextFaint
+                    },
                 )
             }
         }
@@ -426,6 +450,14 @@ private fun SheetBody(agent: Agent, onPickModel: (String) -> Unit) {
     Spacer(Modifier.height(6.dp))
     Text(
         text = when {
+            // 选中的那条其实用不了，先说这一条：它比下面那句笼统的"用不了语音"更具体，
+            // 也直接说了该去哪修
+            state.voiceSource == VoiceSource.Model && !modelReady ->
+                "还没有配好能识别的服务商，这条路现在用不了——去「我的 → 语音识别」配一家。"
+
+            state.voiceSource == VoiceSource.Device && !deviceInstalled ->
+                "这台设备不支持系统识别，实际会走大模型那一路。"
+
             !state.canListen && !state.canSpeak ->
                 "现在还用不了语音：这台设备没有可用的识别与合成，也没配支持语音的服务商（智谱或 OpenAI）。"
 

@@ -60,6 +60,14 @@ fun SpeechConfigScreen(navigator: Navigator) {
     // 「这台设备装了系统识别没有」。用 installed 而不是 ready：
     // 权限还没申请时 ready 就是 false，拿它禁选项等于永远没机会授权。
     val deviceInstalled = Voice.deviceListenInstalled
+
+    // 「大模型」那条现在能不能用。
+    //
+    // 和上面**故意不对称**（一个看 installed、一个看 ready）：Model 的 ready 只问两件事——
+    // 配没配好服务商、有没有录音实现——两样都不需要授权，所以不存在 Device 那个死环。
+    // 而这两样恰好就是"选了它能不能出声"，拿它当开关正合适。
+    val modelReady = Voice.modelListenReady
+
     val providers = state.asrProviders()
 
     Column(Modifier.fillMaxSize()) {
@@ -74,7 +82,7 @@ fun SpeechConfigScreen(navigator: Navigator) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item { SpeechSectionLabel("识别方式") }
-            item { SourcePicker(state, deviceInstalled) }
+            item { SourcePicker(state, deviceInstalled, modelReady) }
 
             item { SpeechSectionLabel("识别服务商") }
             if (providers.isEmpty()) {
@@ -107,14 +115,20 @@ fun SpeechConfigScreen(navigator: Navigator) {
  * 面板是聊天中的快捷切换，这一页是完整配置。
  */
 @Composable
-private fun SourcePicker(state: AppState, deviceInstalled: Boolean) {
+private fun SourcePicker(state: AppState, deviceInstalled: Boolean, modelReady: Boolean) {
     StarCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(null, VoiceSource.Device, VoiceSource.Model).forEach { source ->
-                    // 设备上没有系统识别时，这个选项不给点——选了也只会退回另一路，
-                    // 让用户以为自己选中了才是误导。
-                    val enabled = source != VoiceSource.Device || deviceInstalled
+                    // 走不通的那条不给点。理由不只是"点了没用"——指定这一档是**独占**的，
+                    // [Voice.pickTranscriber] 认准它之后不会再退回另一条，
+                    // 所以点一下「大模型」会把本来能用的语音输入整个关掉，而界面看着毫无变化。
+                    // 没配服务商时它一直可点，这条路径就是这么断的。
+                    val enabled = when (source) {
+                        VoiceSource.Device -> deviceInstalled
+                        VoiceSource.Model -> modelReady
+                        null -> true
+                    }
                     val selected = state.voiceSource == source
                     Box(
                         modifier = Modifier
@@ -152,7 +166,7 @@ private fun SourcePicker(state: AppState, deviceInstalled: Boolean) {
 
             Spacer(Modifier.height(8.dp))
             Text(
-                text = sourceHint(state, deviceInstalled),
+                text = sourceHint(state, deviceInstalled, modelReady),
                 style = MaterialTheme.typography.bodySmall,
                 color = StarPalette.TextFaint,
             )
@@ -163,22 +177,40 @@ private fun SourcePicker(state: AppState, deviceInstalled: Boolean) {
 /**
  * 当前这一档在说什么。
  *
- * 「这台设备不支持系统识别」必须在**没选中它的时候也说**——用户是先看到选项变灰、
- * 再去找原因的，等他点中了才解释就晚了。
+ * 两条规则：
+ *
+ * 1. **选中的那一档用不了，先直说**——那是用户此刻最需要知道的。
+ * 2. **灰着的选项要在用户点它之前就把原因说清楚**。用户是先看到选项变灰、再去找原因的，
+ *    等他点中了才解释就晚了；而灰的那条恰恰点不动，这句提示是唯一能说话的地方。
  */
-private fun sourceHint(state: AppState, deviceInstalled: Boolean): String = when {
-    !deviceInstalled && state.voiceSource == VoiceSource.Device ->
-        "这台设备不支持系统识别，实际会走大模型那一路。"
+private fun sourceHint(state: AppState, deviceInstalled: Boolean, modelReady: Boolean): String {
+    // 规则 1：选中的那条其实用不了
+    when {
+        state.voiceSource == VoiceSource.Device && !deviceInstalled ->
+            return "这台设备不支持系统识别，实际会走大模型那一路。"
 
-    state.voiceSource == VoiceSource.Device -> VoiceSource.Device.hint
+        state.voiceSource == VoiceSource.Model && !modelReady ->
+            return "还没有配好能识别的服务商，这条路现在用不了——在下面选一家把 Key 填上。"
+    }
 
-    state.voiceSource == VoiceSource.Model -> VoiceSource.Model.hint
+    val current = when (state.voiceSource) {
+        VoiceSource.Device -> VoiceSource.Device.hint
+        VoiceSource.Model -> VoiceSource.Model.hint
+        null -> if (deviceInstalled) {
+            "自动：优先系统能力，它不要 Key 也不花钱；用不了时才走下面选的服务商。"
+        } else {
+            "这台设备没有系统识别（桌面端就没有），所以自动模式实际走的是下面选的服务商。"
+        }
+    }
 
-    deviceInstalled ->
-        "自动：优先系统能力，它不要 Key 也不花钱；用不了时才走下面选的服务商。"
+    // 规则 2：灰着的那条为什么灰。
+    // 系统识别那条的理由上面两句「自动」里已经说了（有没有系统识别，两种都说），
+    // 所以这里只补大模型那条。
+    if (!modelReady && state.voiceSource != VoiceSource.Model) {
+        return "$current 要用「大模型」得先在下面配一家服务商。"
+    }
 
-    else ->
-        "这台设备没有系统识别（桌面端就没有），所以自动模式实际走的是下面选的服务商。"
+    return current
 }
 
 /**
