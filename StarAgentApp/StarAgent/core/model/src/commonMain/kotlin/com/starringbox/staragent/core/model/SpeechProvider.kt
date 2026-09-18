@@ -13,6 +13,16 @@ package com.starringbox.staragent.core.model
  *
  * 刻意**不带 `LlmProtocol`**：语音只有一种协议形状（OpenAI 那套 `/audio/...`），
  * 一个 [baseUrl] 就够。协议的分叉只在对话那边存在。
+ *
+ * 这条"只有一种形状"是**准入条件**，不是巧合——`ModelSpeech` 把
+ * `/audio/transcriptions` 与 `/audio/speech` 两条路径写死了。所以这里只收形状一致的服务商。
+ *
+ * MiniMax 就是被这一条挡在外面的例子：2026-09 核对过官方文档，它的识别在
+ * `/v1/speech_to_text`、合成在 `/v1/t2a_v2`（请求体是嵌套的 `voice_setting`/`audio_setting`，
+ * 返回的还是 JSON 里的一段音频数据而不是音频本身），**两条都得单独写一遍请求与解析**。
+ * 所以它不是"再加一行预置"就能接上的。真要加，先给这一层引入"按服务商分协议"，
+ * 别在 `ModelSpeech` 里堆 if。（网上那些 `/v1/audio/transcriptions` 的 MiniMax 说法
+ * 指向的都是第三方代理，不是官方。）
  */
 data class SpeechProvider(
     val id: String,
