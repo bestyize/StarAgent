@@ -10,8 +10,12 @@ package com.starringbox.staragent.core.platform.voice
  * - **模型能力**由数据层装，因为它要拿用户当前配置的服务商去发请求。
  *
  * 选取顺序：先看 [preference]；为 null（自动）时**优先设备能力**——
- * 它不要 Key、不产生费用，能用就没理由不走它。选中的那一路 `ready` 为 false 时
- * 自动退到另一路；两路都不行，才报一个能照着做的理由。
+ * 它不要 Key、不产生费用，能用就没理由不走它。
+ *
+ * 指定了某一档时，**识别那条是独占的**：选中的那路不可用就报错，不会偷偷换回设备——
+ * "点了云端识别却被换回设备"会让用户以为自己选中的东西没生效。
+ * **合成那条会退回设备**，理由见 [pickSynthesizer] 的注释。
+ * 两路都不行，才报一个能照着做的理由。
  */
 object Voice {
 
@@ -20,8 +24,23 @@ object Voice {
     private var modelTranscriber: Transcriber? = null
     private var modelSynthesizer: Synthesizer? = null
 
-    /** 优先用哪一路。null = 自动。由设置界面写入，数据层负责持久化。 */
-    var preference: VoiceSource? = null
+    /**
+     * 「优先走哪一路」的来源，由数据层注入一次。
+     *
+     * **这里刻意不自己存这份状态**。它以前是个可写 `var`，而设置界面只写了数据层那份、
+     * 忘了同步过来——于是 `pickTranscriber` 读到的永远是 null，
+     * 「选了云端识别」在真机上一直没生效，界面却显示得好好的。
+     * 改成只读的来源之后，`AppState.voiceSource` 就是唯一的真相，不存在两处各写一半。
+     */
+    private var preferenceSource: (() -> VoiceSource?)? = null
+
+    /** 数据层在这里接一根线：`installPreference { voiceSource }`。 */
+    fun installPreference(source: (() -> VoiceSource?)?) {
+        preferenceSource = source
+    }
+
+    /** 当前优先走哪一路。null = 自动。 */
+    internal val preference: VoiceSource? get() = preferenceSource?.invoke()
 
     /**
      * 本次"听"用的是哪一路。
@@ -86,7 +105,16 @@ object Voice {
 
     private fun pickSynthesizer(): Synthesizer? = when (preference) {
         VoiceSource.Device -> deviceSynthesizer?.takeIf { it.ready }
-        VoiceSource.Model -> modelSynthesizer?.takeIf { it.ready }
+
+        // 合成这条**会**退回设备，识别那条不会——这个不对称是有意的。
+        //
+        // 「云端识别」这个档管的是**识别**（连按钮上写的就是这两个字），用户没有要求
+        // 把朗读也一起换掉；而朗读本来就没有独立的档位，退回去不会让他以为"我选中了别的"。
+        // 具体的坑：Groq 只做识别，选了它之后模型合成没有 endpoint，
+        // 不放宽这一条的话，Android 上明明有系统朗读却会整个哑掉。
+        VoiceSource.Model ->
+            modelSynthesizer?.takeIf { it.ready } ?: deviceSynthesizer?.takeIf { it.ready }
+
         null -> deviceSynthesizer?.takeIf { it.ready } ?: modelSynthesizer?.takeIf { it.ready }
     }
 
@@ -149,10 +177,10 @@ object Voice {
             "这台机器没有可用的麦克风，录不了音，所以语音输入用不了。"
 
         deviceTranscriber != null && modelTranscriber != null ->
-            "语音输入现在用不了：这台设备的系统识别起不来，大模型那路也没配。去「我的 → 语音识别」选一家支持识别的服务商（Groq、智谱或 OpenAI）。"
+            "语音输入现在用不了：这台设备的系统识别起不来，云端那路也还没配好。去「我的 → 语音」选一家服务商并填上 Key。"
 
         modelTranscriber != null ->
-            "语音输入需要先在「我的 → 语音识别」选一家支持识别的服务商（Groq、智谱或 OpenAI）。"
+            "语音输入需要先在「我的 → 语音」选一家服务商并填上 Key。"
 
         deviceTranscriber != null -> "这台设备的系统识别用不了。"
 
@@ -161,10 +189,10 @@ object Voice {
 
     private fun whyNoSpeaking(): String = when {
         deviceSynthesizer != null && modelSynthesizer != null ->
-            "朗读现在用不了：系统合成起不来，大模型也没配好。"
+            "朗读现在用不了：系统合成起不来，云端那路也还没配好。"
 
         modelSynthesizer != null ->
-            "朗读需要先在「我的 → 模型服务」配一家支持语音的服务商（智谱或 OpenAI）。"
+            "朗读需要先在「我的 → 语音」选一家能做合成的服务商（智谱 GLM 或 OpenAI）并填上 Key。"
 
         deviceSynthesizer != null -> "系统朗读现在用不了。"
 

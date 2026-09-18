@@ -363,12 +363,14 @@ private fun ProviderTile(provider: ModelProvider, onClick: () -> Unit) {
  */
 @Composable
 private fun SpeechModule(state: AppState, navigator: Navigator) {
-    val usable = state.asrProviders().count { it.supportsAsr }
+    val active = state.activeSpeechProvider()
+    val configured = active != null && state.speechConfigured(active.id)
 
     ModuleHeader(
         glyph = StarIconGlyph.Mic,
-        title = "语音识别",
-        badge = "$usable/${state.asrProviders().size}",
+        title = "语音",
+        // 只有一条配置了，所以 badge 不再是"几家配好了"的进度，而是"现在用的是谁"
+        badge = if (configured) active?.name else null,
         actionLabel = "配置",
         onAction = { navigator.push(Route.SpeechConfig) },
         onMore = { navigator.push(Route.SpeechConfig) },
@@ -397,7 +399,7 @@ private fun SpeechModule(state: AppState, navigator: Navigator) {
 private fun speechSubtitle(state: AppState): String = when {
     state.canListen -> "麦克风按钮已经可用"
     state.asrEndpoint() == null && !Voice.deviceListenInstalled ->
-        "还没配服务商：点进去选一家（Groq、智谱或 OpenAI）"
+        "还没配语音服务商：点进去选一家（Groq、智谱 GLM 或 OpenAI）并填上 Key"
     !Voice.canRecord && !Voice.deviceListenInstalled -> "这台机器没有可用的麦克风，录不了音"
     else -> "还用不了：点进去看识别方式"
 }

@@ -14,11 +14,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,30 +29,27 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.starringbox.staragent.core.data.AppState
 import com.starringbox.staragent.core.data.LocalAppState
-import com.starringbox.staragent.core.designsystem.component.SettingsRow
 import com.starringbox.staragent.core.designsystem.component.StarCard
+import com.starringbox.staragent.core.designsystem.component.StarTextField
 import com.starringbox.staragent.core.designsystem.component.StarTopBar
-import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.navigation.Navigator
-import com.starringbox.staragent.core.designsystem.navigation.Route
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
-import com.starringbox.staragent.core.model.ModelProvider
+import com.starringbox.staragent.core.model.SpeechProvider
 import com.starringbox.staragent.core.platform.voice.Voice
 import com.starringbox.staragent.core.platform.voice.VoiceSource
 
 /**
- * 语音识别配置。从「我的 → 语音识别」进来，和「模型接入」平级。
+ * 语音配置。从「我的 → 语音」进来，和「模型接入」平级但**完全独立**。
  *
- * 这一页只管**识别**，不管朗读——朗读一直是自动选的（见 `AppState.ttsEndpoint`）。
- * 分开的理由很具体：Groq 只提供识别，把两件事绑在一个选择上，
- * 用户选了 Groq 做识别就会连朗读一起失去，而他并没要求改朗读。
+ * 这里只有**一条**配置：选一家服务商 + 填这家的 Key +（可选）选识别模型。
+ * 不做服务商列表、不做多家切换、不做自定义端点——那套是「模型接入」的形状，
+ * 而两者管的是两件不相干的事。
  *
- * 页面结构是三段，顺序就是用户的决策顺序：
- *
- * 1. **走哪条路**（自动 / 系统能力 / 大模型）。系统能力在没有的设备上是禁用的，
- *    并且说明白"这台设备不支持"——而不是给一个点了没反应的选项。
- * 2. **哪家服务商**。只在走大模型时才需要，所以放在下面。
- * 3. **哪个识别模型**。只有在这家提供多个时才出现。
+ * **为什么和对话的服务商分开**：原先语音是"借用"对话那份配置的（同一个 `ModelProvider`、
+ * 同一把 Key、同一个模型清单）。后果是这一页上每家的"待配置"其实说的是
+ * **对话那把 Key 配没配**，点"去配置"跳到的也是对话的详情页，
+ * 用户根本看不出这两件事已经被绑在一起了。拆开的代价是要填两遍 Key，
+ * 这个代价是明知的，换的是两个页面各自自洽。
  */
 @Composable
 fun SpeechConfigScreen(navigator: Navigator) {
@@ -61,18 +59,18 @@ fun SpeechConfigScreen(navigator: Navigator) {
     // 权限还没申请时 ready 就是 false，拿它禁选项等于永远没机会授权。
     val deviceInstalled = Voice.deviceListenInstalled
 
-    // 「大模型」那条现在能不能用。
+    // 「云端识别」那条现在能不能用。
     //
-    // 和上面**故意不对称**（一个看 installed、一个看 ready）：Model 的 ready 只问两件事——
-    // 配没配好服务商、有没有录音实现——两样都不需要授权，所以不存在 Device 那个死环。
+    // 和上面**故意不对称**（一个看 installed、一个看 ready）：云端那条的 ready 只问
+    // "这家填没填 Key""有没有录音实现"——两样都不需要授权，所以不存在 Device 那个死环。
     // 而这两样恰好就是"选了它能不能出声"，拿它当开关正合适。
     val modelReady = Voice.modelListenReady
 
-    val providers = state.asrProviders()
+    val active = state.activeSpeechProvider()
 
     Column(Modifier.fillMaxSize()) {
         StarTopBar(
-            title = "语音识别",
+            title = "语音配置",
             subtitle = state.asrSummary,
             onBack = { navigator.pop() },
         )
@@ -84,23 +82,47 @@ fun SpeechConfigScreen(navigator: Navigator) {
             item { SpeechSectionLabel("识别方式") }
             item { SourcePicker(state, deviceInstalled, modelReady) }
 
-            item { SpeechSectionLabel("识别服务商") }
-            if (providers.isEmpty()) {
-                item {
-                    StarCard(modifier = Modifier.fillMaxWidth()) {
-                        SettingsRow(
-                            glyph = StarIconGlyph.Info,
-                            title = "没有可用的识别服务商",
-                            subtitle = "预置里 Groq、智谱 GLM、OpenAI 提供识别接口",
-                            containerColor = StarPalette.SurfaceSunken,
-                            tint = StarPalette.Text,
+            item { SpeechSectionLabel("语音服务商") }
+            item {
+                StarCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            state.speechProviders.forEach { provider ->
+                                VendorChip(
+                                    provider = provider,
+                                    selected = active?.id == provider.id,
+                                    onClick = {
+                                        // 选家的同时把方式切到「云端识别」——否则在自动档下
+                                        // 设备那路仍然优先，看起来像是没生效。
+                                        state.selectSpeechProvider(provider.id)
+                                        state.selectVoiceSource(VoiceSource.Model)
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text = "这里的 Key 和「模型接入」里填的是两份，分开存、互不影响。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = StarPalette.TextFaint,
                         )
                     }
                 }
-            } else {
-                items(providers, key = { it.id }) { provider ->
-                    ProviderChoiceCard(state, provider, navigator)
+            }
+
+            if (active != null) {
+                item { SpeechSectionLabel("${active.name} 的 API Key") }
+                item { ApiKeyCard(state, active) }
+
+                if (active.asrChoices.size > 1) {
+                    item { SpeechSectionLabel("识别模型") }
+                    item { AsrModelPicker(state, active) }
                 }
+
+                item { SpeechSectionLabel("朗读") }
+                item { ReadingNote(active) }
             }
 
             item { Spacer(Modifier.height(20.dp)) }
@@ -109,7 +131,7 @@ fun SpeechConfigScreen(navigator: Navigator) {
 }
 
 /**
- * 「自动 / 系统能力 / 大模型」三选。
+ * 「自动 / 系统能力 / 云端识别」三选。
  *
  * 和对话页状态面板里那个三选写同一份 `state.voiceSource`——两处入口、一份状态，
  * 面板是聊天中的快捷切换，这一页是完整配置。
@@ -121,9 +143,8 @@ private fun SourcePicker(state: AppState, deviceInstalled: Boolean, modelReady: 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(null, VoiceSource.Device, VoiceSource.Model).forEach { source ->
                     // 走不通的那条不给点。理由不只是"点了没用"——指定这一档是**独占**的，
-                    // [Voice.pickTranscriber] 认准它之后不会再退回另一条，
-                    // 所以点一下「大模型」会把本来能用的语音输入整个关掉，而界面看着毫无变化。
-                    // 没配服务商时它一直可点，这条路径就是这么断的。
+                    // Voice.pickTranscriber 认准它之后不会再退回另一条，
+                    // 所以点一下「云端识别」会把本来能用的语音输入整个关掉，而界面看着毫无变化。
                     val enabled = when (source) {
                         VoiceSource.Device -> deviceInstalled
                         VoiceSource.Model -> modelReady
@@ -187,10 +208,10 @@ private fun sourceHint(state: AppState, deviceInstalled: Boolean, modelReady: Bo
     // 规则 1：选中的那条其实用不了
     when {
         state.voiceSource == VoiceSource.Device && !deviceInstalled ->
-            return "这台设备不支持系统识别，实际会走大模型那一路。"
+            return "这台设备不支持系统识别，实际会走云端识别那一路。"
 
         state.voiceSource == VoiceSource.Model && !modelReady ->
-            return "还没有配好能识别的服务商，这条路现在用不了——在下面选一家把 Key 填上。"
+            return "云端识别还用不了：在下面选一家服务商，并把它的 API Key 填上。"
     }
 
     val current = when (state.voiceSource) {
@@ -205,131 +226,179 @@ private fun sourceHint(state: AppState, deviceInstalled: Boolean, modelReady: Bo
 
     // 规则 2：灰着的那条为什么灰。
     // 系统识别那条的理由上面两句「自动」里已经说了（有没有系统识别，两种都说），
-    // 所以这里只补大模型那条。
+    // 所以这里只补云端那条。
     if (!modelReady && state.voiceSource != VoiceSource.Model) {
-        return "$current 要用「大模型」得先在下面配一家服务商。"
+        return "$current 要用「云端识别」得先在下面选一家服务商并填上 Key。"
     }
 
     return current
 }
 
+/** 一家语音服务商。选它就是把整条语音配置切到这家。 */
+@Composable
+private fun VendorChip(
+    provider: SpeechProvider,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (selected) StarPalette.Indigo else StarPalette.SurfaceAlt)
+            .clickable { onClick() }
+            .padding(vertical = 10.dp, horizontal = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = provider.name,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) Color.White else StarPalette.TextMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(2.dp))
+        // 「仅识别」这几个字要显眼——选了它朗读就只剩设备自带那条路，
+        // 用户得在点之前就知道，而不是选完发现朗读不见了
+        Text(
+            text = provider.capabilityLabel,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) Color.White.copy(alpha = 0.8f) else StarPalette.TextFaint,
+        )
+    }
+}
+
 /**
- * 一家可选的识别服务商。
+ * 这家的 API Key。
  *
- * 三种状态各给不同的落点：**没配 Key** 就点进详情页去配（当前这一页帮不上忙）；
- * 配好了就点一下选中；已经选中的展开识别模型选择。
+ * 输入用本地的草稿态、点「保存」才落盘——每敲一个字符就写一次 SettingsStore
+ * 既没必要，也会让撤销变得不可能。`dirty` 由"草稿和已存的值不一样"自然推出来，
+ * 不需要额外的状态。
  */
 @Composable
-private fun ProviderChoiceCard(
-    state: AppState,
-    provider: ModelProvider,
-    navigator: Navigator,
-) {
-    // 自动模式下实际会用到的也算"生效中"，否则用户看不出自动到底选了谁
-    val selected = state.speechProviderId == provider.id ||
-        (state.speechProviderId == null && state.asrEndpoint()?.baseUrl == provider.baseUrlFor(provider.protocol))
-    val configured = provider.supportsAsr
+private fun ApiKeyCard(state: AppState, provider: SpeechProvider) {
+    // 换家时草稿要跟着换成那家的 Key（remember 的 key 就是 provider.id）
+    val saved = state.speechKeyOf(provider.id)
+    val draft = remember(provider.id) { mutableStateOf(saved) }
+    val dirty = draft.value.trim() != saved
 
     StarCard(modifier = Modifier.fillMaxWidth()) {
-        Column {
-            SettingsRow(
-                glyph = StarIconGlyph.Mic,
-                title = provider.name,
-                subtitle = when {
-                    !configured -> "还没配 API Key，点这里去配"
-                    selected -> "识别模型 · ${activeModel(state, provider)}"
-                    else -> "已可用，点一下切到这家"
-                },
-                tint = if (configured) StarPalette.Indigo else StarPalette.TextFaint,
-                trailing = {
-                    Text(
-                        text = when {
-                            !configured -> "待配置"
-                            selected -> "使用中"
-                            else -> ""
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (selected) StarPalette.Success else StarPalette.TextFaint,
-                    )
-                },
-                onClick = {
-                    if (configured) {
-                        // 选一家的同时把方式切到「大模型」——不然用户在自动模式下
-                        // 选了 Groq，设备那路仍然优先，看起来像是没生效。
-                        state.selectSpeechProvider(provider.id)
-                        state.selectVoiceSource(VoiceSource.Model)
-                    } else {
-                        navigator.push(Route.ProviderDetail(provider.id))
-                    }
-                },
+        Column(Modifier.padding(14.dp)) {
+            StarTextField(
+                value = draft.value,
+                onValueChange = { draft.value = it },
+                placeholder = "sk-...",
             )
-
-            // 模型选择只在"这家在用 + 真的有多个可选"时出现。
-            // 一个选项的单选框是噪音，两个才是选择。
-            if (selected && configured && provider.asrChoices.size > 1) {
-                AsrModelPicker(state, provider)
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = if (saved.isBlank()) "还没填" else "已保存（${masked(saved)}）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = StarPalette.TextFaint,
+                    modifier = Modifier.weight(1f),
+                )
+                SaveButton(enabled = dirty, onClick = { state.setSpeechKey(provider.id, draft.value) })
             }
         }
     }
 }
 
-/** 这家现在实际用的识别模型。 */
-private fun activeModel(state: AppState, provider: ModelProvider): String =
-    state.asrModelId?.takeIf { it in provider.asrChoices }
-        ?: provider.asrModel
-        ?: "未设置"
-
 @Composable
-private fun AsrModelPicker(state: AppState, provider: ModelProvider) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(StarPalette.SurfaceAlt)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+private fun SaveButton(enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (enabled) StarPalette.Indigo else StarPalette.SurfaceSunken)
+            .then(if (enabled) Modifier.clickable { onClick() } else Modifier)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Text(
-            text = "识别模型",
-            style = MaterialTheme.typography.labelMedium,
-            color = StarPalette.TextMuted,
+            text = "保存",
+            style = MaterialTheme.typography.labelLarge,
+            color = if (enabled) Color.White else StarPalette.TextFaint,
         )
-        Spacer(Modifier.height(8.dp))
+    }
+}
 
-        provider.asrChoices.forEach { model ->
-            val chosen = activeModel(state, provider) == model
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(if (chosen) StarPalette.Indigo.copy(alpha = 0.12f) else Color.Transparent)
-                    .clickable { state.selectAsrModel(model) }
-                    .padding(horizontal = 10.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = model,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = StarPalette.Text,
-                        fontWeight = if (chosen) FontWeight.Medium else FontWeight.Normal,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    modelNote(model)?.let { note ->
-                        Spacer(Modifier.height(2.dp))
+/** 只露个头尾，和「模型接入」那边回显 Key 的做法一致。 */
+private fun masked(key: String): String =
+    if (key.length <= 8) "••••" else key.take(4) + "••••" + key.takeLast(4)
+
+/**
+ * 朗读这一节。
+ *
+ * 朗读**没有自己的档位**——它跟着识别选的那家走：这家能做合成（智谱 GLM、OpenAI）
+ * 就用它，不能（Groq 只有识别）就退回设备自带。这句话必须写出来，
+ * 否则用户选了 Groq 之后发现朗读换了声音，只会以为坏了。
+ */
+@Composable
+private fun ReadingNote(provider: SpeechProvider) {
+    StarCard(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
+            Text(
+                text = if (provider.canSynthesize) {
+                    "${provider.name} 也能合成语音，朗读会走这家。"
+                } else {
+                    "${provider.name} 只做识别、不做合成，所以朗读仍用这台设备自带的。"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = StarPalette.Text,
+            )
+            // 能合成时不必再劝他换一家——那句话只在"朗读没走上云端"时才有信息量
+            if (!provider.canSynthesize) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "换个能合成的服务商（智谱 GLM 或 OpenAI）就能让朗读也走云端。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = StarPalette.TextFaint,
+                )
+            }
+        }
+    }
+}
+
+/** 识别模型。只有这家提供多个时才摆——一个选项的单选框是噪音。 */
+@Composable
+private fun AsrModelPicker(state: AppState, provider: SpeechProvider) {
+    StarCard(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
+            provider.asrChoices.forEach { model ->
+                val chosen = state.activeAsrModel(provider) == model
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (chosen) StarPalette.Indigo.copy(alpha = 0.12f) else Color.Transparent)
+                        .clickable { state.selectAsrModel(model) }
+                        .padding(horizontal = 10.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
                         Text(
-                            text = note,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = StarPalette.TextFaint,
+                            text = model,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = StarPalette.Text,
+                            fontWeight = if (chosen) FontWeight.Medium else FontWeight.Normal,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        modelNote(model)?.let { note ->
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = note,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = StarPalette.TextFaint,
+                            )
+                        }
+                    }
+                    if (chosen) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "✓",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = StarPalette.Indigo,
                         )
                     }
-                }
-                if (chosen) {
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "✓",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = StarPalette.Indigo,
-                    )
                 }
             }
         }

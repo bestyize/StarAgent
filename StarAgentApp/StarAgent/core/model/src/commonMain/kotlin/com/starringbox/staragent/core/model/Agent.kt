@@ -65,62 +65,7 @@ data class ModelProvider(
     val models: List<String> = emptyList(),
     val apiKey: String = "",
     val builtIn: Boolean = true,
-    /**
-     * 语音能力：这家的识别 / 合成模型。
-     *
-     * 留空表示**这家没有语音接口**——十家里只有智谱和 OpenAI 提供，
-     * 其余几家（含 DeepSeek）本身就是纯文本，留空正好让语音那条链路跳过它们。
-     * 这两个字段不参与对话，只在要用语音时被读，所以留空是完全正常的状态。
-     */
-    val asrModel: String? = null,
-    /**
-     * 这家**还提供哪些**识别模型，供用户在语音识别设置页里换。
-     *
-     * 不含 [asrModel]——那是预设的那个，[asrChoices] 会把两者并起来。
-     * 留空表示"这家只有一个识别模型"，界面于是不摆选择器：
-     * 一个选项的单选框只是噪音。Groq 是留这个字段的直接原因，
-     * 它的 turbo 与 large-v3 是速度和中英混说准确率之间的真实取舍，
-     * 锁死任一个都会让另一批用户没得选。
-     */
-    val asrModels: List<String> = emptyList(),
-    val ttsModel: String? = null,
-    /**
-     * 合成用的音色名。**每家的取值不一样**（智谱 `tongtong`、OpenAI `alloy`），
-     * 而合成接口把它列为必填，所以只能跟着服务商一起存。
-     */
-    val ttsVoice: String? = null,
 ) {
-    /** 这家能不能用来做语音。 */
-    val supportsSpeech: Boolean
-        get() = apiKey.isNotBlank() && (asrModel != null || ttsModel != null) && baseUrlFor(protocol) != null
-
-    /**
-     * 这家能不能用来做**识别**。
-     *
-     * 和 [supportsSpeech] 分开，是因为两条能力并不总是成对出现——
-     * Groq 只填了识别模型，把它当成"支持语音"就会在朗读时选中它然后失败。
-     */
-    val supportsAsr: Boolean
-        get() = apiKey.isNotBlank() && asrModel != null && baseUrlFor(protocol) != null
-
-    /** 这家能不能用来做**合成**。理由同 [supportsAsr]。 */
-    val supportsTts: Boolean
-        get() = apiKey.isNotBlank() && ttsModel != null && baseUrlFor(protocol) != null
-
-    /**
-     * 可选的识别模型全集，预设的那个排在最前。
-     *
-     * 三个来源合起来，**[models] 是权威**：那是「获取模型列表」从服务商真拉回来的，
-     * 而 [asrModel] / [asrModels] 只是没拉之前的兜底。
-     * 这个顺序解决的是一个真实的坑：文档上写着的模型未必在你这个账号/区域上有，
-     * 硬编码一份清单迟早会让用户选到一个 404。拉过清单之后就该以清单为准。
-     *
-     * 界面只在多于一个时才摆选择器，所以这里不做"至少给一个"的兜底——
-     * 没有识别能力的服务商本来就不该出现在语音识别页上。
-     */
-    val asrChoices: List<String>
-        get() = (listOfNotNull(asrModel) + asrModels + models.filter(::looksLikeAsrModel)).distinct()
-
     /**
      * 能用来**对话**的模型，带上它在 [models] 里的下标。
      *

@@ -53,6 +53,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.starringbox.staragent.core.data.AppState
 import com.starringbox.staragent.core.data.LocalAppState
 import com.starringbox.staragent.core.designsystem.component.IconTile
 import com.starringbox.staragent.core.designsystem.component.SectionLabel
@@ -297,7 +298,7 @@ private fun SheetBody(agent: Agent, onPickModel: (String) -> Unit) {
     } else {
         usable.forEach { provider ->
             // 只摆能对话的。拉回来的清单里混着识别/合成/审核模型，
-            // 选中一个 whisper 去聊天就是一句一个 400——语音识别在「我的 → 语音识别」里配。
+            // 选中一个 whisper 去聊天就是一句一个 400——语音在「我的 → 语音」里配。
             provider.chatChoices.forEach { (index, label) ->
                 val key = state.modelKey(provider.id, index)
                 val selected = key == agent.modelId
@@ -385,7 +386,7 @@ private fun SheetBody(agent: Agent, onPickModel: (String) -> Unit) {
                 color = StarPalette.Text,
             )
             Text(
-                text = "默认用设备自带的朗读，不用配 Key 也不花钱",
+                text = readingEngineLabel(state),
                 style = MaterialTheme.typography.bodySmall,
                 color = StarPalette.TextFaint,
             )
@@ -453,20 +454,37 @@ private fun SheetBody(agent: Agent, onPickModel: (String) -> Unit) {
             // 选中的那条其实用不了，先说这一条：它比下面那句笼统的"用不了语音"更具体，
             // 也直接说了该去哪修
             state.voiceSource == VoiceSource.Model && !modelReady ->
-                "还没有配好能识别的服务商，这条路现在用不了——去「我的 → 语音识别」配一家。"
+                "云端识别还用不了：去「我的 → 语音」选一家服务商，并把它的 Key 填上。"
 
             state.voiceSource == VoiceSource.Device && !deviceInstalled ->
-                "这台设备不支持系统识别，实际会走大模型那一路。"
+                "这台设备不支持系统识别，实际会走云端识别那一路。"
 
             !state.canListen && !state.canSpeak ->
-                "现在还用不了语音：这台设备没有可用的识别与合成，也没配支持语音的服务商（智谱或 OpenAI）。"
+                "现在还用不了语音：这台设备没有可用的识别与合成，也没配语音服务商。"
 
             state.voiceSource == null ->
-                "自动：优先用系统能力，它不要 Key 也不花钱；用不了时才走大模型。"
+                "自动：优先用系统能力，它不要 Key 也不花钱；用不了时才走云端识别。"
 
             else -> state.voiceSource?.hint.orEmpty()
         },
         style = MaterialTheme.typography.bodySmall,
         color = StarPalette.TextFaint,
     )
+}
+
+/**
+ * 朗读现在走哪条路。
+ *
+ * 朗读没有自己的档位，它跟着「我的 → 语音」里选的那家走：那家能做合成
+ * （智谱 GLM、OpenAI）就用它，不能（Groq 只有识别）就退回设备自带。
+ * 这里**不能写死"用设备自带"**——配了能合成的服务商之后那句话就是假的。
+ */
+private fun readingEngineLabel(state: AppState): String {
+    val vendor = state.activeSpeechProvider()
+    val onCloud = vendor != null && vendor.canSynthesize && state.speechConfigured(vendor.id)
+    return if (onCloud) {
+        "用 ${vendor.name} 的合成，按量计费"
+    } else {
+        "用设备自带的朗读，不用配 Key 也不花钱"
+    }
 }

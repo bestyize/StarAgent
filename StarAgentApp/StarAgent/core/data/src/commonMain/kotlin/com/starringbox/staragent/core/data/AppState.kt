@@ -34,6 +34,7 @@ import com.starringbox.staragent.core.model.ModelProvider
 import com.starringbox.staragent.core.model.Recurrence
 import com.starringbox.staragent.core.model.ResponseMode
 import com.starringbox.staragent.core.model.Skill
+import com.starringbox.staragent.core.model.SpeechProvider
 import com.starringbox.staragent.core.model.TaskDraft
 import com.starringbox.staragent.core.model.TaskStatus
 import com.starringbox.staragent.core.model.describeMoment
@@ -84,9 +85,10 @@ class AppState(
         private set
 
     /**
-     * 用哪家服务商做语音识别。null = 自动（取第一家可用的）。
+     * 用哪家语音服务商。null = 还没选（[activeSpeechProvider] 会退回第一家）。
      *
-     * 只管识别。合成一直是自动选的——见 [ttsEndpoint]。
+     * **识别和朗读共用这一条配置**：选了谁、填了谁的 Key，识别就走它；
+     * 它要是有合成模型，朗读也走它，没有就退回设备自带。
      */
     var speechProviderId by mutableStateOf<String?>(null)
         private set
@@ -94,6 +96,17 @@ class AppState(
     /** 识别用哪个模型。null = 用那家的预设。存的是模型名本身，不是下标。 */
     var asrModelId by mutableStateOf<String?>(null)
         private set
+
+    /**
+     * 语音侧的全部候选。常量——每次启动由 [Seed.speechProviders] 重建，之后不变。
+     *
+     * ⚠️ **声明位置必须在 [init] 之前**：属性初始化器和 init 块按声明顺序交错执行，
+     * 而 init 里那句 [restoreSettings] 就要往 [speechKeys] 里写。
+     */
+    val speechProviders: List<SpeechProvider> = Seed.speechProviders()
+
+    /** 语音侧的 Key，按服务商分开存。理由见 [setSpeechKey]。snapshot map，界面跟着它刷新。 */
+    private val speechKeys = mutableStateMapOf<String, String>()
 
     /** 回复要不要念出来。默认关——朗读会真的产生费用，不能默默开始花钱。 */
     var speakReplies by mutableStateOf(false)
@@ -165,6 +178,11 @@ class AppState(
             transcriber = ModelTranscriber { asrEndpoint() },
             synthesizer = ModelSynthesizer { ttsEndpoint() },
         )
+
+        // 「自动 / 系统能力 / 云端识别」这一档也要接过来。
+        // [Voice] 刻意不自己存它——上一版两边各存一份、而这边忘了同步，
+        // 结果这个选择在真机上一直是失效的。现在这边是唯一的真相。
+        Voice.installPreference { voiceSource }
 
         // 兜底默认模型取第一家的第一个；没有服务商时留空，交给 SettingsStore 里用户自己的选择
         providers.firstOrNull()?.let { defaultModelId = modelKey(it.id, 0) }
@@ -375,51 +393,79 @@ class AppState(
     // ── 语音 ────────────────────────────────────
 
     /**
-     * 界面上能出现在「语音识别」页里的服务商：**填了识别模型的那些**。
+     * 当前生效的那家语音服务商。
      *
-     * 刻意不筛 Key——没配 Key 的也要列出来，页面才能把"这家能做识别，但你还没配 Key"
-     * 说清楚并给一个去配置的入口。只列已配好的话，用户根本不知道 Groq 是个选项。
+     * [speechProviderId] 为 null（没选过）或指向一家已经没有的（上一版存下来的某个
+     * 自定义服务商 id、或者预置里删掉过一家）时，**退回第一家**——
+     * 设置项失效不该让语音直接哑掉。
      */
-    fun asrProviders(): List<ModelProvider> = providers.filter { it.asrModel != null }
+    fun activeSpeechProvider(): SpeechProvider? =
+        speechProviderId?.let { id -> speechProviders.firstOrNull { it.id == id } }
+            ?: speechProviders.firstOrNull()
+
+    /** 这家配了 Key 没有。 */
+    fun speechKeyOf(providerId: String): String = speechKeys[providerId].orEmpty()
+
+    fun speechConfigured(providerId: String): Boolean = speechKeyOf(providerId).isNotBlank()
 
     /**
-     * 用来做**识别**的服务商，按用户在语音识别页里选的那家。
+     * 写这家的 Key。传空串等于清掉配置。
      *
-     * [speechProviderId] 为 null（没选过）或指向一家已经不能用的（Key 被清掉、
-     * 自定义服务商被删）时，退回第一家可用的——设置项失效不该让语音直接哑掉。
-     */
-    private fun asrProvider(): ModelProvider? =
-        speechProviderId?.let { id -> providers.firstOrNull { it.id == id && it.supportsAsr } }
-            ?: providers.firstOrNull { it.supportsAsr }
-
-    /**
-     * 识别用的接口信息。
+     * **按家分开存**，不是"一把 Key"：用户从 Groq 切到智谱时，Groq 的 Key 拿到智谱去
+     * 必然 401，而把它留在输入框里等着被误发更糟。按家分开是唯一不会把 A 家的钥匙
+     * 插到 B 家门上的存法；界面上一次只显示一家的输入框，读起来仍然是"就一条配置"。
      *
-     * 只填 [SpeechEndpoint.asrModel]——**合成那条另算**，见 [ttsEndpoint]。
-     * 具体模型按用户选的来；选过的那个后来从清单里消失了（换了预设版本），
-     * 退回这家的预设模型。
+     * 落盘键 `speechKey:<id>` 与对话那边的 `apikey:<id>` **是两回事**——
+     * 拆开的意义就在于两边互不影响。
      */
-    fun asrEndpoint(): SpeechEndpoint? {
-        val provider = asrProvider() ?: return null
-        val baseUrl = provider.baseUrlFor(provider.protocol) ?: return null
-        val model = asrModelId?.takeIf { it in provider.asrChoices } ?: provider.asrModel
-        return SpeechEndpoint(baseUrl = baseUrl, apiKey = provider.apiKey, asrModel = model)
+    fun setSpeechKey(providerId: String, key: String) {
+        val trimmed = key.trim()
+        speechKeys[providerId] = trimmed
+        SettingsStore.put(speechKeyName(providerId), trimmed)
     }
 
     /**
-     * 合成用的接口信息。取第一家配好 Key 且有合成模型的。
+     * 这家现在实际用的识别模型：选过且在候选里就用选的，否则退回预设。
      *
-     * **和识别分开取**，这不是重复代码：两条能力并不总在同一家。Groq 只有识别，
-     * 合起来取的话，用户把识别设成 Groq 就会连朗读一起失去——
-     * 而他并没有要求改朗读。识别是用户选的，合成保持自动。
+     * 界面和 [asrEndpoint] 都走这一个出口——分头写两遍迟早会不一致，
+     * 而"界面显示 A、实际请求 B"是最难查的那种毛病。
+     */
+    fun activeAsrModel(provider: SpeechProvider): String =
+        asrModelId?.takeIf { it in provider.asrChoices } ?: provider.asrModel
+
+    /**
+     * 识别用的接口信息。没选服务商、或这家没填 Key，都返回 null。
+     *
+     * 返回 null 时 `ModelTranscriber.ready` 为 false（见 `core:llm` 的 ModelSpeech），
+     * 界面据此把「云端识别」那一档禁用，并把原因说清楚。
+     */
+    fun asrEndpoint(): SpeechEndpoint? {
+        val provider = activeSpeechProvider() ?: return null
+        val key = speechKeyOf(provider.id)
+        if (key.isBlank()) return null
+        return SpeechEndpoint(
+            baseUrl = provider.baseUrl.trimEnd('/'),
+            apiKey = key,
+            asrModel = activeAsrModel(provider),
+        )
+    }
+
+    /**
+     * 合成用的接口信息。
+     *
+     * **跟着用户选的那家走**，不再"自动挑一家能做合成的"——这是拆分配置的直接结果：
+     * 语音侧只有一条配置，用户选了谁就是谁。这家不能合成（Groq）时返回 null，
+     * `ModelSynthesizer.ready` 于是为 false，[Voice] 会把朗读退回设备自带。
      */
     fun ttsEndpoint(): SpeechEndpoint? {
-        val provider = providers.firstOrNull { it.supportsTts } ?: return null
-        val baseUrl = provider.baseUrlFor(provider.protocol) ?: return null
+        val provider = activeSpeechProvider() ?: return null
+        val model = provider.ttsModel ?: return null
+        val key = speechKeyOf(provider.id)
+        if (key.isBlank()) return null
         return SpeechEndpoint(
-            baseUrl = baseUrl,
-            apiKey = provider.apiKey,
-            ttsModel = provider.ttsModel,
+            baseUrl = provider.baseUrl.trimEnd('/'),
+            apiKey = key,
+            ttsModel = model,
             ttsVoice = provider.ttsVoice,
         )
     }
@@ -451,10 +497,12 @@ class AppState(
     }
 
     /**
-     * 选做识别的服务商。传 null 回到自动。
+     * 选语音服务商。传 null 回到"还没选"（[activeSpeechProvider] 会退回第一家）。
      *
      * 换家的同时把模型选择清掉：模型名是**跟着服务商**的，
      * `whisper-large-v3-turbo` 拿到智谱去就是个不存在的模型。
+     *
+     * Key **不清**——它是按家分开存的，各留各的，切回去不用重填。
      */
     fun selectSpeechProvider(id: String?) {
         speechProviderId = id
@@ -469,22 +517,24 @@ class AppState(
     }
 
     /**
-     * 语音识别现在实际会走哪条路，一句话说清。「我的」页那行副标题用它。
+     * 语音现在实际会走哪条路，一句话说清。「我的」页那行副标题用它。
      *
-     * 顺序照 [Voice] 的选取逻辑来，否则副标题会跟真实行为不一致——
-     * 那比不显示更糟。
+     * 顺序照 [Voice] 的选取逻辑来，否则副标题会跟真实行为不一致——那比不显示更糟。
      */
     val asrSummary: String
         get() {
             val device = Voice.deviceListenInstalled
-            val provider = asrProvider()
+            val provider = activeSpeechProvider()
+            val configured = provider != null && speechConfigured(provider.id)
             return when {
                 voiceSource == VoiceSource.Device && device -> "系统能力"
                 voiceSource == VoiceSource.Device -> "系统能力 · 这台设备不支持"
-                voiceSource == VoiceSource.Model && provider != null -> provider.name
-                voiceSource == VoiceSource.Model -> "大模型 · 待配置"
+                // 「云端识别」是用户点名要的，没配好就得直说是哪一步没做
+                voiceSource == VoiceSource.Model && configured -> provider!!.name
+                voiceSource == VoiceSource.Model && provider == null -> "云端识别 · 还没选服务商"
+                voiceSource == VoiceSource.Model -> "云端识别 · 还没填 Key"
                 device -> "自动 · 优先系统能力"
-                provider != null -> "自动 · ${provider.name}"
+                configured -> "自动 · ${provider!!.name}"
                 else -> "还没有可用的识别"
             }
         }
@@ -1247,6 +1297,14 @@ class AppState(
     private fun keyOf(id: String) = "apikey:$id"
     private fun modelsOf(id: String) = "models:$id"
 
+    /**
+     * 语音侧的 Key 落盘键。
+     *
+     * **故意和 [keyOf] 不同名**——同名就等于又回到"两边共用一把"，
+     * 那正是这次要拆掉的东西。旧键一律不读、不删：它们是用户的对话配置，留着无害。
+     */
+    private fun speechKeyName(providerId: String) = "speechKey:$providerId"
+
     private fun persistProvider(provider: ModelProvider) {
         SettingsStore.put(keyOf(provider.id), provider.apiKey)
         SettingsStore.put(modelsOf(provider.id), encodeList(provider.models))
@@ -1267,11 +1325,22 @@ class AppState(
             ?.let { selectVoiceSource(it) }
         speakReplies = SettingsStore.get(KEY_SPEAK_REPLIES) == "true"
 
-        // 识别服务商与模型。这两个只是"偏好"，指向的东西不在了也不校验——
-        // asrEndpoint() 每次都会重新核对一遍，那里退回自动。在这儿校验反而不对：
-        // 还原时 providers 的 Key 才刚灌完，此刻的可用性不代表用起来那一刻的。
+        // 语音服务商与模型。这两个只是"偏好"，指向的东西不在了也不校验——
+        // activeSpeechProvider() / asrEndpoint() 每次都会重新核对一遍，那里退回第一家。
+        // 在这儿校验反而不对：还原时语音的 Key 才刚灌完，此刻的可用性不代表用起来那一刻的。
+        //
+        // 上一版存下来的 speechProvider 可能是某个**对话**服务商的 id，
+        // 读出来落到 activeSpeechProvider() 上会自然退回第一家——不需要为它写迁移。
         speechProviderId = SettingsStore.get(KEY_SPEECH_PROVIDER)?.takeIf { it.isNotBlank() }
         asrModelId = SettingsStore.get(KEY_ASR_MODEL)?.takeIf { it.isNotBlank() }
+
+        // 三家的 Key 都要读回来。漏读一家的后果是"每次冷启都要重填"，
+        // 而这件事不写测试根本发现不了——id 和模型名都还原得好好的，看着一切正常。
+        speechProviders.forEach { provider ->
+            SettingsStore.get(speechKeyName(provider.id))
+                ?.takeIf { it.isNotBlank() }
+                ?.let { speechKeys[provider.id] = it }
+        }
 
         SettingsStore.get(KEY_RESPONSE_MODE)
             ?.let { saved -> ResponseMode.entries.firstOrNull { it.name == saved } }

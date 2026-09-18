@@ -16,6 +16,7 @@ import com.starringbox.staragent.core.model.MessageBody
 import com.starringbox.staragent.core.model.ModelProvider
 import com.starringbox.staragent.core.model.Recurrence
 import com.starringbox.staragent.core.model.Skill
+import com.starringbox.staragent.core.model.SpeechProvider
 import com.starringbox.staragent.core.model.TaskPriority
 
 /**
@@ -64,11 +65,6 @@ internal object Seed {
                     openAiBaseUrl = "https://open.bigmodel.cn/api/paas/v4",
                     anthropicBaseUrl = "https://open.bigmodel.cn/api/anthropic",
                     models = listOf("glm-5.3", "glm-5.3-flash", "glm-5.2"),
-                    // 语音：识别与合成走的是和对话同源的 OpenAI 形状
-                    // （/audio/transcriptions 与 /audio/speech），模型 ID 取自它的 OpenAPI 定义
-                    asrModel = "glm-asr-2512",
-                    ttsModel = "glm-tts",
-                    ttsVoice = "tongtong",
                 ),
                 ModelProvider(
                     id = "kimi",
@@ -121,17 +117,6 @@ internal object Seed {
                     // 预填一份过期的名字比不填更坏——用户会拿它去发请求然后吃一个 404。
                     // 详情页的「获取模型列表」会真去拉一次当前可用的，这里不猜。
                     models = emptyList(),
-                    // 识别走的还是 OpenAI 那套形状（/audio/transcriptions、multipart、取 text），
-                    // 所以 core:llm 一行都不用改。默认给 turbo：速度与质量的平衡点。
-                    asrModel = "whisper-large-v3-turbo",
-                    // 只列**真机拉到的那份清单里确实有**的。文档上还有个
-                    // distil-whisper-large-v3-en，但 2026-09 实际拉回来的清单里没有它——
-                    // 预填一个不存在的模型，用户选中就是一个 404。
-                    // 拉过清单之后 asrChoices 会以真实清单为准，这里只是没拉之前的兜底。
-                    asrModels = listOf("whisper-large-v3"),
-                    // 合成**先不填**：Groq 确实有 /audio/speech，但当前那条模型线
-                    // （PlayAI-TTS 已换成 Orpheus）的模型名与音色取值没能核实到，
-                    // 填错的直接后果是 400。留空让朗读自动去选智谱或 OpenAI。
                 ),
                 ModelProvider(
                     id = "openai",
@@ -140,9 +125,6 @@ internal object Seed {
                     openAiBaseUrl = "https://api.openai.com/v1",
                     // GPT-5.6 家族分三档，裸 gpt-5.6 是 gpt-5.6-sol 的别名
                     models = listOf("gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"),
-                    asrModel = "gpt-4o-transcribe",
-                    ttsModel = "gpt-4o-mini-tts",
-                    ttsVoice = "alloy",
                 ),
                 ModelProvider(
                     id = "anthropic",
@@ -168,6 +150,52 @@ internal object Seed {
             )
         )
     }
+
+    /**
+     * 语音服务商的预置。**和 [installProviders] 是两份互不相干的清单**。
+     *
+     * 拆开的理由见 [SpeechProvider] 的注释：语音的可用性不该取决于对话那把 Key 配没配。
+     * 代价是 `baseUrl` 与对话那边的 `openAiBaseUrl` 有重复——**这份重复是刻意接受的**，
+     * 读对话的 providers 正是要拆掉的那个耦合。将来某家换域名，两处都要改。
+     *
+     * 只列**确实能用的**：
+     *
+     * - 三家的识别走的都是 OpenAI 那套形状（`/audio/transcriptions`、multipart、取 `text`），
+     *   所以 `core:llm` 一行都不用改；
+     * - Groq 的备选只列**真机拉到的那份清单里确实有**的。文档上还有个
+     *   `distil-whisper-large-v3-en`，但 2026-09 实际拉回来的清单里没有它——
+     *   预填一个不存在的模型，用户选中就是一个 404；
+     * - **Groq 的合成留空**：它确实有 `/audio/speech`，但当前那条模型线
+     *   （PlayAI-TTS 已换成 Orpheus）的模型名与音色取值没能核实到，填错的直接后果是 400。
+     *   留空之后朗读会自动退回设备自带。
+     */
+    fun speechProviders(): List<SpeechProvider> = listOf(
+        SpeechProvider(
+            id = "zhipu",
+            name = "智谱 GLM",
+            baseUrl = "https://open.bigmodel.cn/api/paas/v4",
+            // 模型 ID 取自它的 OpenAPI 定义
+            asrModel = "glm-asr-2512",
+            ttsModel = "glm-tts",
+            ttsVoice = "tongtong",
+        ),
+        SpeechProvider(
+            id = "groq",
+            name = "Groq",
+            baseUrl = "https://api.groq.com/openai/v1",
+            // 默认给 turbo：速度与质量的平衡点
+            asrModel = "whisper-large-v3-turbo",
+            asrModels = listOf("whisper-large-v3"),
+        ),
+        SpeechProvider(
+            id = "openai",
+            name = "OpenAI",
+            baseUrl = "https://api.openai.com/v1",
+            asrModel = "gpt-4o-transcribe",
+            ttsModel = "gpt-4o-mini-tts",
+            ttsVoice = "alloy",
+        ),
+    )
 
     /** 首次启动的演示内容：智能体、任务、记忆、技能、渠道与示例对话。 */
     fun populateDemo(state: AppState) {

@@ -22,7 +22,7 @@ class VoiceTest {
         // Voice 是全局单例，跑完清干净，免得影响同模块别的测试
         Voice.installDevice(null, null)
         Voice.installModel(null, null)
-        Voice.preference = null
+        Voice.installPreference(null)
     }
 
     // ── WAV 封装 ────────────────────────────────
@@ -207,7 +207,7 @@ class VoiceTest {
     fun forcingTheModelSkipsTheDevice() = runTest {
         Voice.installDevice(FakeTranscriber(text = "设备听出来的"))
         Voice.installModel(FakeTranscriber(text = "模型听出来的"))
-        Voice.preference = VoiceSource.Model
+        Voice.installPreference { VoiceSource.Model }
 
         Voice.startListening()
         assertEquals("模型听出来的", (Voice.stopListening() as SpeechOutcome.Ok).value)
@@ -244,9 +244,30 @@ class VoiceTest {
     fun forcingAnUnreadyBackendDoesNotSilentlyUseTheOther() {
         Voice.installDevice(FakeTranscriber(text = "设备听出来的"))
         Voice.installModel(FakeTranscriber(text = "模型听出来的", ready = false))
-        Voice.preference = VoiceSource.Model
+        Voice.installPreference { VoiceSource.Model }
 
         assertFalse(Voice.canListen, "用户明确指定了模型那一路，就不该偷偷换回设备")
+    }
+
+    /**
+     * 识别那条独占，合成那条**会退回设备**——这个不对称是有意的（见 `pickSynthesizer`）。
+     *
+     * 「云端识别」这个档管的是识别，用户没要求把朗读也一起换掉；而朗读本来就没有
+     * 独立的档位，退回去不会让他以为"我选中了别的"。
+     *
+     * 具体的坑：Groq 只做识别，选了它之后模型合成没有 endpoint。不放宽这一条的话，
+     * Android 上明明有系统朗读却会整个哑掉，而界面上什么都不会说。
+     */
+    @Test
+    fun anUnreadyModelSynthesizerFallsBackToTheDevice() = runTest {
+        val device = FakeSynthesizer()
+        Voice.installDevice(synthesizer = device)
+        Voice.installModel(synthesizer = FakeSynthesizer(ready = false))
+        Voice.installPreference { VoiceSource.Model }
+
+        assertTrue(Voice.canSpeak, "识别选了云端，不该把朗读也一起关掉")
+        Voice.speak("念一句")
+        assertEquals(1, device.calls, "模型合成不可用时就该退回设备那一路")
     }
 
     @Test
@@ -309,10 +330,10 @@ class VoiceTest {
         override fun cancel() = Unit
     }
 
-    private class FakeSynthesizer : Synthesizer {
+    private class FakeSynthesizer(override val ready: Boolean = true) : Synthesizer {
         var calls = 0
         var stops = 0
-        override val ready: Boolean get() = true
+
         override suspend fun speak(text: String): SpeechOutcome<Unit> {
             calls++
             return SpeechOutcome.Ok(Unit)

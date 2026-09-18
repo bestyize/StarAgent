@@ -46,6 +46,12 @@ class ChatModelChoiceTest {
         "whisper-large-v3-turbo",
     )
 
+    /**
+     * 从 Groq 拉回来的清单原样摆进 [ModelProvider.models]。
+     *
+     * 这份清单里就有 whisper 和 orpheus——**对话侧要自己把它们挡在外面**，
+     * 不能指望"语音的模型不会出现在这里"（语音配置已经和这里彻底分开了）。
+     */
     private fun groq(models: List<String>) = ModelProvider(
         id = "groq",
         name = "Groq",
@@ -53,7 +59,6 @@ class ChatModelChoiceTest {
         openAiBaseUrl = "https://api.groq.com/openai/v1",
         models = models,
         apiKey = "sk-test",
-        asrModel = "whisper-large-v3-turbo",
     )
 
     @Test
