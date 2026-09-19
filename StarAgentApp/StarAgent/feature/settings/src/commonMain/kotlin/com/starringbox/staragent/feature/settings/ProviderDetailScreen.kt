@@ -52,10 +52,10 @@ private sealed interface FetchState {
 }
 
 /**
- * 服务商详情：配 API Key、拉取该服务商当前可用的模型列表、勾选要用的模型。
+ * 服务商详情：配 API Key、维护该服务商可用的模型清单、勾选要用的模型。
  *
- * 模型名不要求用户手打——填好 Key 点一下「获取模型列表」，
- * 拉回来的是这家服务商此刻真实支持的模型，再从中挑。
+ * 模型有两处来源：「获取模型列表」拉这家服务商真实的清单——**有的服务商没有这个接口**
+ * （火山方舟的 `/models` 就是 404），所以也支持手动输入一个模型名加进去。
  */
 @Composable
 fun ProviderDetailScreen(navigator: Navigator, providerId: String?) {
@@ -71,13 +71,18 @@ fun ProviderDetailScreen(navigator: Navigator, providerId: String?) {
     var anthropicUrl by remember { mutableStateOf(existing?.anthropicBaseUrl.orEmpty()) }
     var apiKey by remember { mutableStateOf(existing?.apiKey.orEmpty()) }
     var selected by remember { mutableStateOf(existing?.models.orEmpty().toSet()) }
+    // 清单里现在有哪些模型。以已保存的为准起步，但要能整份清掉、也能手动往里加——
+    // 两者正是「清除全部」和「手动添加」的直接目的：有的服务商没有 /models 可拉，
+    // 预置的模型名还可能是猜的。existing.models 本身是只读的，所以这里另存一份工作态。
+    var list by remember(existing?.id) { mutableStateOf(existing?.models.orEmpty()) }
     var fetched by remember { mutableStateOf<List<String>>(emptyList()) }
+    var newModel by remember { mutableStateOf("") }
     var defaultPick by remember { mutableStateOf<String?>(existing?.models?.firstOrNull()) }
     var fetchState by remember { mutableStateOf<FetchState>(FetchState.Idle) }
 
-    // 内置模型名 + 刚拉回来的，去重后一起列出来，勾选状态不受来源影响。
-    val allModels = remember(existing?.id, fetched) {
-        (existing?.models.orEmpty() + fetched).distinct().sorted()
+    // 已保存的 + 手动加的 + 刚拉回来的，去重后一起列出来，勾选状态不受来源影响。
+    val allModels = remember(list, fetched) {
+        (list + fetched).distinct().sorted()
     }
     val ordered = allModels.filter { it in selected }
     val currentBaseUrl = when (protocol) {
@@ -190,12 +195,52 @@ fun ProviderDetailScreen(navigator: Navigator, providerId: String?) {
                 )
             }
 
-            item { SectionLabel("模型（勾选要用的）") }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SectionLabel(
+                        text = "模型（勾选要用的）",
+                        modifier = Modifier.weight(1f),
+                    )
+                    // 一键清空整份清单：预置的模型名是猜的、又拉不回来时，得能整份推倒重来
+                    if (allModels.isNotEmpty()) {
+                        Text(
+                            text = "清除全部",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = StarPalette.Danger,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    list = emptyList()
+                                    fetched = emptyList()
+                                    selected = emptySet()
+                                    defaultPick = null
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+            }
+
+            item {
+                AddModelRow(
+                    value = newModel,
+                    onValueChange = { newModel = it },
+                    onAdd = {
+                        val name = newModel.trim()
+                        if (name.isNotBlank() && name !in allModels) {
+                            list = list + name
+                            selected = selected + name
+                            if (defaultPick == null) defaultPick = name
+                        }
+                        newModel = ""
+                    },
+                )
+            }
 
             if (allModels.isEmpty()) {
                 item {
                     Text(
-                        text = "还没有模型。填好上面的信息后点「获取模型列表」。",
+                        text = "还没有模型。手动输入一个名字添加，或填好 Key 后点「获取模型列表」。",
                         style = MaterialTheme.typography.bodySmall,
                         color = StarPalette.TextFaint,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
@@ -397,6 +442,42 @@ private fun ModelRow(
                         color = if (isDefault) StarPalette.Indigo else StarPalette.TextFaint,
                     )
                 }
+            }
+        }
+    }
+}
+
+/** 手动输入一个模型名加进清单。没有 /models 可拉的服务商（火山方舟）靠它。 */
+@Composable
+private fun AddModelRow(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onAdd: () -> Unit,
+) {
+    StarCard(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            StarTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier.weight(1f),
+                placeholder = "输入模型名，手动添加",
+            )
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(if (value.isBlank()) StarPalette.SurfaceSunken else StarPalette.Indigo)
+                    .clickable(enabled = value.isNotBlank()) { onAdd() }
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            ) {
+                Text(
+                    text = "添加",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (value.isBlank()) StarPalette.TextFaint else Color.White,
+                )
             }
         }
     }
