@@ -117,11 +117,12 @@ class SpeechConfigTest {
     }
 
     /**
-     * 火山方舟这一家：**语音和对话是两条产品线**。
+     * 火山方舟这一家：**语音和对话是两条产品线**，而且语音那边还分 Agent Plan 与普通控制台两套凭据。
      *
-     * 它和别家不一样的地方有三处，每一处写错都不是编译错误、而是运行时一个看不懂的失败：
-     * 域名是 `openspeech.bytedance.com` 而不是方舟的 `ark.cn-beijing.volces.com`；
-     * 凭据是一个 API Key（不是旧控制台那对 APP ID + Access Token）；
+     * 三处写错都不是编译错误、而是运行时一个看不懂的失败：域名是
+     * `openspeech.bytedance.com` 而不是方舟的 `ark.cn-beijing.volces.com`；
+     * 资源 ID 是 Agent Plan 那套（`volc.seedasr…`）而不是普通控制台的
+     * `volc.bigasr…`——两个 Key 不通用，填错了就是鉴权失败；
      * 而"模型"这一栏对它是**资源 ID**。
      */
     @Test
@@ -131,7 +132,7 @@ class SpeechConfigTest {
 
         assertEquals("https://openspeech.bytedance.com", ark.baseUrl, "语音在另一个域名上")
         assertEquals(SpeechProtocol.VolcArk, ark.protocol)
-        assertEquals("volc.bigasr.auc_turbo", ark.asrModel, "火山用资源 ID 选模型版本")
+        assertEquals("volc.seedasr.sauc.duration", ark.asrModel, "Agent Plan 认的是 seedasr 那套资源 ID")
         assertEquals("seed-tts-2.0", ark.ttsModel)
         assertTrue(ark.canSynthesize, "这家识别和合成都有")
     }

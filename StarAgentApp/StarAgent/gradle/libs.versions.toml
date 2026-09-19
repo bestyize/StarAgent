@@ -47,6 +47,9 @@ ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
 ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
 ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "ktor" }
+# 火山方舟 Agent Plan 的语音识别只有 WebSocket 一条路（带 /plan/ 的二进制端点），
+# 对话那几条都是普通 HTTP，用不到这个
+ktor-client-websockets = { module = "io.ktor:ktor-client-websockets", version.ref = "ktor" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 # 任务调度要按本地日历算"下一次"，时区和夏令时自己手写容易错
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }

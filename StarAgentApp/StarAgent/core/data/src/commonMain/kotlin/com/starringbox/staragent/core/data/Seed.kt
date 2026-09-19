@@ -226,15 +226,15 @@ internal object Seed {
         ),
         SpeechProvider(
             id = "volc-ark",
-            name = "火山方舟",
-            // 注意不是 ark.cn-beijing.volces.com：**语音和对话是两条产品线**，
-            // 方舟那边发的那把 Key 能用在这里，但域名、路径、鉴权头全是另一套。
-            // 而且这和火山"旧控制台"那对凭据（APP ID + Access Token）也不通用。
+            name = "火山方舟 Agent Plan",
+            // 语音在 openspeech.bytedance.com 上，不在方舟的 ark.cn-beijing.volces.com；
+            // 识别那条还要把它换成 wss://（代码里换，这里填根域名）。
             baseUrl = "https://openspeech.bytedance.com",
             protocol = SpeechProtocol.VolcArk,
             // 火山的"模型"就是资源 ID，语义正好对上"识别模型"这一栏。
-            // 极速版只有一代，所以它是 bigasr 而不是新版流式接口的 seedasr
-            asrModel = "volc.bigasr.auc_turbo",
+            // 这一条是**带 /plan/ 的专属端点**认的那个：Agent Plan 的 Key 不能去调
+            // 普通语音控制台的 /api/v3/auc/…，两边的凭据不通用
+            asrModel = "volc.seedasr.sauc.duration",
             ttsModel = "seed-tts-2.0",
             // 音色必须和资源 ID 同代：seed-tts-2.0 配 …_uranus_bigtts，
             // 配成 1.0 的 …_moon_bigtts 会被服务端以"音色与资源不匹配"拒掉

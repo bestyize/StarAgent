@@ -138,25 +138,29 @@ class ModelTranscriber(private val endpoint: () -> SpeechEndpoint?) : Transcribe
     }
 
     /**
-     * 火山方舟：音频 base64 进请求体，**成败看响应头**（见 [VolcSpeech]）。
+     * 火山方舟 Agent Plan：一段 WebSocket 二进制会话，见 [VolcSpeech]。
+     *
+     * 语言传 `"auto"`——[Transcriber] 的契约里没有语言这一项（界面也没得选），
+     * 而协议里留空就是"由服务端自己判"，正是想要的那个意思。
      *
      * 这条路拿不到 `no_speech_prob`，所以本地那道静音闸对它不起作用。
-     * 替代品是服务端自己的判定：`20000003` 就是"这段没人说话"，直接当静音处理。
+     * 替代品是服务端自己的判定：一个字都没解出来就当静音。
      */
     private suspend fun transcribeVolcArk(
         speech: SpeechEndpoint,
         model: String,
         clip: VoiceClip,
     ): SpeechOutcome<String> = when (
-        val reading = transcribeWithVolcArk(speech.baseUrl, speech.apiKey, model, clip.bytes)
+        val reading = transcribeWithVolcArk(
+            baseUrl = speech.baseUrl,
+            apiKey = speech.apiKey,
+            resourceId = model,
+            wav = clip.bytes,
+            language = "auto",
+        )
     ) {
         VolcReading.Silence -> SpeechOutcome.Failed("没听到说话，再说一次")
-        is VolcReading.Text ->
-            if (reading.value.isBlank()) {
-                SpeechOutcome.Failed("没有听清，再说一次")
-            } else {
-                SpeechOutcome.Ok(reading.value)
-            }
+        is VolcReading.Text -> SpeechOutcome.Ok(reading.value)
     }
 }
 

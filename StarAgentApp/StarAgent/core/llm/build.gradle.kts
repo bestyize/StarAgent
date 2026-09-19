@@ -31,6 +31,7 @@ kotlin {
             implementation(project(":core:platform"))
             // 语音的模型后端在这一层：它要用同一套 HTTP 引擎和错误文案
             implementation(libs.ktor.client.core)
+            implementation(libs.ktor.client.websockets)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
         }
