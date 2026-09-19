@@ -240,7 +240,7 @@ fun ProviderDetailScreen(navigator: Navigator, providerId: String?) {
             if (allModels.isEmpty()) {
                 item {
                     Text(
-                        text = "还没有模型。手动输入一个名字添加，或填好 Key 后点「获取模型列表」。",
+                        text = "还没有模型。用「自定义模型」加一个名字，或填好 Key 后点「获取模型列表」。",
                         style = MaterialTheme.typography.bodySmall,
                         color = StarPalette.TextFaint,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
@@ -464,7 +464,7 @@ private fun AddModelRow(
                 value = value,
                 onValueChange = onValueChange,
                 modifier = Modifier.weight(1f),
-                placeholder = "输入模型名，手动添加",
+                placeholder = "自定义模型",
             )
             Box(
                 modifier = Modifier
