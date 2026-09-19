@@ -288,6 +288,8 @@ private fun ApiKeyCard(state: AppState, provider: SpeechProvider) {
                 value = draft.value,
                 onValueChange = { draft.value = it },
                 placeholder = "sk-...",
+                // 和「模型接入」那边一致：默认藏起来，点右边的眼睛才明文
+                masked = true,
             )
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {

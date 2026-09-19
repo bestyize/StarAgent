@@ -159,6 +159,9 @@ fun ProviderDetailScreen(navigator: Navigator, providerId: String?) {
                             value = apiKey,
                             onValueChange = { apiKey = it },
                             placeholder = "sk-...",
+                            // 默认藏起来，右侧眼睛点开才明文——这一栏在设置页里、
+                            // 又是会被截图分享的位置，不该默认摊在屏幕上
+                            masked = true,
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(

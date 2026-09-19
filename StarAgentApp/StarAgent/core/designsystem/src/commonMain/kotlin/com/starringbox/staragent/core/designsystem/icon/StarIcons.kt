@@ -49,6 +49,10 @@ enum class StarIconGlyph {
     Info,
     Gear,
     Folder,
+
+    /** 密码框右侧那对：睁眼 = 点一下看明文，闭眼 = 点一下藏回去。 */
+    Eye,
+    EyeOff,
 }
 
 /**
@@ -299,6 +303,22 @@ fun StarIcon(
                 ),
                 close = true,
             )
+
+            // 眼睛用两段圆弧拼出上下眼睑——比画一个菱形轮廓稳，
+            // 在这个尺寸上也不会因为曲率算错而变成一条缝。
+            StarIconGlyph.Eye -> {
+                arc(2.5f, 6.5f, 21.5f, 19.5f, 200f, 140f)
+                arc(2.5f, 4.5f, 21.5f, 17.5f, 20f, 140f)
+                circle(12f, 12f, 3.1f)
+            }
+
+            StarIconGlyph.EyeOff -> {
+                // 和睁眼同一个眼型，再斜着划一道，表示"现在看不见"
+                arc(2.5f, 6.5f, 21.5f, 19.5f, 200f, 140f)
+                arc(2.5f, 4.5f, 21.5f, 17.5f, 20f, 140f)
+                circle(12f, 12f, 3.1f)
+                line(4.5f, 19.5f, 19.5f, 4.5f)
+            }
         }
     }
 }
