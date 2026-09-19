@@ -344,11 +344,12 @@ private fun ReadingNote(provider: SpeechProvider) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = StarPalette.Text,
             )
-            // 能合成时不必再劝他换一家——那句话只在"朗读没走上云端"时才有信息量
+            // 能合成时不必再劝他换一家——那句话只在"朗读没走上云端"时才有信息量。
+            // 同样不列名单：加了服务商就要回来改一句文案，漏改就是"明明有却不告诉用户"
             if (!provider.canSynthesize) {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "换个能合成的服务商（智谱 GLM 或 OpenAI）就能让朗读也走云端。",
+                    text = "换个能合成的服务商就能让朗读也走云端。",
                     style = MaterialTheme.typography.bodySmall,
                     color = StarPalette.TextFaint,
                 )

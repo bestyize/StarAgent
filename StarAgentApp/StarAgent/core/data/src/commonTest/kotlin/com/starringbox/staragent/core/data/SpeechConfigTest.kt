@@ -1,5 +1,6 @@
 package com.starringbox.staragent.core.data
 
+import com.starringbox.staragent.core.model.SpeechProtocol
 import com.starringbox.staragent.core.platform.storage.LocalStores
 import com.starringbox.staragent.core.platform.voice.SpeechOutcome
 import com.starringbox.staragent.core.platform.voice.Transcriber
@@ -40,9 +41,9 @@ class SpeechConfigTest {
     private val sandbox = SettingsSandbox(
         listOf(
             "speechProvider", "asrModel", "voiceSource",
-            "speechKey:groq", "speechKey:zhipu", "speechKey:openai",
-            "apikey:groq", "apikey:zhipu", "apikey:openai",
-            "models:groq", "models:zhipu", "models:openai",
+            "speechKey:groq", "speechKey:zhipu", "speechKey:openai", "speechKey:volc-ark",
+            "apikey:groq", "apikey:zhipu", "apikey:openai", "apikey:ark-plan",
+            "models:groq", "models:zhipu", "models:openai", "models:ark-plan",
         )
     )
 
@@ -80,13 +81,13 @@ class SpeechConfigTest {
     // ── 预置 ────────────────────────────────────
 
     @Test
-    fun theThreePresetsAreTheOnesThatActuallyWork() {
+    fun thePresetsAreTheOnesThatActuallyWork() {
         val state = AppState()
 
         assertEquals(
-            listOf("zhipu", "groq", "openai"),
+            listOf("zhipu", "groq", "openai", "volc-ark"),
             state.speechProviders.map { it.id },
-            "顺序是显式的：没选过时取第一家",
+            "顺序是显式的：没选过时取第一家。新加一家要加在**末尾**，别动这个兜底",
         )
 
         val groq = assertNotNull(state.speechProviders.firstOrNull { it.id == "groq" })
@@ -94,6 +95,85 @@ class SpeechConfigTest {
         assertEquals("whisper-large-v3-turbo", groq.asrModel)
         assertNull(groq.ttsModel, "Groq 的合成模型没核实到，预置里应当留空而不是猜一个")
         assertFalse(groq.canSynthesize)
+    }
+
+    /**
+     * 除火山方舟外，预置里其余几家都走 OpenAI 那套形状。
+     *
+     * 单独断言"谁不是"，是因为协议字段**有默认值**——漏填一家不会有编译错误，
+     * 只会让它在运行时拿着 `/audio/transcriptions` 去撞一个不存在的端点。
+     */
+    @Test
+    fun everyOtherPresetIsOpenAiShaped() {
+        val state = AppState()
+
+        state.speechProviders.filter { it.id != "volc-ark" }.forEach { provider ->
+            assertEquals(
+                SpeechProtocol.OpenAi,
+                provider.protocol,
+                "${provider.id} 走的是 OpenAI 那套（/audio/transcriptions 与 /audio/speech）",
+            )
+        }
+    }
+
+    /**
+     * 火山方舟这一家：**语音和对话是两条产品线**。
+     *
+     * 它和别家不一样的地方有三处，每一处写错都不是编译错误、而是运行时一个看不懂的失败：
+     * 域名是 `openspeech.bytedance.com` 而不是方舟的 `ark.cn-beijing.volces.com`；
+     * 凭据是一个 API Key（不是旧控制台那对 APP ID + Access Token）；
+     * 而"模型"这一栏对它是**资源 ID**。
+     */
+    @Test
+    fun theArkPresetIsItsOwnProductLine() {
+        val state = AppState()
+        val ark = assertNotNull(state.speechProviders.firstOrNull { it.id == "volc-ark" })
+
+        assertEquals("https://openspeech.bytedance.com", ark.baseUrl, "语音在另一个域名上")
+        assertEquals(SpeechProtocol.VolcArk, ark.protocol)
+        assertEquals("volc.bigasr.auc_turbo", ark.asrModel, "火山用资源 ID 选模型版本")
+        assertEquals("seed-tts-2.0", ark.ttsModel)
+        assertTrue(ark.canSynthesize, "这家识别和合成都有")
+    }
+
+    /**
+     * 协议要一路传到 `SpeechEndpoint` ——`ModelSpeech` 就是照它分派的。
+     *
+     * 少了这一环的症状：界面显示、Key、模型名全都对，请求却发到了 OpenAI 的路径上。
+     */
+    @Test
+    fun theProtocolReachesTheEndpoint() {
+        val state = AppState()
+
+        state.configureSpeech("volc-ark")
+        state.selectSpeechProvider("volc-ark")
+        assertEquals(SpeechProtocol.VolcArk, assertNotNull(state.asrEndpoint()).protocol)
+        assertEquals(SpeechProtocol.VolcArk, assertNotNull(state.ttsEndpoint()).protocol)
+
+        state.configureSpeech("openai")
+        state.selectSpeechProvider("openai")
+        assertEquals(SpeechProtocol.OpenAi, assertNotNull(state.asrEndpoint()).protocol)
+    }
+
+    /**
+     * 对话侧的「火山 Agent Plan」是**独立的一家**，不是把 CodingPlan 改个地址。
+     *
+     * Agent Plan 与 Coding Plan 是两份订阅、两把 Key、两套 Base URL。混用的后果不是报错，
+     * 而是**静默按量计费**——不消耗套餐额度，要到账单上才看得见。所以两边都得在，
+     * 各自的地址都得对。
+     */
+    @Test
+    fun theArkPlansAreTwoSeparateProviders() {
+        val state = AppState()
+
+        val coding = assertNotNull(state.providerById("ark-coding"))
+        val plan = assertNotNull(state.providerById("ark-plan"))
+
+        assertEquals("https://ark.cn-beijing.volces.com/api/coding/v3", coding.openAiBaseUrl)
+        assertEquals("https://ark.cn-beijing.volces.com/api/plan/v3", plan.openAiBaseUrl)
+        assertEquals("https://ark.cn-beijing.volces.com/api/coding", coding.anthropicBaseUrl)
+        assertEquals("https://ark.cn-beijing.volces.com/api/plan", plan.anthropicBaseUrl)
+        assertTrue(plan.models.isNotEmpty(), "这家的 /models 是 404，清单只能预置")
     }
 
     /**

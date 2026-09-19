@@ -1,5 +1,6 @@
 package com.starringbox.staragent.core.llm
 
+import com.starringbox.staragent.core.model.SpeechProtocol
 import com.starringbox.staragent.core.platform.voice.Players
 import com.starringbox.staragent.core.platform.voice.Recorders
 import com.starringbox.staragent.core.platform.voice.SpeechOutcome
@@ -33,13 +34,13 @@ import kotlinx.serialization.json.put
 /**
  * 一次语音请求所需的全部信息。
  *
- * 比 [LlmEndpoint] 简单：**语音只有一种协议形状**。
- * 十家里提供语音的智谱和 OpenAI 走的是同一套（`/audio/transcriptions` 是
- * multipart 上传、`/audio/speech` 是 JSON），所以这里不需要协议字段。
+ * 比 [LlmEndpoint] 简单：协议只有两种，而且**由服务商定死、不需要用户选**——
+ * 用户看到的永远是"哪一家"，形状是那一家自己的事。见 [SpeechProtocol]。
  */
 data class SpeechEndpoint(
     val baseUrl: String,
     val apiKey: String,
+    val protocol: SpeechProtocol = SpeechProtocol.OpenAi,
     val asrModel: String? = null,
     val ttsModel: String? = null,
     val ttsVoice: String? = null,
@@ -73,11 +74,33 @@ class ModelTranscriber(private val endpoint: () -> SpeechEndpoint?) : Transcribe
 
     override fun cancel() = Recorders.cancel()
 
+    /**
+     * 发出去。**两条协议在这里分岔**，但错误处理留在外面这一层——
+     * 失败要变成什么，两种形状没有区别。
+     */
     private suspend fun transcribe(
         speech: SpeechEndpoint,
         model: String,
         clip: VoiceClip,
     ): SpeechOutcome<String> = try {
+        when (speech.protocol) {
+            SpeechProtocol.OpenAi -> transcribeOpenAi(speech, model, clip)
+            SpeechProtocol.VolcArk -> transcribeVolcArk(speech, model, clip)
+        }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (http: LlmHttpException) {
+        SpeechOutcome.Failed(http.userMessage)
+    } catch (t: Throwable) {
+        SpeechOutcome.Failed(describeConnectionFailure(t))
+    }
+
+    /** OpenAI 那套：`POST /audio/transcriptions`，multipart 带 `file` 与 `model`。 */
+    private suspend fun transcribeOpenAi(
+        speech: SpeechEndpoint,
+        model: String,
+        clip: VoiceClip,
+    ): SpeechOutcome<String> {
         val verbose = wantsSpeechProbabilities(model)
         val response = httpClient().post(speech.baseUrl.trimEnd('/') + "/audio/transcriptions") {
             header(HttpHeaders.Authorization, "Bearer ${speech.apiKey}")
@@ -107,17 +130,33 @@ class ModelTranscriber(private val endpoint: () -> SpeechEndpoint?) : Transcribe
 
         val reading = readAsrResponse(response.bodyAsText())
 
-        when {
+        return when {
             reading.text.isBlank() -> SpeechOutcome.Failed("没有听清，再说一次")
             reading.looksLikeSilence -> SpeechOutcome.Failed("没听到说话，再说一次")
             else -> SpeechOutcome.Ok(reading.text)
         }
-    } catch (cancellation: CancellationException) {
-        throw cancellation
-    } catch (http: LlmHttpException) {
-        SpeechOutcome.Failed(http.userMessage)
-    } catch (t: Throwable) {
-        SpeechOutcome.Failed(describeConnectionFailure(t))
+    }
+
+    /**
+     * 火山方舟：音频 base64 进请求体，**成败看响应头**（见 [VolcSpeech]）。
+     *
+     * 这条路拿不到 `no_speech_prob`，所以本地那道静音闸对它不起作用。
+     * 替代品是服务端自己的判定：`20000003` 就是"这段没人说话"，直接当静音处理。
+     */
+    private suspend fun transcribeVolcArk(
+        speech: SpeechEndpoint,
+        model: String,
+        clip: VoiceClip,
+    ): SpeechOutcome<String> = when (
+        val reading = transcribeWithVolcArk(speech.baseUrl, speech.apiKey, model, clip.bytes)
+    ) {
+        VolcReading.Silence -> SpeechOutcome.Failed("没听到说话，再说一次")
+        is VolcReading.Text ->
+            if (reading.value.isBlank()) {
+                SpeechOutcome.Failed("没有听清，再说一次")
+            } else {
+                SpeechOutcome.Ok(reading.value)
+            }
     }
 }
 
@@ -262,13 +301,26 @@ class ModelSynthesizer(private val endpoint: () -> SpeechEndpoint?) : Synthesize
 
     override fun stop() = Players.stop()
 
-    private suspend fun synthesize(speech: SpeechEndpoint, model: String, text: String): ByteArray {
-        val response = httpClient().post(speech.baseUrl.trimEnd('/') + "/audio/speech") {
-            header(HttpHeaders.Authorization, "Bearer ${speech.apiKey}")
-            contentType(ContentType.Application.Json)
-            setBody(speechPayload(model, text, speech.ttsVoice))
+    /** 同 [ModelTranscriber.transcribe]：两条协议在这里分岔，失败仍由外面那一层统一翻译。 */
+    private suspend fun synthesize(speech: SpeechEndpoint, model: String, text: String): ByteArray =
+        when (speech.protocol) {
+            SpeechProtocol.OpenAi -> {
+                val response = httpClient().post(speech.baseUrl.trimEnd('/') + "/audio/speech") {
+                    header(HttpHeaders.Authorization, "Bearer ${speech.apiKey}")
+                    contentType(ContentType.Application.Json)
+                    setBody(speechPayload(model, text, speech.ttsVoice))
+                }
+                ensureSuccess(response)
+                response.bodyAsBytes()
+            }
+
+            // 火山的资源 ID 就是这里的 model，正好和另外几家同位置
+            SpeechProtocol.VolcArk -> synthesizeWithVolcArk(
+                baseUrl = speech.baseUrl,
+                apiKey = speech.apiKey,
+                resourceId = model,
+                voice = speech.ttsVoice,
+                text = text,
+            )
         }
-        ensureSuccess(response)
-        return response.bodyAsBytes()
-    }
 }

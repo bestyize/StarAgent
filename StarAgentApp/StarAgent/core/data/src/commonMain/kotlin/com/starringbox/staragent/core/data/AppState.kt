@@ -446,6 +446,8 @@ class AppState(
         return SpeechEndpoint(
             baseUrl = provider.baseUrl.trimEnd('/'),
             apiKey = key,
+            // 形状跟着服务商走。少了这一句，火山方舟那条会拿着 OpenAI 的路径发出去
+            protocol = provider.protocol,
             asrModel = activeAsrModel(provider),
         )
     }
@@ -465,6 +467,7 @@ class AppState(
         return SpeechEndpoint(
             baseUrl = provider.baseUrl.trimEnd('/'),
             apiKey = key,
+            protocol = provider.protocol,
             ttsModel = model,
             ttsVoice = provider.ttsVoice,
         )
@@ -1334,7 +1337,7 @@ class AppState(
         speechProviderId = SettingsStore.get(KEY_SPEECH_PROVIDER)?.takeIf { it.isNotBlank() }
         asrModelId = SettingsStore.get(KEY_ASR_MODEL)?.takeIf { it.isNotBlank() }
 
-        // 三家的 Key 都要读回来。漏读一家的后果是"每次冷启都要重填"，
+        // 每一家的 Key 都要读回来。漏读一家的后果是"每次冷启都要重填"，
         // 而这件事不写测试根本发现不了——id 和模型名都还原得好好的，看着一切正常。
         speechProviders.forEach { provider ->
             SettingsStore.get(speechKeyName(provider.id))

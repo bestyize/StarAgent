@@ -399,7 +399,8 @@ private fun SpeechModule(state: AppState, navigator: Navigator) {
 private fun speechSubtitle(state: AppState): String = when {
     state.canListen -> "麦克风按钮已经可用"
     state.asrEndpoint() == null && !Voice.deviceListenInstalled ->
-        "还没配语音服务商：点进去选一家（Groq、智谱 GLM 或 OpenAI）并填上 Key"
+        // 刻意不列有哪些家：加一家就要回来改一句文案，而漏改的后果是"明明有却不告诉用户"
+        "还没配语音服务商：点进去选一家并填上 Key"
     !Voice.canRecord && !Voice.deviceListenInstalled -> "这台机器没有可用的麦克风，录不了音"
     else -> "还用不了：点进去看识别方式"
 }

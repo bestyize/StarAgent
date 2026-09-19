@@ -16,6 +16,7 @@ import com.starringbox.staragent.core.model.MessageBody
 import com.starringbox.staragent.core.model.ModelProvider
 import com.starringbox.staragent.core.model.Recurrence
 import com.starringbox.staragent.core.model.Skill
+import com.starringbox.staragent.core.model.SpeechProtocol
 import com.starringbox.staragent.core.model.SpeechProvider
 import com.starringbox.staragent.core.model.TaskPriority
 
@@ -109,6 +110,29 @@ internal object Seed {
                     ),
                 ),
                 ModelProvider(
+                    id = "ark-plan",
+                    name = "火山 Agent Plan",
+                    protocol = LlmProtocol.OpenAi,
+                    // **Agent Plan 和 Coding Plan 是两份订阅、两把 Key**，Base URL 也各是各的：
+                    // Agent Plan 走 /api/plan，Coding Plan 走 /api/coding。两边混用的后果不是
+                    // 报错而是**静默按量计费**——不消耗套餐额度，账单上才看得见。
+                    // 所以这是独立的一家，不是把上面那家改个地址。
+                    // 同样地，两种协议的段也不一样：Anthropic 那条没有 v3
+                    openAiBaseUrl = "https://ark.cn-beijing.volces.com/api/plan/v3",
+                    anthropicBaseUrl = "https://ark.cn-beijing.volces.com/api/plan",
+                    // 取自官方「套餐概览」列出的 Agent Plan 模型。
+                    // ⚠️ 这家的 /models 是 **404**，所以详情页的「获取模型列表」在这儿用不了，
+                    // 清单只能手填——这是它和别家不一样的地方，不是这里的 bug。
+                    models = listOf(
+                        "ark-code-latest",
+                        "doubao-seed-2.1-turbo",
+                        "doubao-seed-evolving",
+                        "glm-5.3",
+                        "kimi-k3",
+                        "deepseek-v4-pro",
+                    ),
+                ),
+                ModelProvider(
                     id = "groq",
                     name = "Groq",
                     protocol = LlmProtocol.OpenAi,
@@ -160,14 +184,19 @@ internal object Seed {
      *
      * 只列**确实能用的**：
      *
-     * - 三家的识别走的都是 OpenAI 那套形状（`/audio/transcriptions`、multipart、取 `text`），
-     *   所以 `core:llm` 一行都不用改；
+     * - 前四家（智谱、Groq、OpenAI、火山方舟）的识别与合成都有对应实现，
+     *   各家的 `protocol` 决定走哪一支；
      * - Groq 的备选只列**真机拉到的那份清单里确实有**的。文档上还有个
      *   `distil-whisper-large-v3-en`，但 2026-09 实际拉回来的清单里没有它——
      *   预填一个不存在的模型，用户选中就是一个 404；
      * - **Groq 的合成留空**：它确实有 `/audio/speech`，但当前那条模型线
      *   （PlayAI-TTS 已换成 Orpheus）的模型名与音色取值没能核实到，填错的直接后果是 400。
      *   留空之后朗读会自动退回设备自带。
+     *
+     * [SpeechProvider.protocol] 是这一层唯一按家分岔的地方：前几家都是
+     * [SpeechProtocol.OpenAi]，只有火山方舟是 [SpeechProtocol.VolcArk]——
+     * 它的两份接口都不在 `/audio/...` 上。新加一家**形状不同**的，除了在这里补一条，
+     * 还要到 `core:llm` 的 `ModelSpeech` 里把它那一支写出来。
      */
     fun speechProviders(): List<SpeechProvider> = listOf(
         SpeechProvider(
@@ -194,6 +223,22 @@ internal object Seed {
             asrModel = "gpt-4o-transcribe",
             ttsModel = "gpt-4o-mini-tts",
             ttsVoice = "alloy",
+        ),
+        SpeechProvider(
+            id = "volc-ark",
+            name = "火山方舟",
+            // 注意不是 ark.cn-beijing.volces.com：**语音和对话是两条产品线**，
+            // 方舟那边发的那把 Key 能用在这里，但域名、路径、鉴权头全是另一套。
+            // 而且这和火山"旧控制台"那对凭据（APP ID + Access Token）也不通用。
+            baseUrl = "https://openspeech.bytedance.com",
+            protocol = SpeechProtocol.VolcArk,
+            // 火山的"模型"就是资源 ID，语义正好对上"识别模型"这一栏。
+            // 极速版只有一代，所以它是 bigasr 而不是新版流式接口的 seedasr
+            asrModel = "volc.bigasr.auc_turbo",
+            ttsModel = "seed-tts-2.0",
+            // 音色必须和资源 ID 同代：seed-tts-2.0 配 …_uranus_bigtts，
+            // 配成 1.0 的 …_moon_bigtts 会被服务端以"音色与资源不匹配"拒掉
+            ttsVoice = "zh_female_vv_uranus_bigtts",
         ),
     )
 
