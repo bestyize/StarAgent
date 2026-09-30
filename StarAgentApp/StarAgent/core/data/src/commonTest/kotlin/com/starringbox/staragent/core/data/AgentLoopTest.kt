@@ -18,6 +18,7 @@ import com.starringbox.staragent.core.tools.ports.MemoryPort
 import com.starringbox.staragent.core.tools.ports.TaskPort
 import com.starringbox.staragent.core.tools.ports.TaskSummary
 import com.starringbox.staragent.core.tools.ports.WebPort
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
@@ -26,6 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 private val endpoint = LlmEndpoint(LlmProtocol.OpenAi, "https://x", "k", "m")
@@ -274,6 +276,39 @@ class AgentLoopTest {
         )
 
         assertEquals(LoopOutcome.Failed("网络断了"), outcome)
+    }
+
+    @Test
+    fun toolCancellationPropagatesInsteadOfBecomingAResult() = runTest {
+        // 用户点了停止。取消不是"工具出错"——被吞掉的话循环会带着一条错误结果
+        // 继续跑，用户按了停止却停不下来。取消必须原样抛出去。
+        val cancellingTool = object : Tool {
+            override val definition =
+                ToolDefinition("slow", "", buildJsonObject { put("type", "object") })
+            override suspend fun execute(args: JsonObject, host: ToolHost): ToolResult =
+                throw CancellationException("用户停止了")
+        }
+        val history = mutableListOf<LlmTurn>()
+        val loop = AgentLoop(
+            scriptedStream(
+                listOf(
+                    listOf(ChatStreamEvent.ToolCallsReady(listOf(ToolCall("c1", "slow", "{}")))),
+                    textOf("不该跑到这"),
+                )
+            )
+        )
+
+        assertFailsWith<CancellationException> {
+            loop.run(
+                endpoint = endpoint,
+                history = history,
+                host = testHost(),
+                registry = ToolRegistry.of(cancellingTool),
+                onText = {},
+                onToolStart = {},
+                onToolEnd = { _, _ -> },
+            )
+        }
     }
 }
 

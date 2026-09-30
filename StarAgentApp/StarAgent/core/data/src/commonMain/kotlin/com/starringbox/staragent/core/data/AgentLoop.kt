@@ -8,6 +8,7 @@ import com.starringbox.staragent.core.model.ToolCall
 import com.starringbox.staragent.core.model.ToolResult
 import com.starringbox.staragent.core.tools.ToolHost
 import com.starringbox.staragent.core.tools.ToolRegistry
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -134,15 +135,19 @@ internal class AgentLoop(
                 isError = true,
             )
 
-        return runCatching { tool.execute(args, host) }
-            .getOrElse { error ->
-                ToolResult(
-                    callId = call.id,
-                    content = "工具执行出错：${error.message ?: error::class.simpleName}",
-                    isError = true,
-                )
-            }
-            .copy(callId = call.id) // 工具自己不知道 callId，在这里补上
+        return try {
+            tool.execute(args, host)
+        } catch (cancelled: CancellationException) {
+            // 用户点了停止。这不是"工具出错"，是调用方在取消——必须原样抛出去，
+            // 否则会被当成一条错误结果回喂，循环继续跑下去。
+            throw cancelled
+        } catch (error: Throwable) {
+            ToolResult(
+                callId = call.id,
+                content = "工具执行出错：${error.message ?: error::class.simpleName}",
+                isError = true,
+            )
+        }.copy(callId = call.id) // 工具自己不知道 callId，在这里补上
     }
 
     /** 参数解析失败返回 null，由调用方变成一条错误结果——不抛。 */
