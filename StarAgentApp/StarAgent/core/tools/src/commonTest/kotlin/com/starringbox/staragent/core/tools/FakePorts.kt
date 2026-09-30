@@ -8,6 +8,7 @@ import com.starringbox.staragent.core.tools.ports.FetchResult
 import com.starringbox.staragent.core.tools.ports.MemoryPort
 import com.starringbox.staragent.core.tools.ports.TaskPort
 import com.starringbox.staragent.core.tools.ports.TaskSummary
+import com.starringbox.staragent.core.tools.ports.UserInputPort
 import com.starringbox.staragent.core.tools.ports.WebPort
 
 /** 记住被写进来的东西，供断言。 */
@@ -103,10 +104,32 @@ class FakeWebPort(var result: FetchResult = FetchResult(true, "正文")) : WebPo
     }
 }
 
+class FakeUserInputPort(var answerToReturn: String = "好的") : UserInputPort {
+    val requests = mutableListOf<RequestCall>()
+
+    data class RequestCall(
+        val agentId: String,
+        val question: String,
+        val options: List<String>,
+        val placeholder: String?,
+    )
+
+    override suspend fun requestInput(
+        agentId: String,
+        question: String,
+        options: List<String>,
+        placeholder: String?,
+    ): String {
+        requests += RequestCall(agentId, question, options, placeholder)
+        return answerToReturn
+    }
+}
+
 /** 造一个 host。默认端口都是空的假实现，测哪个换哪个。 */
 fun testHost(
     memory: MemoryPort = FakeMemoryPort(),
     tasks: TaskPort = FakeTaskPort(),
     web: WebPort = FakeWebPort(),
+    userInput: UserInputPort = FakeUserInputPort(),
     agentId: String = "a-xing",
-) = ToolHost(memory, tasks, web, agentId, conversationKey = "agent:a-xing")
+) = ToolHost(memory, tasks, web, userInput, agentId, conversationKey = "agent:a-xing")

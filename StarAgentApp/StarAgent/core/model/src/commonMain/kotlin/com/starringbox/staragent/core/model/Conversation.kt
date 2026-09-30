@@ -48,6 +48,21 @@ sealed interface MessageBody {
     data class MemoryNote(val text: String) : MessageBody
 
     /**
+     * 智能体向用户发起的交互提问。
+     *
+     * [selectedAnswer] 为 null 表示正在等待用户选择或输入（可交互状态）；
+     * 非 null 表示用户已作答，卡片转为只读状态，防止重复提交。
+     */
+    @Serializable
+    data class Question(
+        val id: String,
+        val question: String,
+        val options: List<String> = emptyList(),
+        val placeholder: String? = null,
+        val selectedAnswer: String? = null,
+    ) : MessageBody
+
+    /**
      * 群聊里某个成员这一轮没开口。
      *
      * 不塞进 [Notice]：Notice 的心智是"需要你去处理的事"，而跳过是讨论过程的一部分，

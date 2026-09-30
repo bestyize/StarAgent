@@ -431,6 +431,7 @@ class AppState(
         is MessageBody.Delivered -> "产物 · ${body.artifact.title}"
         is MessageBody.MemoryNote -> body.text
         is MessageBody.Skipped -> body.reason.ifBlank { "跳过了本轮" }
+        is MessageBody.Question -> "提问 · ${body.question}"
     }
 
     // ── 语音 ────────────────────────────────────

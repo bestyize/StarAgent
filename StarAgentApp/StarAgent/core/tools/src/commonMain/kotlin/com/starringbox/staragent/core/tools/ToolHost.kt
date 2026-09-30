@@ -1,7 +1,9 @@
 package com.starringbox.staragent.core.tools
 
 import com.starringbox.staragent.core.tools.ports.MemoryPort
+import com.starringbox.staragent.core.tools.ports.NoopUserInputPort
 import com.starringbox.staragent.core.tools.ports.TaskPort
+import com.starringbox.staragent.core.tools.ports.UserInputPort
 import com.starringbox.staragent.core.tools.ports.WebPort
 
 /**
@@ -14,6 +16,7 @@ class ToolHost(
     val memory: MemoryPort,
     val tasks: TaskPort,
     val web: WebPort,
+    val userInput: UserInputPort = NoopUserInputPort,
     val agentId: String,
     val conversationKey: String,
 )

@@ -53,3 +53,22 @@ data class FetchResult(
 interface WebPort {
     suspend fun fetch(url: String): FetchResult
 }
+
+interface UserInputPort {
+    /** 向用户提问并挂起，直到用户选择选项或提交文本。 */
+    suspend fun requestInput(
+        agentId: String,
+        question: String,
+        options: List<String>,
+        placeholder: String?,
+    ): String
+}
+
+object NoopUserInputPort : UserInputPort {
+    override suspend fun requestInput(
+        agentId: String,
+        question: String,
+        options: List<String>,
+        placeholder: String?,
+    ): String = ""
+}

@@ -13,5 +13,13 @@ import kotlinx.serialization.json.JsonObject
  */
 interface Tool {
     val definition: ToolDefinition
+
+    /**
+     * 该工具单独声明的执行超时（毫秒）。
+     * null 时走循环引擎默认的 30 秒看门狗。
+     * 人机交互类工具（如 request_user_input）可声明 5 分钟超时，避免误伤人类思考与打字时间。
+     */
+    val timeoutMillis: Long? get() = null
+
     suspend fun execute(args: JsonObject, host: ToolHost): ToolResult
 }

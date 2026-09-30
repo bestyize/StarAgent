@@ -388,6 +388,7 @@ internal fun MessageBodyView(
             is MessageBody.Delivered -> ArtifactCard(body.artifact)
             is MessageBody.MemoryNote -> MemoryNoteCard(body.text)
             is MessageBody.Skipped -> SkippedRow(speakerName.orEmpty(), body.reason)
+            is MessageBody.Question -> Unit
         }
     }
 }
