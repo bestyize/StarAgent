@@ -102,14 +102,17 @@ class SendAndTaskToolsTest {
     }
 
     /**
-     * 🔴 曾经坏过：`runTask` 借着 `endpointFor(agent)` 顺带继承了工具。
+     * 🔴 **Task 12 把它转正了**：`runTask` 已接进工具循环，所以它现在**必须**带工具。
      *
-     * 定时执行还停在老的单次请求上（`ToolCallsReady` 是丢掉的），带上工具就会让模型
-     * 改用工具调用作答，而这条路不会执行，用户最终只拿到「模型没有返回内容」。
-     * 它必须跟自己接工具之前一模一样：请求里不带工具、提示里带文本块指令。
+     * 这条曾经是它的反面——Task 8 把 `toolsAvailable = false` 钉在这里，因为定时执行当时
+     * 还停在老的单次请求上（`ToolCallsReady` 进了黑洞），带上工具会让模型改用工具调用作答、
+     * 而那条路不会执行，用户最终只拿到「模型没有返回内容」。那是**过渡**：progress 的裁决写着
+     * "Cost if wrong: one extra line that Task 12 deletes"。现在循环接上了，`ToolCallsReady`
+     * 由循环自己消费，那个顾虑不复存在，于是两头都要带工具——否则任务又会退回
+     * "写一篇关于这件事大概怎么做"的散文。
      */
     @Test
-    fun runTaskSendsNoToolsAndKeepsTheTextBlockPrompt() = runTest {
+    fun runTaskSendsToolsAndDropsTheTextBlockPrompt() = runTest {
         val sent = mutableListOf<LlmEndpoint>()
         val state = readyState { endpoint, _ ->
             sent += endpoint
@@ -135,19 +138,19 @@ class SendAndTaskToolsTest {
         assertEquals(1, sent.size, "只该跑这一条到点的任务")
         val endpoint = sent.single()
         assertTrue(
-            endpoint.tools.isEmpty(),
-            "定时执行不该带工具，实际带了 ${endpoint.tools.map { it.name }}",
+            endpoint.tools.isNotEmpty(),
+            "定时执行必须带工具，否则它只会写一段描述而不是真的去做，实际带了 ${endpoint.tools.map { it.name }}",
         )
         assertTrue(
-            endpoint.systemPrompt.orEmpty().contains("```memory"),
-            "定时执行的提示该保留文本块指令：它仍是靠文本块工作的那条路",
+            !endpoint.systemPrompt.orEmpty().contains("```memory"),
+            "发得出工具时提示里不该再出现文本块指令——那是降级那半边的路，两套同时给会重复出卡片",
         )
 
-        // 反证：同一个智能体走对话那条路时**是**带工具的。
-        // 没有这一句，上面"不带工具"可能是 endpointFor 压根不装工具造成的，而不是 toolsAvailable 在起作用。
+        // 反证：同一个智能体走对话那条路时**也**带工具。
+        // 没有这一句，上面"带工具"可能是 endpointFor 压根不装工具造成的，而不是这次改动的效果。
         assertTrue(
             state.endpointFor(agent)!!.tools.isNotEmpty(),
-            "单聊的 endpoint 应当带工具——否则上面那条断言测的不是这次改动",
+            "单聊的 endpoint 也应当带工具——否则上面那条断言测的不是这次改动",
         )
     }
 }

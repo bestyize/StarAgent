@@ -619,10 +619,10 @@ class AppState(
      * 同上，但由调用方给系统提示。群聊走这条：模型与 Key 的解析完全一样，
      * 只是提示里要写群上下文而不是单聊人设。
      *
-     * [toolsAvailable] 决定这次请求带不带工具定义。默认带；**定时执行**显式传 false，
-     * 因为它还没接进工具循环（Task 12 才做），必须保持接工具之前的行为——
-     * 提示与请求两头都不带工具，才不会出现"模型拿工具调用代替正文、而那条路径又把
-     * ToolCallsReady 丢掉"的空回复。
+     * [toolsAvailable] 决定这次请求带不带工具定义。**现在是三个调用点全传 true**
+     * ——单聊、群聊、定时执行都走工具循环了。这个开关留着，是给降级路径
+     * （服务商拒收 `tools` 字段时退回文本块协议）用的，那个还没做；
+     * 传 false 时提示与请求**两头**都不带工具，两套指令才不会同时给出去。
      */
     fun endpointFor(
         agent: Agent,
@@ -1069,21 +1069,71 @@ class AppState(
         // 本成员发言期间不会再往列表里 append，index 是稳的
         val index = conversation.lastIndex
 
-        val buffer = StringBuilder()
-        var failure: String? = null
-        try {
-            stream(endpoint, history).collect { event ->
-                when (event) {
-                    is ChatStreamEvent.Delta -> {
-                        buffer.append(event.text)
-                        conversation[index] = placeholder.copy(body = MessageBody.Text(buffer.toString()))
-                    }
+        // 每位成员各有**一张自己的执行卡**（index 逐位各记一份）：成员是轮流发言的，
+        // 共用一张的话后一位的工具步骤会写进上一位那张卡里，看起来像一个人干的。
+        val stepCalls = mutableListOf<ToolCall>()
+        val stepResults = mutableListOf<ToolResult>()
+        var executionIndex = -1
 
-                    is ChatStreamEvent.ToolCallsReady -> Unit
-                    is ChatStreamEvent.Failed -> failure = event.message
-                    ChatStreamEvent.Completed -> Unit
-                }
-            }
+        // 与单聊、定时执行同一道闸门：这一轮取过外部网页就不写记忆。
+        var externalFetchThisTurn = false
+
+        val buffer = StringBuilder()
+        var outcome: LoopOutcome
+        try {
+            val loop = AgentLoop(stream = stream)
+            val host = ToolHost(
+                memory = AppMemoryPort(this) { externalFetchThisTurn },
+                tasks = AppTaskPort(this),
+                web = webPort,
+                // 记忆与任务都是**按智能体**隔离的，所以是成员自己的 id，不是群 id——
+                // 用群 id 的话群里每个人会共享同一份记忆和任务清单，那显然是错的。
+                agentId = member.id,
+                // 会话键仍是群：这些消息本来就落在群里。
+                conversationKey = key,
+            )
+
+            outcome = loop.run(
+                endpoint = endpoint,
+                history = history.toMutableList(),
+                host = host,
+                registry = registryFor(member),
+                onText = { chunk ->
+                    buffer.append(chunk)
+                    conversation[index] = placeholder.copy(body = MessageBody.Text(buffer.toString()))
+                },
+                onToolStart = { call ->
+                    stepCalls += call
+                    val steps = executionStepsFor(stepCalls, stepResults)
+                    if (executionIndex < 0) {
+                        conversation.add(
+                            ChatMessage(
+                                id = nextId("m"),
+                                author = Author.Agent,
+                                body = MessageBody.Execution(steps),
+                                timeLabel = "刚刚",
+                                // 卡片也要挂在这位成员名下，群里才看得出是谁在动手
+                                speakerAgentId = member.id,
+                                roundIndex = round,
+                            )
+                        )
+                        executionIndex = conversation.lastIndex
+                    } else {
+                        conversation[executionIndex] =
+                            conversation[executionIndex].copy(body = MessageBody.Execution(steps))
+                    }
+                },
+                onToolEnd = { _, result ->
+                    stepResults += result
+                    // 只累积（取或）：一轮里多个结果时"最后一个说了算"会把闸门重新打开
+                    if (result.externalContext) externalFetchThisTurn = true
+                    if (executionIndex >= 0) {
+                        conversation[executionIndex] = conversation[executionIndex].copy(
+                            body = MessageBody.Execution(executionStepsFor(stepCalls, stepResults)),
+                        )
+                    }
+                },
+            )
         } catch (cancelled: CancellationException) {
             // 用户点了停止：已经说出的半句留着，再往上抛，让整场讨论一起停下来
             if (buffer.isEmpty()) {
@@ -1092,21 +1142,32 @@ class AppState(
             throw cancelled
         }
 
-        val failureMessage = failure
-        if (failureMessage != null) {
-            conversation[index] = placeholder.copy(body = MessageBody.Notice(failureMessage, isError = true))
-            return
+        when (outcome) {
+            is LoopOutcome.Failed -> {
+                conversation[index] = placeholder.copy(body = MessageBody.Notice(outcome.message, isError = true))
+                return
+            }
+            is LoopOutcome.Stopped -> {
+                // 上限停下：保留已经说出的部分，再补一条说明——与单聊一致
+                if (buffer.isEmpty()) {
+                    conversation[index] = placeholder.copy(body = MessageBody.Notice(outcome.reason))
+                } else {
+                    conversation.add(notice(outcome.reason).copy(speakerAgentId = member.id, roundIndex = round))
+                }
+                return
+            }
+            is LoopOutcome.Done -> Unit
         }
 
-        val raw = buffer.toString()
+        val raw = outcome.let { if (it is LoopOutcome.Done) it.text else buffer.toString() }
         if (raw.isBlank()) {
             conversation[index] = placeholder.copy(body = MessageBody.Notice("模型没有返回内容", isError = true))
             return
         }
 
-        conversation[index] = when (val outcome = resolveGroupReply(raw)) {
-            is GroupReplyOutcome.Speak -> placeholder.copy(body = MessageBody.Text(outcome.text))
-            is GroupReplyOutcome.Skip -> placeholder.copy(body = MessageBody.Skipped(outcome.reason))
+        conversation[index] = when (val resolved = resolveGroupReply(raw)) {
+            is GroupReplyOutcome.Speak -> placeholder.copy(body = MessageBody.Text(resolved.text))
+            is GroupReplyOutcome.Skip -> placeholder.copy(body = MessageBody.Skipped(resolved.reason))
         }
     }
 
@@ -1218,14 +1279,11 @@ class AppState(
         // 这个智能体正在跟用户对话时不插队——两路流会往同一条对话里写
         if (isBusy(task.agentId)) return
 
-        // 显式要"不带工具"的那一份：定时执行还走老的单次请求（里面的 ToolCallsReady
-        // 是丢掉的），得跟它自己以前一模一样——带上工具会让模型改用工具调用作答，
-        // 而这条路又不会执行，用户最终只拿到"模型没有返回内容"。Task 12 才把它接进循环。
-        val endpoint = endpointFor(
-            agent,
-            systemPromptFor(agent, toolsAvailable = false),
-            toolsAvailable = false,
-        )
+        // 现在真的走工具循环了，所以要发**带工具**的那一份：提示与请求两头都带工具，
+        // 模型才可能真的去查、去记，而不是写一段"这件事大概怎么做"的散文。
+        // 早先这里显式传 false，是为了躲"模型拿工具调用作答、而这条路又把 ToolCallsReady
+        // 丢掉"的空回复——循环接上之后（它自己消费 ToolCallsReady）那个顾虑就不存在了。
+        val endpoint = endpointFor(agent)
         if (endpoint == null) {
             // 没配模型也得把期排下去，否则它会一直停在"到点"，每半分钟重试一次
             reschedule(task, lastRun = "没跑：没有可用的模型")
@@ -1246,25 +1304,81 @@ class AppState(
         conversation.add(placeholder)
         val index = conversation.lastIndex
 
+        // 执行卡片和 send() 一样是**一张会变的卡**：记下它在对话里的位置，
+        // 之后每有进展就重写那一条，而不是一步一个气泡。
+        val stepCalls = mutableListOf<ToolCall>()
+        val stepResults = mutableListOf<ToolResult>()
+        var executionIndex = -1
+
+        // 这一轮取过外部网页就不写记忆，与 send() 是同一道闸门：
+        // 任务跑着的时候抓回来的网页正文同样可能"教"模型写一条假记忆。
+        var externalFetchThisTurn = false
+
         // 历史里不含刚加的这两条：Notice 和空文本都会被 historyFor 过滤掉
-        val history = historyFor(task.agentId) + LlmTurn(LlmRole.User, taskInstruction(task))
+        val history = historyFor(task.agentId).toMutableList()
+        history += LlmTurn(LlmRole.User, taskInstruction(task))
 
         busy[task.agentId] = true
         val buffer = StringBuilder()
-        var failure: String? = null
-        try {
-            stream(endpoint, history).collect { event ->
-                when (event) {
-                    is ChatStreamEvent.Delta -> {
-                        buffer.append(event.text)
-                        conversation[index] = placeholder.copy(body = MessageBody.Text(buffer.toString()))
-                    }
+        var outcome: LoopOutcome
 
-                    is ChatStreamEvent.ToolCallsReady -> Unit
-                    is ChatStreamEvent.Failed -> failure = event.message
-                    ChatStreamEvent.Completed -> Unit
-                }
-            }
+        // 收尾：把这一期的结果写成"上次执行"的文案，并把期排到下一次。
+        // 提前 return 的几条路都要经过它，否则任务会永远停在"到点"。
+        fun finish(ran: Boolean) {
+            val finished = now()
+            val stamp = "${describeMoment(finished, finished, zone())} ${if (ran) "已完成" else "执行失败"}"
+            reschedule(task, lastRun = stamp)
+        }
+
+        try {
+            val loop = AgentLoop(stream = stream)
+            val host = ToolHost(
+                memory = AppMemoryPort(this) { externalFetchThisTurn },
+                tasks = AppTaskPort(this),
+                web = webPort,
+                agentId = task.agentId,
+                conversationKey = task.agentId,
+            )
+
+            outcome = loop.run(
+                endpoint = endpoint,
+                history = history,
+                host = host,
+                registry = registryFor(agent),
+                onText = { chunk ->
+                    buffer.append(chunk)
+                    conversation[index] = placeholder.copy(body = MessageBody.Text(buffer.toString()))
+                },
+                onToolStart = { call ->
+                    stepCalls += call
+                    val steps = executionStepsFor(stepCalls, stepResults)
+                    if (executionIndex < 0) {
+                        // 第一次调工具时才插卡片，别让纯任务叙述也顶一张空的
+                        conversation.add(
+                            ChatMessage(
+                                id = nextId("m"),
+                                author = Author.Agent,
+                                body = MessageBody.Execution(steps),
+                                timeLabel = "刚刚",
+                            )
+                        )
+                        executionIndex = conversation.lastIndex
+                    } else {
+                        conversation[executionIndex] =
+                            conversation[executionIndex].copy(body = MessageBody.Execution(steps))
+                    }
+                },
+                onToolEnd = { _, result ->
+                    stepResults += result
+                    // 只累积（取或）：一轮里多个结果时"最后一个说了算"会把闸门重新打开
+                    if (result.externalContext) externalFetchThisTurn = true
+                    if (executionIndex >= 0) {
+                        conversation[executionIndex] = conversation[executionIndex].copy(
+                            body = MessageBody.Execution(executionStepsFor(stepCalls, stepResults)),
+                        )
+                    }
+                },
+            )
         } catch (cancelled: CancellationException) {
             if (buffer.isEmpty()) conversation[index] = placeholder.copy(body = MessageBody.Notice("已停止"))
             throw cancelled
@@ -1272,36 +1386,64 @@ class AppState(
             busy[task.agentId] = false
         }
 
-        val raw = buffer.toString()
-        val failureMessage = failure
-        val ran = failureMessage == null && raw.isNotBlank()
-
-        conversation[index] = when {
-            failureMessage != null ->
-                placeholder.copy(body = MessageBody.Notice(failureMessage, isError = true))
-
-            raw.isBlank() ->
-                placeholder.copy(body = MessageBody.Notice("模型没有返回内容", isError = true))
-
-            // 任务跑的这一次不该再长出任务草稿卡片——它自己就是一个任务
-            else -> when (val outcome = resolveReply(raw, allowTasks = false)) {
-                is ReplyOutcome.Plain -> placeholder.copy(body = MessageBody.Text(outcome.text))
-                is ReplyOutcome.AsTask -> placeholder.copy(body = MessageBody.Text(outcome.text))
+        when (outcome) {
+            is LoopOutcome.Failed -> {
+                conversation[index] = placeholder.copy(
+                    body = MessageBody.Notice(outcome.message, isError = true),
+                )
+                finish(ran = false)
+                return
             }
+            is LoopOutcome.Stopped -> {
+                // 上限停下：保留已经说出来的部分，再补一条说明——与 send() 一致
+                if (buffer.isEmpty()) {
+                    conversation[index] = placeholder.copy(body = MessageBody.Notice(outcome.reason))
+                } else {
+                    conversation.add(notice(outcome.reason))
+                }
+                // 撞上限**不算跑完**：lastRunLabel 得如实说"执行失败"，
+                // 否则用户会以为那次半截的结果是完整的（一次性任务还会因此被标成已完成）。
+                finish(ran = false)
+                return
+            }
+            is LoopOutcome.Done -> Unit
         }
 
-        val finished = now()
-        val stamp = "${describeMoment(finished, finished, zone())} ${if (ran) "已完成" else "执行失败"}"
-        reschedule(task, lastRun = stamp)
+        val raw = outcome.let { if (it is LoopOutcome.Done) it.text else buffer.toString() }
+        if (raw.isBlank()) {
+            conversation[index] = placeholder.copy(
+                body = MessageBody.Notice("模型没有返回内容", isError = true),
+            )
+            finish(ran = false)
+            return
+        }
+
+        // 任务跑的这一次不该再长出任务草稿卡片——它自己就是一个任务
+        val reply = resolveReply(raw, allowTasks = false)
+        val spoken = when (reply) {
+            is ReplyOutcome.Plain -> reply.text
+            is ReplyOutcome.AsTask -> reply.text
+        }
+        conversation[index] = placeholder.copy(body = MessageBody.Text(spoken))
+        finish(ran = true)
     }
 
-    /** 交给模型的任务指令。带上备注——它本来就是"要提醒自己注意什么"。 */
+    /**
+     * 给模型的任务指令。
+     *
+     * 早先这里是「请把这件事实实在在做一遍」——那是在**求模型表演**，
+     * 因为它手上什么都没有。现在有工具了，指令改成指出可用手段。
+     */
     private fun taskInstruction(task: AgentTask): String = buildString {
         append("【定时任务】").append(task.title)
         append("\n时间：").append(task.scheduleLabel)
         task.note?.takeIf { it.isNotBlank() }?.let { append("\n备注：").append(it) }
-        append("\n\n现在到点了，请把这件事实实在在做一遍，直接给出结果。")
+        append("\n\n现在到点了。用你能用的工具把这件事做出来，然后给出结果。")
+        append("如果需要查资料就用 web_fetch；如果这次得到的结论值得长期记住，用 remember 存下来。")
     }
+
+    /** 测试用。 */
+    internal fun taskInstructionForTest(task: AgentTask): String = taskInstruction(task)
 
     /**
      * 收尾：记下"上次"，并把期排到下一次。
@@ -1511,12 +1653,14 @@ class AppState(
             append("\n自然地用上这些，不要刻意复述，也不要逐条罗列。")
         }
 
-        // 一期**无条件发工具**：单聊与群聊都传 true，没有"这家不支持就退回文本块"的探测、
-        // 也没有 400 重试。这意味着一个拒收 `tools` 字段的服务商会直接 400——而被让出去的，
-        // 正是下面这段"不发工具时靠 ```task / ```memory 兜底"的路。
-        // 今天唯一传 false 的是 runTask（定时执行还停在老的单次请求上），所以这段不是死代码，
-        // 但也**不是给用户用的降级**：只要走 tool-enabled 的入口，文本块这条路就是不存在的。
-        // 完整的降级（先发、被拒、再退回文本协议重试）是后续任务，别把这里当成已生效的兜底。
+        // 一期**无条件发工具**：单聊、群聊、定时执行三个调用点全传 true，没有"这家不支持就
+        // 退回文本块"的探测、也没有 400 重试。这意味着一个拒收 `tools` 字段的服务商会直接 400
+        // ——而被让出去的，正是下面这段"不发工具时靠 ```task / ```memory 兜底"的路。
+        //
+        // 所以这段**现在是死代码**：没有任何生产调用点传 false（Task 12 把最后一个
+        // ——runTask——也接进了工具循环）。它留着是给将来那条完整的降级路径用的
+        // （先发工具、被拒、再退回文本协议重试），那件事还没做；
+        // **别把这里当成已生效的兜底**，它今天一次都不会跑。测试里传 false 才能走到。
         if (!toolsAvailable) {
             // 记忆不跟着任务开关走——记忆是"认不认识你"，陪聊型智能体也该记得住。
             if (agent.canScheduleTasks) {
