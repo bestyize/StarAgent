@@ -603,13 +603,23 @@ class AppState(
     fun configuredProviders(): List<ModelProvider> = providers.filter { it.configured }
 
     /** 这个智能体当前能不能真正对话——不能的话界面要给出明确的去配置入口。 */
-    fun endpointFor(agent: Agent): LlmEndpoint? = endpointFor(agent, systemPromptFor(agent, toolsAvailable = true))
+    fun endpointFor(agent: Agent): LlmEndpoint? =
+        endpointFor(agent, systemPromptFor(agent, toolsAvailable = true), toolsAvailable = true)
 
     /**
      * 同上，但由调用方给系统提示。群聊走这条：模型与 Key 的解析完全一样，
      * 只是提示里要写群上下文而不是单聊人设。
+     *
+     * [toolsAvailable] 决定这次请求带不带工具定义。默认带；**定时执行**显式传 false，
+     * 因为它还没接进工具循环（Task 12 才做），必须保持接工具之前的行为——
+     * 提示与请求两头都不带工具，才不会出现"模型拿工具调用代替正文、而那条路径又把
+     * ToolCallsReady 丢掉"的空回复。
      */
-    fun endpointFor(agent: Agent, systemPrompt: String): LlmEndpoint? {
+    fun endpointFor(
+        agent: Agent,
+        systemPrompt: String,
+        toolsAvailable: Boolean = true,
+    ): LlmEndpoint? {
         val (provider, model) = resolveModel(agent.modelId) ?: return null
         if (!provider.configured) return null
         // 地址按当前协议取：同一家两种协议的路径往往不同
@@ -620,7 +630,7 @@ class AppState(
             apiKey = provider.apiKey,
             model = model,
             systemPrompt = systemPrompt,
-            tools = registryFor(agent).definitions(),
+            tools = if (toolsAvailable) registryFor(agent).definitions() else emptyList(),
         )
     }
 
@@ -805,12 +815,15 @@ class AppState(
                 return
             }
             is LoopOutcome.Stopped -> {
-                // 上限停下：保留已经说出来的部分，再补一条说明
+                // 上限停下：保留已经说出来的部分，再补一条说明。
+                // 两条路都必须就此收尾——空正文时下面那个 raw.isBlank() 会把刚写的
+                // "这个任务需要的步骤有点多"覆盖成「模型没有返回内容」，用户就看不到停下的原因了。
                 if (buffer.isEmpty()) {
                     conversation[index] = placeholder.copy(body = MessageBody.Notice(outcome.reason))
                 } else {
                     conversation.add(notice(outcome.reason))
                 }
+                return
             }
             is LoopOutcome.Done -> Unit
         }
@@ -1147,7 +1160,14 @@ class AppState(
         // 这个智能体正在跟用户对话时不插队——两路流会往同一条对话里写
         if (isBusy(task.agentId)) return
 
-        val endpoint = endpointFor(agent)
+        // 显式要"不带工具"的那一份：定时执行还走老的单次请求（里面的 ToolCallsReady
+        // 是丢掉的），得跟它自己以前一模一样——带上工具会让模型改用工具调用作答，
+        // 而这条路又不会执行，用户最终只拿到"模型没有返回内容"。Task 12 才把它接进循环。
+        val endpoint = endpointFor(
+            agent,
+            systemPromptFor(agent, toolsAvailable = false),
+            toolsAvailable = false,
+        )
         if (endpoint == null) {
             // 没配模型也得把期排下去，否则它会一直停在"到点"，每半分钟重试一次
             reschedule(task, lastRun = "没跑：没有可用的模型")
@@ -1433,8 +1453,13 @@ class AppState(
             append("\n自然地用上这些，不要刻意复述，也不要逐条罗列。")
         }
 
+        // 一期**无条件发工具**：单聊与群聊都传 true，没有"这家不支持就退回文本块"的探测、
+        // 也没有 400 重试。这意味着一个拒收 `tools` 字段的服务商会直接 400——而被让出去的，
+        // 正是下面这段"不发工具时靠 ```task / ```memory 兜底"的路。
+        // 今天唯一传 false 的是 runTask（定时执行还停在老的单次请求上），所以这段不是死代码，
+        // 但也**不是给用户用的降级**：只要走 tool-enabled 的入口，文本块这条路就是不存在的。
+        // 完整的降级（先发、被拒、再退回文本协议重试）是后续任务，别把这里当成已生效的兜底。
         if (!toolsAvailable) {
-            // 降级路径：服务商不支持工具调用时，仍靠文本块。
             // 记忆不跟着任务开关走——记忆是"认不认识你"，陪聊型智能体也该记得住。
             if (agent.canScheduleTasks) {
                 append("\n\n")
@@ -1445,8 +1470,11 @@ class AppState(
         }
     }
 
-    /** 测试用：默认按"发得出工具"来拼。 */
-    internal fun systemPromptForTest(agent: Agent): String = systemPromptFor(agent, toolsAvailable = true)
+    /**
+     * 测试用。默认按"发得出工具"来拼；显式传 `false` 可以钉住降级路径那半边的行为。
+     */
+    internal fun systemPromptForTest(agent: Agent, toolsAvailable: Boolean = true): String =
+        systemPromptFor(agent, toolsAvailable)
 
     // ── 持久化 ──────────────────────────────────
 
