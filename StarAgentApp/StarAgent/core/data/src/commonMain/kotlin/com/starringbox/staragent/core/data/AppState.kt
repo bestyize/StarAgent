@@ -724,6 +724,8 @@ class AppState(
                         conversation[index] = placeholder.copy(body = MessageBody.Text(buffer.toString()))
                     }
 
+                    // 工具调用的分发要到 AgentLoop 接进来才做，这里先占位
+                    is ChatStreamEvent.ToolCallsReady -> Unit
                     is ChatStreamEvent.Failed -> failure = event.message
                     ChatStreamEvent.Completed -> Unit
                 }
@@ -939,6 +941,7 @@ class AppState(
                         conversation[index] = placeholder.copy(body = MessageBody.Text(buffer.toString()))
                     }
 
+                    is ChatStreamEvent.ToolCallsReady -> Unit
                     is ChatStreamEvent.Failed -> failure = event.message
                     ChatStreamEvent.Completed -> Unit
                 }
@@ -1112,6 +1115,7 @@ class AppState(
                         conversation[index] = placeholder.copy(body = MessageBody.Text(buffer.toString()))
                     }
 
+                    is ChatStreamEvent.ToolCallsReady -> Unit
                     is ChatStreamEvent.Failed -> failure = event.message
                     ChatStreamEvent.Completed -> Unit
                 }
