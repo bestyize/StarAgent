@@ -74,10 +74,13 @@ internal class OpenAiToolCallAccumulator {
     private val names = mutableMapOf<Int, String>()
     private val args = mutableMapOf<Int, StringBuilder>()
 
-    /** 收一帧 `delta` 对象（已经取到 `choices[0].delta` 那一层）。 */
+    /**
+     * 收**一条裸的 `tool_calls` 条目**（即调用方已经从 `choices[0].delta.tool_calls` 里
+     * 取出单个元素）。也容忍把整个 `delta` 对象直接给进来（里面裹着 `tool_calls` 数组），
+     * 但那是顺带兼容，**约定的一等形状是裸条目**。
+     */
     fun accept(delta: JsonObject) {
-        // 真响应里条目裹在 `tool_calls` 数组里；但也容忍直接给一条条目
-        // （少一层包裹），两种形状都收，免得记错调用方传的是哪一层。
+        // 裸条目是约定形状；裹着 tool_calls 数组的 delta 也收，免得调用方记错传了哪一层。
         val entries = (delta["tool_calls"] as? JsonArray) ?: listOf(delta)
         entries.forEach { element ->
             val entry = element as? JsonObject ?: return@forEach

@@ -37,6 +37,8 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+            // 协议解析是挂起函数（要 emit 事件），得在测试里驱动协程
+            implementation(libs.kotlinx.coroutines.test)
         }
         jvmMain.dependencies {
             implementation(libs.ktor.client.cio)

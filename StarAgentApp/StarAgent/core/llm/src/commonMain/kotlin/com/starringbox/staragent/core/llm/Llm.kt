@@ -3,6 +3,7 @@ package com.starringbox.staragent.core.llm
 import com.starringbox.staragent.core.model.MediaAsset
 import com.starringbox.staragent.core.model.LlmProtocol
 import com.starringbox.staragent.core.model.ToolCall
+import com.starringbox.staragent.core.model.ToolDefinition
 import com.starringbox.staragent.core.model.ToolResult
 
 /** 一次请求所需的全部信息。由服务商配置 + 当前智能体选定的模型解析得到。 */
@@ -12,6 +13,8 @@ data class LlmEndpoint(
     val apiKey: String,
     val model: String,
     val systemPrompt: String? = null,
+    /** 这次请求要提供给模型的工具。空 = 不提供工具，走纯文本协议。 */
+    val tools: List<ToolDefinition> = emptyList(),
 )
 
 enum class LlmRole { User, Assistant }
