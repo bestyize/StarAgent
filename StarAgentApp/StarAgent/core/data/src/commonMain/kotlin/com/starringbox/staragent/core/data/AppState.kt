@@ -387,11 +387,9 @@ class AppState(
     /** 命中字数。粗糙但够用，而且结果稳定可测。 */
     private fun scoreMemory(item: MemoryItem, needle: String): Int {
         val haystack = item.text.lowercase()
-        return needle.length.let { _ ->
-            // 整串命中给高分，否则按逐字命中计数
-            if (haystack.contains(needle)) 100 + needle.length
-            else needle.count { it in haystack }
-        }
+        // 整串命中给高分，否则按逐字命中计数
+        return if (haystack.contains(needle)) 100 + needle.length
+        else needle.count { it in haystack }
     }
 
     fun activeChannels(): List<Channel> = channels.filter { it.connected }
