@@ -19,8 +19,12 @@ import com.starringbox.staragent.core.tools.ports.TaskPort
 import com.starringbox.staragent.core.tools.ports.TaskSummary
 import com.starringbox.staragent.core.tools.ports.WebPort
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -322,6 +326,113 @@ class AgentLoopTest {
                 onToolEnd = { _, _ -> },
             )
         }
+    }
+
+    /**
+     * 🔴 挂住的工具必须被**自己的**看门狗切断，并把"超时了"回喂给模型。
+     *
+     * 没有这条，一个永不返回的工具会把循环、`busy` 标志和用户的界面一起挂住——
+     * 而共用客户端的兜底是 socket 3 分钟 / 请求 15 分钟，用户眼前只有转圈。
+     *
+     * ⚠️ 用 50ms 的注入值，不是代码里那个 30 秒的默认值：断言的东西一样，
+     * 而这条用例必须是毫秒级的。默认值另有断言（见 DEFAULT_TOOL_TIMEOUT_MILLIS 的注释）。
+     */
+    @Test
+    fun hungToolTimesOutAndTheModelIsToldSo() = runTest {
+        val hungTool = object : Tool {
+            override val definition =
+                ToolDefinition("hang", "", buildJsonObject { put("type", "object") })
+            override suspend fun execute(args: JsonObject, host: ToolHost): ToolResult {
+                delay(500) // 远超 50ms 的看门狗
+                return ToolResult(callId = "", content = "不该跑到这")
+            }
+        }
+        val history = mutableListOf<LlmTurn>()
+        val loop = AgentLoop(
+            scriptedStream(
+                listOf(
+                    listOf(ChatStreamEvent.ToolCallsReady(listOf(ToolCall("c1", "hang", "{}")))),
+                    textOf("那我换个办法"),
+                )
+            ),
+            toolTimeoutMillis = 50,
+        )
+
+        val outcome = loop.run(
+            endpoint = endpoint,
+            history = history,
+            host = testHost(),
+            registry = ToolRegistry.of(hungTool),
+            onText = {},
+            onToolStart = {},
+            onToolEnd = { _, _ -> },
+        )
+
+        // 超时**不结束循环**：它是给模型看的一条结果，模型接着往下走。
+        assertEquals(LoopOutcome.Done("那我换个办法"), outcome)
+        val fedBack = history[1].toolResults.single()
+        assertTrue(fedBack.isError, "超时必须标成错误，模型才知道这一步没成")
+        assertTrue(
+            fedBack.content.contains("超时"),
+            "文案要说人话，实际：${fedBack.content}",
+        )
+        // 关联键仍要对得上，否则模型分不清这是哪一次调用的回复
+        assertEquals("c1", fedBack.callId)
+    }
+
+    /**
+     * 🔴 **反向**：外面的取消不能被"工具超时"那条路吞掉。
+     *
+     * `TimeoutCancellationException` 本身就是一个 `CancellationException`，
+     * 用户点停止抛的也是这一类。实现要是去 catch `TimeoutCancellationException`，
+     * 迟早会把外面的取消也当成"我的超时"——那正是 cba73a0 修掉的 bug。
+     * 所以用的是 `withTimeoutOrNull` 的 null 判定：它只认自己那一次超时。
+     *
+     * 判据落在"`onToolEnd` 一次都没响"：取消了却还能走到收尾回调，
+     * 就说明取消被当成了一次正常的工具执行。
+     */
+    @Test
+    fun externalCancellationIsNotTurnedIntoATimeoutResult() = runTest {
+        val started = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val hangingTool = object : Tool {
+            override val definition =
+                ToolDefinition("hang", "", buildJsonObject { put("type", "object") })
+            override suspend fun execute(args: JsonObject, host: ToolHost): ToolResult {
+                started.complete(Unit)
+                awaitCancellation()
+            }
+        }
+        val loop = AgentLoop(
+            scriptedStream(
+                listOf(
+                    listOf(ChatStreamEvent.ToolCallsReady(listOf(ToolCall("c1", "hang", "{}")))),
+                )
+            ),
+            toolTimeoutMillis = 60_000, // 远大于下面会发生的取消，保证命中的是取消而不是超时
+        )
+
+        val results = mutableListOf<ToolResult>()
+        val job = launch {
+            loop.run(
+                endpoint = endpoint,
+                history = mutableListOf(),
+                host = testHost(),
+                registry = ToolRegistry.of(hangingTool),
+                onText = {},
+                onToolStart = {},
+                onToolEnd = { _, result -> results += result },
+            )
+        }
+
+        started.await()
+        job.cancelAndJoin()
+
+        assertTrue(job.isCancelled, "取消要真的让这条协程结束")
+        assertEquals(
+            emptyList(),
+            results,
+            "被取消的工具不该产出一条结果——那就是 cba73a0 修的「按了停止却停不下来」",
+        )
     }
 }
 

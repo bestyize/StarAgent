@@ -2,6 +2,7 @@ package com.starringbox.staragent.core.tools
 
 import com.starringbox.staragent.core.model.ToolDefinition
 import com.starringbox.staragent.core.model.ToolResult
+import com.starringbox.staragent.core.tools.builtin.BuiltinTools
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -51,5 +52,16 @@ class ToolRegistryTest {
         // 顺序影响模型看到的清单，必须是稳定的
         val registry = ToolRegistry.of(toolNamed("z"), toolNamed("a"), toolNamed("m"))
         assertEquals(listOf("z", "a", "m"), registry.definitions().map { it.name })
+    }
+
+    @Test
+    fun builtinToolsContainAllSevenToolsAndWithoutTaskCreationExcludesCreateTask() {
+        assertEquals(7, BuiltinTools.all.definitions().size)
+        assertNotNull(BuiltinTools.all.find("create_task"))
+        assertNotNull(BuiltinTools.all.find("web_fetch"))
+
+        assertEquals(6, BuiltinTools.withoutTaskCreation.definitions().size)
+        assertNull(BuiltinTools.withoutTaskCreation.find("create_task"))
+        assertNotNull(BuiltinTools.withoutTaskCreation.find("list_tasks"))
     }
 }

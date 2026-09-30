@@ -3,6 +3,7 @@ package com.starringbox.staragent.core.data
 import com.starringbox.staragent.core.model.MessageBody
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -73,5 +74,33 @@ class SendWithToolsTest {
             prompt.contains("```memory"),
             "不发工具时，记忆块的格式要求必须还在",
         )
+    }
+
+    /**
+     * 智能体的 [Agent.canScheduleTasks] 门控：
+     * 为 false 的智能体（如陪练英语老师）绝不能注册 `create_task`，
+     * 彻底避免模型主动为用户创建定时/托管任务；
+     * 但保留被动查询与管理类工具（list/update/cancel）。
+     */
+    @Test
+    fun canScheduleTasksGatesCreateTaskToolRegistration() {
+        val state = AppState()
+        // 种子里小星 canScheduleTasks = true，英语老师 canScheduleTasks = false
+        val canSchedule = state.agents.first { it.canScheduleTasks }
+        val cannotSchedule = state.agents.first { !it.canScheduleTasks }
+
+        val canScheduleToolNames = state.registryFor(canSchedule).definitions().map { it.name }
+        val cannotScheduleToolNames = state.registryFor(cannotSchedule).definitions().map { it.name }
+
+        // 正对照：允许托管任务的智能体包含 create_task
+        assertTrue(canScheduleToolNames.contains("create_task"), "canScheduleTasks 为 true 的智能体必须提供 create_task")
+        assertTrue(canScheduleToolNames.contains("list_tasks"))
+
+        // 负对照：不允许托管任务的智能体绝对不能提供 create_task
+        assertFalse(cannotScheduleToolNames.contains("create_task"), "canScheduleTasks 为 false 的智能体绝不能注册 create_task")
+        // 但保留被动查询与调整能力（如已有任务的管理）以及其他常规工具
+        assertTrue(cannotScheduleToolNames.contains("list_tasks"), "被动查询任务能力保留")
+        assertTrue(cannotScheduleToolNames.contains("recall_memory"), "基础记忆工具保留")
+        assertTrue(cannotScheduleToolNames.contains("web_fetch"), "网络工具保留")
     }
 }

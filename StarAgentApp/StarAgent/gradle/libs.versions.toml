@@ -50,6 +50,10 @@ ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "kto
 # 火山方舟 Agent Plan 的语音识别只有 WebSocket 一条路（带 /plan/ 的二进制端点），
 # 对话那几条都是普通 HTTP，用不到这个
 ktor-client-websockets = { module = "io.ktor:ktor-client-websockets", version.ref = "ktor" }
+# 只在测试里用：`AppWebPort` 的"重定向前重跑闸门"要能用假引擎钉住。
+# 真发一次 HTTP 测那条路既慢又依赖外网，而且**测不到**"302 到了一个内网地址"——
+# 那需要一台真的会给这种 Location 的服务器。MockEngine 让每一跳的响应可控。
+ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 # 任务调度要按本地日历算"下一次"，时区和夏令时自己手写容易错
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }

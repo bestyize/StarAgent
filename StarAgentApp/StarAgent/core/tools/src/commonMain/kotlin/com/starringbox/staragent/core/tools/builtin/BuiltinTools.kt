@@ -18,4 +18,19 @@ object BuiltinTools {
         CancelTaskTool,
         WebFetchTool,
     )
+
+    /**
+     * 不含 [CreateTaskTool] 的工具列表。
+     *
+     * 供 `canScheduleTasks = false` 的智能体（如陪聊、学习类）使用，
+     * 阻止模型主动为用户发起新的托管任务。
+     */
+    val withoutTaskCreation: ToolRegistry = ToolRegistry.of(
+        RecallMemoryTool,
+        RememberTool,
+        ListTasksTool,
+        UpdateTaskTool,
+        CancelTaskTool,
+        WebFetchTool,
+    )
 }

@@ -2,9 +2,13 @@ package com.starringbox.staragent.core.data.ports
 
 import com.starringbox.staragent.core.tools.ports.FetchResult
 import com.starringbox.staragent.core.tools.ports.WebPort
+import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
+import io.ktor.http.URLBuilder
 import io.ktor.http.isSuccess
+import io.ktor.http.takeFrom
 import com.starringbox.staragent.core.llm.httpClient
 
 /**
@@ -21,29 +25,107 @@ import com.starringbox.staragent.core.llm.httpClient
  *
  * 失败返回 [FetchResult.ok] = false 而**不抛异常**：抓不到是给模型看的信息，
  * 它看到"这个地址取不到"会换个地址重试。
+ *
+ * ## 重定向必须逐跳自己走
+ *
+ * 前两道闸门只在"我们实际请求的那个地址"上运行过。Ktor 的 `followRedirects`
+ * 默认是 true，跟着一个 `302 Location: http://192.168.1.1/` 跳过去，
+ * 两道闸门**一次全绕过**——而这个类就是这条路唯一的边界。
+ *
+ * 所以这里用的客户端**关掉了自动重定向**（[httpClient] 的 `followRedirects = false`
+ * 那一个），由本类逐跳自己走：每一跳都解析 `Location`、**重跑前两道闸门**，
+ * 再发下一跳，最多 [MAX_REDIRECTS] 跳。超限是普通失败，不是异常。
+ *
+ * [client] 是给测试留的缝：不注入的话就是关掉重定向的那一个共享客户端。
+ * 留这道缝是为了"重定向前重跑闸门"这条规则能被单测钉住——
+ * 它可以塞一个 MockEngine 造的客户端，不发任何真实请求。
  */
-class AppWebPort : WebPort {
+class AppWebPort(
+    private val client: HttpClient = httpClient(followRedirects = false),
+) : WebPort {
 
     override suspend fun fetch(url: String): FetchResult {
-        val normalized = url.trim()
-        if (!normalized.startsWith("https://")) {
+        val entry = url.trim()
+        if (!entry.startsWith("https://")) {
             return FetchResult(false, "", "只支持 https 地址")
         }
-        if (looksInternal(normalized)) {
+        if (looksInternal(entry)) {
             return FetchResult(false, "", "这个地址指向内网，不能访问")
         }
 
-        return runCatching {
-            val response = httpClient().get(normalized)
-            if (!response.status.isSuccess()) {
-                return@runCatching FetchResult(false, "", "取不到（HTTP ${response.status.value}）")
-            }
-            val body = response.bodyAsText()
-            FetchResult(true, extractText(body))
-        }.getOrElse { error ->
+        return runCatching { follow(entry) }.getOrElse { error ->
             FetchResult(false, "", "取不到：${error.message ?: error::class.simpleName}")
         }
     }
+
+    /**
+     * 从 [start] 开始走，逐跳自己跟重定向。**每一跳都重跑前两道闸门。**
+     *
+     * 只有网络层面的失败会抛（交给 [fetch] 的 `runCatching` 收成一条失败结果）；
+     * 闸门拦下、跳数超限这些都**返回**失败结果，不抛。
+     */
+    private suspend fun follow(start: String): FetchResult {
+        var current = start
+        var hops = 0
+
+        while (true) {
+            val response = client.get(current)
+
+            if (isRedirect(response.status.value)) {
+                if (hops >= MAX_REDIRECTS) {
+                    // 环、或一条没完没了的跳转链。普通失败，不抛——
+                    // 模型看到"跳转太多"会换个地址，抛出去只会让用户看到崩溃。
+                    return FetchResult(
+                        false, "",
+                        "这个地址连续跳转了 $MAX_REDIRECTS 次还没到，先停在这里。",
+                    )
+                }
+
+                val location = response.headers[HttpHeaders.Location]
+                    // 3xx 却不给 Location，这一跳走不下去；按普通失败处理
+                    ?: return FetchResult(false, "", "取不到（HTTP ${response.status.value}）")
+
+                // Location 可以是相对路径，必须**相对当前地址**解析。
+                // 手写字符串拼接会在 `/a/b` + `../c`、缺 scheme、带 query 这些形状上出错，
+                // 所以交给 Ktor 自己的 URLBuilder。
+                val next = resolveAgainst(current, location)
+                    ?: return FetchResult(false, "", "重定向的目标地址看不懂，先停在这里。")
+
+                // 🔴 重定向后的地址必须**重新**过一遍前两道闸门。
+                // 少了这两句，`https://attacker/r → 302 http://192.168.1.1/`
+                // 会在一次跳转里同时绕过"只允许 https"和"挡内网"。
+                if (!next.startsWith("https://")) {
+                    return FetchResult(false, "", "重定向的目标不是 https，不能访问")
+                }
+                if (looksInternal(next)) {
+                    return FetchResult(false, "", "重定向的目标指向内网，不能访问")
+                }
+
+                current = next
+                hops++
+                continue
+            }
+
+            if (!response.status.isSuccess()) {
+                return FetchResult(false, "", "取不到（HTTP ${response.status.value}）")
+            }
+            return FetchResult(true, extractText(response.bodyAsText()))
+        }
+    }
+
+    /**
+     * 把 `Location` 按当前地址解析成绝对地址。解析不了返回 null（调用方变成一条普通失败）。
+     *
+     * 用 Ktor 的 `URLBuilder.takeFrom` 而不是自己拼字符串：相对路径、缺 scheme、
+     * 相对 `..` 这几类都由库处理，也是 Ktor 自己的 HttpRedirect 插件用的同一套。
+     */
+    private fun resolveAgainst(current: String, location: String): String? =
+        runCatching { URLBuilder(current).takeFrom(location).buildString() }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
+
+    /** 3xx 里会让客户端跟着走的那几个。与 Ktor HttpRedirect 认的是同一组。 */
+    private fun isRedirect(status: Int): Boolean = status in REDIRECT_CODES
 
     /**
      * 字面量地址或明显的本地名字就挡掉。
@@ -54,6 +136,8 @@ class AppWebPort : WebPort {
      *
      * **不解析域名**——所以"指向内网"的域名在这里看不出来，这是这一层的已知边界，
      * 不是遗漏。要真正封死得先解析、拿到 IP 再比一次，这一期明确不做。
+     *
+     * 只认 `https://` 开头：调用方两次都在它之前先确认过 scheme。
      */
     private fun looksInternal(url: String): Boolean {
         val authority = url.removePrefix("https://").substringBefore('/').lowercase()
@@ -110,8 +194,21 @@ class AppWebPort : WebPort {
             .take(MAX_CHARS)
     }
 
-    private companion object {
+    /**
+     * `internal` 而不是 `private`：跳数上限本身要被测试钉住
+     * （见 WebPortRedirectTest 里"恰好跟 MAX_REDIRECTS 次"那条断言）。
+     */
+    internal companion object {
         /** 单次网页正文的上限。够模型读懂，又不会把上下文撑爆。 */
         const val MAX_CHARS = 8000
+
+        /**
+         * 最多跟几跳。5 是折中：www 与 http→https 这类正常跳转够用，
+         * 又不会被一条刻意拉长的链拖住。
+         */
+        const val MAX_REDIRECTS = 5
+
+        /** MovedPermanently / Found / SeeOther / TemporaryRedirect / PermanentRedirect。 */
+        val REDIRECT_CODES = setOf(301, 302, 303, 307, 308)
     }
 }

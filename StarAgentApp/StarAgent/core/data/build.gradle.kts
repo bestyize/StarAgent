@@ -44,6 +44,9 @@ kotlin {
             implementation(libs.kotlin.test)
             // 群聊编排是挂起函数，得在测试里驱动协程
             implementation(libs.kotlinx.coroutines.test)
+            // `AppWebPort` 的重定向闸门：每一跳的响应要可控，见 WebPortRedirectTest。
+            // 只在测试里——生产那条路用真引擎。
+            implementation(libs.ktor.client.mock)
         }
     }
 }

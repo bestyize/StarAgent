@@ -10,6 +10,7 @@ import com.starringbox.staragent.core.tools.ToolHost
 import com.starringbox.staragent.core.tools.ToolRegistry
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -37,6 +38,14 @@ internal sealed interface LoopOutcome {
 internal class AgentLoop(
     private val stream: suspend (LlmEndpoint, List<LlmTurn>) -> Flow<ChatStreamEvent>,
     private val maxIterations: Int = DEFAULT_MAX_ITERATIONS,
+    /**
+     * 单个工具的看门狗，毫秒。**不再是"多久没数据"那种被动超时**——
+     * 工具能挂住整整 3 分钟（socketTimeout）到 15 分钟（requestTimeout）而不说一句话，
+     * 而循环是串行的、`busy` 还立着，用户眼前只有一个转圈。见 [DEFAULT_TOOL_TIMEOUT_MILLIS]。
+     *
+     * 留成构造参数是给测试用的：不必为了让一条用例跑完而真等 30 秒。
+     */
+    private val toolTimeoutMillis: Long = DEFAULT_TOOL_TIMEOUT_MILLIS,
 ) {
 
     suspend fun run(
@@ -136,7 +145,23 @@ internal class AgentLoop(
             )
 
         return try {
-            tool.execute(args, host)
+            // 工具超时是**给模型看的信息**，不是异常：它看到"这个操作超时了"可以
+            // 换个办法或换个地址重试。
+            //
+            // 用 `withTimeoutOrNull` 而不是 catch TimeoutCancellationException：
+            // TimeoutCancellationException **就是** CancellationException，跟用户点停止
+            // 抛的是同一类。去 catch 它就得在 catch 里再分辨"这是我自己的超时还是
+            // 外面在取消"——分错了就会把用户的取消吞成一条错误结果，
+            // 正是 cba73a0 修掉的那个 bug。返回 null 则天然只可能是这次的超时，
+            // 外面的取消仍然从下面那个 catch 原样穿出去。
+            withTimeoutOrNull(toolTimeoutMillis) {
+                tool.execute(args, host)
+            } ?: ToolResult(
+                callId = call.id,
+                content = "这个操作超时了（超过 ${toolTimeoutMillis / 1000} 秒还没有结果）。" +
+                    "可以换个方式再试，或者先跳过这一步。",
+                isError = true,
+            )
         } catch (cancelled: CancellationException) {
             // 用户点了停止。这不是"工具出错"，是调用方在取消——必须原样抛出去，
             // 否则会被当成一条错误结果回喂，循环继续跑下去。
@@ -162,5 +187,17 @@ internal class AgentLoop(
          * 又不至于在模型死循环时烧掉太多 token。
          */
         const val DEFAULT_MAX_ITERATIONS = 8
+
+        /**
+         * 单个工具的看门狗，30 秒。设计文档 §5.3 三个护栏里的第二条。
+         *
+         * 为什么必须有：工具是串行跑的，一个挂住的请求会把后面全部堵住，
+         * 而共用客户端的超时是 **socket 3 分钟 / 请求 15 分钟**——按那两档兜底，
+         * 用户就是对着一个不动的界面等好几分钟，既没进展、也没法知道卡在哪。
+         *
+         * 30 秒的取舍：正常取网页远用不了这么久；超了就当它没结果，
+         * 回喂一句"超时了"，模型还能换个办法。宁可早说，不要干等。
+         */
+        const val DEFAULT_TOOL_TIMEOUT_MILLIS = 30_000L
     }
 }

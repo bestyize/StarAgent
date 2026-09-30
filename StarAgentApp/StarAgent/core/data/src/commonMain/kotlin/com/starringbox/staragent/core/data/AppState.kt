@@ -646,10 +646,19 @@ class AppState(
     /**
      * 这个智能体能用哪些工具。
      *
-     * 一期是"全部"——技能门控（装上哪个技能才给哪些工具）是后续的事，
-     * 因为技能本身还没有内容可挂。
+     * 智能体的 [Agent.canScheduleTasks] 控制 `create_task` 是否注册（设计规范 §附表）：
+     * 关掉时（如陪练、学习类智能体）不给 `create_task`，彻底杜绝模型主动弹任务卡片。
+     *
+     * 其余三个任务工具（list_tasks / update_task / cancel_task）保留提供：
+     * 若该智能体过去曾建过任务，或用户在任务中心给它指派了任务，它仍需能够查看、调整或取消已有任务；
+     * 且这三个是被动响应式的，不会引起模型主动新建任务的误触发。
      */
-    private fun registryFor(agent: Agent): ToolRegistry = BuiltinTools.all
+    internal fun registryFor(agent: Agent): ToolRegistry =
+        if (agent.canScheduleTasks) {
+            BuiltinTools.all
+        } else {
+            BuiltinTools.withoutTaskCreation
+        }
 
     fun updateProvider(updated: ModelProvider) {
         val index = providers.indexOfFirst { it.id == updated.id }
