@@ -34,5 +34,6 @@ private fun readableLabelFor(call: ToolCall): String = when (call.name) {
     "update_task" -> "调整任务"
     "cancel_task" -> "取消任务"
     "web_fetch" -> "读取网页"
+    "request_user_input" -> "向你提问"
     else -> call.name
 }
