@@ -43,6 +43,8 @@ import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.component.StarTag
 import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
+import com.starringbox.staragent.core.designsystem.component.StarTextField
+import com.starringbox.staragent.core.model.MessageBody
 import com.starringbox.staragent.core.model.MediaAsset
 import com.starringbox.staragent.core.model.AgentTask
 import com.starringbox.staragent.core.model.Artifact
@@ -470,3 +472,138 @@ internal fun ThinkingRow(speakerName: String? = null) {
         }
     }
 }
+
+/**
+ * 智能体提问卡片。
+ *
+ * 智能体在多步执行中需要用户确认或选择时弹出。
+ * 支持快捷选项 Chip 单选与自由文本输入框二合一。
+ * [selectedAnswer] 非 null 时表示已作答，转为只读态。
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+internal fun QuestionCard(
+    question: MessageBody.Question,
+    onAnswer: (String) -> Unit,
+) {
+    var customInput by remember { mutableStateOf("") }
+    val isAnswered = question.selectedAnswer != null
+
+    Column(Modifier.widthIn(max = 340.dp)) {
+        StarCard {
+            Column(Modifier.padding(14.dp)) {
+                // 顶栏标识
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconTile(
+                        glyph = StarIconGlyph.Sparkle,
+                        containerColor = Color(0xFFE7E8FF),
+                        tint = StarPalette.Indigo,
+                        size = 26.dp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "智能体提问",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = StarPalette.TextMuted,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                // 问题正文
+                Text(
+                    text = question.question,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = StarPalette.Text,
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                if (isAnswered) {
+                    // 已作答只读态
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(StarPalette.SurfaceAlt)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        StarIcon(
+                            icon = StarIconGlyph.Check,
+                            iconSize = 14.dp,
+                            tint = StarPalette.Success,
+                            strokeWidth = 2.2f,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "已选择：${question.selectedAnswer}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = StarPalette.TextMuted,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                } else {
+                    // 待作答态
+                    // 1. 快捷选项列表
+                    if (question.options.isNotEmpty()) {
+                        androidx.compose.foundation.layout.FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            question.options.forEach { option ->
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(StarPalette.SurfaceAlt)
+                                        .clickable { onAnswer(option) }
+                                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                                ) {
+                                    Text(
+                                        text = option,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = StarPalette.Indigo,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                    }
+
+                    // 2. 自定义输入框 + 提交按钮
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        StarTextField(
+                            value = customInput,
+                            onValueChange = { customInput = it },
+                            placeholder = question.placeholder ?: "输入其他回答…",
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (customInput.isNotBlank()) StarPalette.Indigo else StarPalette.SurfaceAlt)
+                                .clickable(enabled = customInput.isNotBlank()) {
+                                    if (customInput.isNotBlank()) onAnswer(customInput.trim())
+                                }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                        ) {
+                            Text(
+                                text = "提交",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (customInput.isNotBlank()) Color.White else StarPalette.TextFaint,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

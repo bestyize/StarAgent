@@ -169,6 +169,7 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
                     MessageRow(
                         message = message,
                         onConfirmDraft = { draft -> state.confirmDraft(agentId, draft) },
+                        onAnswerQuestion = { qId, answer -> state.answerQuestion(agentId, qId, answer) },
                         onLongPress = { picked = message },
                         onImageClick = { index ->
                             viewingMessage = message
@@ -335,6 +336,7 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
 private fun MessageRow(
     message: ChatMessage,
     onConfirmDraft: (TaskDraft) -> Unit,
+    onAnswerQuestion: (String, String) -> Unit,
     onLongPress: () -> Unit,
     onImageClick: (Int) -> Unit,
 ) {
@@ -349,6 +351,7 @@ private fun MessageRow(
             author = message.author,
             onConfirmDraft = onConfirmDraft,
             onImageClick = onImageClick,
+            onAnswerQuestion = onAnswerQuestion,
         )
     }
 }
@@ -367,6 +370,7 @@ internal fun MessageBodyView(
     author: Author,
     onConfirmDraft: (TaskDraft) -> Unit,
     onImageClick: (Int) -> Unit,
+    onAnswerQuestion: (String, String) -> Unit = { _, _ -> },
     speakerName: String? = null,
 ) {
     when (author) {
@@ -388,7 +392,10 @@ internal fun MessageBodyView(
             is MessageBody.Delivered -> ArtifactCard(body.artifact)
             is MessageBody.MemoryNote -> MemoryNoteCard(body.text)
             is MessageBody.Skipped -> SkippedRow(speakerName.orEmpty(), body.reason)
-            is MessageBody.Question -> Unit
+            is MessageBody.Question -> QuestionCard(
+                question = body,
+                onAnswer = { answer -> onAnswerQuestion(body.id, answer) },
+            )
         }
     }
 }
@@ -517,6 +524,7 @@ internal fun ChatMessage.copyableText(): String = when (val body = body) {
     is MessageBody.Delivered -> "${body.artifact.title}\n${body.artifact.summary}"
     is MessageBody.MemoryNote -> body.text
     is MessageBody.Skipped -> if (body.reason.isBlank()) "跳过了本轮" else "跳过了：${body.reason}"
+    is MessageBody.Question -> "提问：${body.question}${body.selectedAnswer?.let { "｜已选择：$it" }.orEmpty()}"
 }
 
 /** 输入坞上方的一条提示。选图被拒、保存成功/失败都走它。 */
