@@ -434,6 +434,40 @@ class AgentLoopTest {
             "被取消的工具不该产出一条结果——那就是 cba73a0 修的「按了停止却停不下来」",
         )
     }
+
+    @Test
+    fun toolCanOverrideDefaultTimeoutWithCustomTimeoutMillis() = runTest {
+        val longTool = object : Tool {
+            override val definition = ToolDefinition("custom_timeout", "", buildJsonObject { put("type", "object") })
+            override val timeoutMillis: Long = 200L // 覆盖为 200ms
+            override suspend fun execute(args: JsonObject, host: ToolHost): ToolResult {
+                delay(80) // 超过默认的 50ms，但低于工具自定的 200ms
+                return ToolResult(callId = "", content = "成功完成")
+            }
+        }
+
+        val loop = AgentLoop(
+            scriptedStream(
+                listOf(
+                    listOf(ChatStreamEvent.ToolCallsReady(listOf(ToolCall("c1", "custom_timeout", "{}")))),
+                    textOf("已处理"),
+                )
+            ),
+            toolTimeoutMillis = 50, // 默认较短
+        )
+
+        val outcome = loop.run(
+            endpoint = endpoint,
+            history = mutableListOf(),
+            host = testHost(),
+            registry = ToolRegistry.of(longTool),
+            onText = {},
+            onToolStart = {},
+            onToolEnd = { _, _ -> },
+        )
+
+        assertEquals(LoopOutcome.Done("已处理"), outcome)
+    }
 }
 
 /**

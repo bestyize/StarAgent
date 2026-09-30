@@ -145,6 +145,7 @@ internal class AgentLoop(
             )
 
         return try {
+            val effectiveTimeout = tool.timeoutMillis ?: toolTimeoutMillis
             // 工具超时是**给模型看的信息**，不是异常：它看到"这个操作超时了"可以
             // 换个办法或换个地址重试。
             //
@@ -154,11 +155,11 @@ internal class AgentLoop(
             // 外面在取消"——分错了就会把用户的取消吞成一条错误结果，
             // 正是 cba73a0 修掉的那个 bug。返回 null 则天然只可能是这次的超时，
             // 外面的取消仍然从下面那个 catch 原样穿出去。
-            withTimeoutOrNull(toolTimeoutMillis) {
+            withTimeoutOrNull(effectiveTimeout) {
                 tool.execute(args, host)
             } ?: ToolResult(
                 callId = call.id,
-                content = "这个操作超时了（超过 ${toolTimeoutMillis / 1000} 秒还没有结果）。" +
+                content = "这个操作超时了（超过 ${effectiveTimeout / 1000} 秒还没有结果）。" +
                     "可以换个方式再试，或者先跳过这一步。",
                 isError = true,
             )

@@ -17,6 +17,7 @@ object BuiltinTools {
         UpdateTaskTool,
         CancelTaskTool,
         WebFetchTool,
+        RequestUserInputTool,
     )
 
     /**
@@ -32,5 +33,6 @@ object BuiltinTools {
         UpdateTaskTool,
         CancelTaskTool,
         WebFetchTool,
+        RequestUserInputTool,
     )
 }
