@@ -1,5 +1,6 @@
 package com.starringbox.staragent.core.llm
 
+import com.starringbox.staragent.core.model.LlmProtocol
 import com.starringbox.staragent.core.model.MediaAsset
 import com.starringbox.staragent.core.model.ToolCall
 import com.starringbox.staragent.core.model.ToolResult
@@ -155,6 +156,70 @@ class ToolPayloadTest {
                 ),
             ),
             emitted,
+        )
+    }
+
+    /**
+     * 真正发请求时拼出来的 OpenAI `messages`：
+     * `[assistant 带 tool_calls, role:"tool" 的结果消息]`——就两条，**不多不少**。
+     *
+     * 钉住两件最容易悄悄坏掉的事：结果**没有**被顺带再渲染成一条普通 user 消息
+     * （多一条会让模型看到两份同样的结果），以及 `arguments` 仍是**字符串**。
+     */
+    @Test
+    fun openAiMessagesEmitToolResultsAsStandaloneToolMessages() {
+        val endpoint = LlmEndpoint(LlmProtocol.OpenAi, "http://x", "k", "m")
+        val history = listOf(
+            LlmTurn(
+                role = LlmRole.Assistant,
+                text = "",
+                toolCalls = listOf(ToolCall("call_1", "remember", "{\"text\":\"爱吃辣\"}")),
+            ),
+            LlmTurn(
+                role = LlmRole.User,
+                text = "",
+                toolResults = listOf(ToolResult(callId = "call_1", content = "记住了")),
+            ),
+        )
+
+        assertEquals(
+            "[{\"role\":\"assistant\",\"content\":\"\"," +
+                "\"tool_calls\":[{\"id\":\"call_1\",\"type\":\"function\"," +
+                "\"function\":{\"name\":\"remember\",\"arguments\":\"{\\\"text\\\":\\\"爱吃辣\\\"}\"}}]}," +
+                "{\"role\":\"tool\",\"tool_call_id\":\"call_1\",\"content\":\"记住了\"}]",
+            buildOpenAiMessages(endpoint, history).toString(),
+        )
+    }
+
+    /**
+     * 真正发请求时拼出来的 Anthropic `messages`：
+     * `[assistant 带 tool_use 块, **user** 消息里的 tool_result 块]`。
+     *
+     * 结果装进 **user** 消息、块用 `tool_use_id`（不是 `id`）、`input` 是**对象**（不是字符串），
+     * 以及错误结果带 `is_error:true`——这几处写反了都只有真发出去才会发现，所以钉死。
+     */
+    @Test
+    fun anthropicMessagesPutToolResultsInUserToolResultBlocks() {
+        val history = listOf(
+            LlmTurn(
+                role = LlmRole.Assistant,
+                text = "",
+                toolCalls = listOf(ToolCall("toolu_1", "remember", "{\"a\":1}")),
+            ),
+            LlmTurn(
+                role = LlmRole.User,
+                text = "",
+                toolResults = listOf(ToolResult(callId = "toolu_1", content = "记住了", isError = true)),
+            ),
+        )
+
+        assertEquals(
+            "[" +
+                "{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_1\"," +
+                "\"name\":\"remember\",\"input\":{\"a\":1}}]}," +
+                "{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_1\"," +
+                "\"content\":\"记住了\",\"is_error\":true}]}]",
+            buildAnthropicMessages(history).toString(),
         )
     }
 }

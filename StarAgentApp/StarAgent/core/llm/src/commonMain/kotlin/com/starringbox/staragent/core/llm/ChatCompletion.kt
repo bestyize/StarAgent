@@ -73,29 +73,7 @@ object ChatCompletion {
             if (endpoint.tools.isNotEmpty()) {
                 put("tools", ToolWire.renderOpenAi(endpoint.tools))
             }
-            putJsonArray("messages") {
-                endpoint.systemPrompt?.takeIf { it.isNotBlank() }?.let { prompt ->
-                    addJsonObject {
-                        put("role", "system")
-                        put("content", prompt)
-                    }
-                }
-                history.forEach { turn ->
-                    // 工具结果是**独立消息**：role 是 "tool"，不是把结果塞进 user 轮。
-                    // 这是 OpenAI 跟 Anthropic 的第二处结构差异。
-                    if (turn.toolResults.isNotEmpty()) {
-                        turn.toolResults.forEach { result ->
-                            addJsonObject { putOpenAiToolResult(result) }
-                        }
-                        return@forEach
-                    }
-                    addJsonObject {
-                        put("role", turn.role.wire())
-                        putOpenAiContent(turn)
-                        putOpenAiToolTurns(turn)
-                    }
-                }
-            }
+            put("messages", buildOpenAiMessages(endpoint, history))
         }.toString()
 
         httpClient().preparePost(url) {
@@ -166,24 +144,7 @@ object ChatCompletion {
                 put("tools", ToolWire.renderAnthropic(endpoint.tools))
             }
             endpoint.systemPrompt?.takeIf { it.isNotBlank() }?.let { put("system", it) }
-            putJsonArray("messages") {
-                history.forEach { turn ->
-                    if (turn.toolResults.isNotEmpty()) {
-                        // Anthropic 的工具结果装在 **user 消息**的 tool_result 块里，
-                        // 跟 OpenAI 的独立 role:"tool" 消息不是一回事
-                        addJsonObject {
-                            put("role", "user")
-                            putAnthropicToolBlocks(turn)
-                        }
-                        return@forEach
-                    }
-                    addJsonObject {
-                        put("role", turn.role.wire())
-                        putAnthropicContent(turn)
-                        putAnthropicToolBlocks(turn)
-                    }
-                }
-            }
+            put("messages", buildAnthropicMessages(history))
         }.toString()
 
         httpClient().preparePost(url) {
@@ -271,6 +232,67 @@ internal suspend fun handleAnthropicEvent(
     }
     return false
 }
+
+/**
+ * 拼 OpenAI 的 `messages` 数组。从 [ChatCompletion.streamOpenAi] 的请求体里抽出来，
+ * 理由同 [handleAnthropicEvent]：藏在 Ktor 的 `execute { }` 之前、又要发真请求才能验证，
+ * 而这里恰恰是**两家回喂位置差异**的所在（结果走独立 `role:"tool"` 消息），最该被钉住。
+ *
+ * `system` 取 [LlmEndpoint.systemPrompt]；其余按 [history] 顺序渲染。
+ */
+internal fun buildOpenAiMessages(endpoint: LlmEndpoint, history: List<LlmTurn>): JsonArray =
+    buildJsonArray {
+        endpoint.systemPrompt?.takeIf { it.isNotBlank() }?.let { prompt ->
+            addJsonObject {
+                put("role", "system")
+                put("content", prompt)
+            }
+        }
+        history.forEach { turn ->
+            // 工具结果是**独立消息**：role 是 "tool"，不是把结果塞进 user 轮。
+            // 这是 OpenAI 跟 Anthropic 的第二处结构差异。
+            if (turn.toolResults.isNotEmpty()) {
+                turn.toolResults.forEach { result ->
+                    addJsonObject { putOpenAiToolResult(result) }
+                }
+                // continue：这条 turn 到此为止，**不再**顺带渲染成普通 user 消息。
+                // 少这个 return，同一批结果会既发 role:"tool" 又发 user，模型会看到两份。
+                return@forEach
+            }
+            addJsonObject {
+                put("role", turn.role.wire())
+                putOpenAiContent(turn)
+                putOpenAiToolTurns(turn)
+            }
+        }
+    }
+
+/**
+ * 拼 Anthropic 的 `messages` 数组。与 OpenAI 版最大的差别：工具结果不在这里单独成消息，
+ * 而是装进一条 **user 消息**的 `tool_result` 块里（见 [putAnthropicToolBlocks]）。
+ *
+ * Anthropic 的 `system` 是**顶层字段**，不在 messages 里，所以这里只看 [history]。
+ */
+internal fun buildAnthropicMessages(history: List<LlmTurn>): JsonArray =
+    buildJsonArray {
+        history.forEach { turn ->
+            if (turn.toolResults.isNotEmpty()) {
+                // Anthropic 的工具结果装在 **user 消息**的 tool_result 块里，
+                // 跟 OpenAI 的独立 role:"tool" 消息不是一回事。
+                // 这里同样要 return：结果轮不再顺带渲染成普通消息。
+                addJsonObject {
+                    put("role", "user")
+                    putAnthropicToolBlocks(turn)
+                }
+                return@forEach
+            }
+            addJsonObject {
+                put("role", turn.role.wire())
+                putAnthropicContent(turn)
+                putAnthropicToolBlocks(turn)
+            }
+        }
+    }
 
 /** 带用户可读文案的协议层错误，直接展示给用户。 */
 class LlmHttpException(val userMessage: String) : Exception(userMessage)
