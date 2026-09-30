@@ -38,8 +38,9 @@ StarAgent/
 │   ├── designsystem/        主题、图标、通用组件、导航契约
 │   ├── platform/            平台能力层：本地存储 / 选图保存 / 语音
 │   │                        （内部分包，三端实现各在自己的源集里）
-│   ├── llm/                 模型接入：协议实现 + 流式解析（不依赖 Compose）
-│   ├── data/                应用状态、模型服务配置、对话流
+│   ├── llm/                 模型接入：协议实现 + 流式解析 + 工具 wire 渲染（不依赖 Compose）
+│   ├── tools/               工具执行层：契约、注册表、内置工具（只依赖 core:model）
+│   ├── data/                应用状态、模型服务配置、对话流、Agent 循环
 │   └── bootstrap/           装配层：启动时把各端的平台能力一次装起来
 │
 ├── feature/                 功能层：一个模块 = 一块完整功能
@@ -69,8 +70,9 @@ StarAgent/
                                ▼
                     ┌────────────────────┐
                     │  core:designsystem │  主题 / 图标 / 组件 / 导航契约
-                    │      core:data     │  状态 / 模型配置 / 对话流
-                    │      core:llm      │  协议实现 + 流式解析
+                    │      core:data     │  状态 / 模型配置 / 对话流 / Agent 循环
+                    │     core:tools     │  工具契约 / 注册表 / 内置工具
+                    │      core:llm      │  协议实现 + 流式解析 + 工具 wire 渲染
                     │    core:platform   │  存储 / 选图保存 / 语音
                     │     core:model     │  领域模型（零平台依赖）
                     └────────────────────┘
