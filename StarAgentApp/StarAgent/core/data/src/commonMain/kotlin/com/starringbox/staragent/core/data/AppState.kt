@@ -773,36 +773,36 @@ class AppState(
         conversation.add(placeholder)
         val index = conversation.lastIndex
 
-        // 循环自己消费 ToolCallsReady：工具调用不再在这里分发，请求 → 调工具 → 回喂
-        // 全在 AgentLoop 里。它拿的是一份**可变副本**——回喂要往历史里追加轮次，
-        // 拿 historyFor 每次现拼的那份来改没有意义。
-        //
-        // stream 走构造注入的那一个而不是直接写 ChatCompletion.stream：类文档里那条
-        // "测试能塞假流"的缝得留着，否则这个文件里的编排就再也测不了了。
-        val loop = AgentLoop(stream = stream)
-        val host = ToolHost(
-            memory = AppMemoryPort(this),
-            tasks = AppTaskPort(this),
-            web = webPort,
-            agentId = agentId,
-            conversationKey = agentId,
-        )
-
-        busy[agentId] = true
-        val buffer = StringBuilder()
-        var outcome: LoopOutcome
-
         // 执行卡片是**一张会变的卡**，不是一步一个气泡：记下它在对话里的位置，
         // 之后每有进展就重写那一条——和上面流式占位符是同一个手法。
         val stepCalls = mutableListOf<ToolCall>()
         val stepResults = mutableListOf<ToolResult>()
         var executionIndex = -1
 
-        // 这一轮有没有拿到过外部来源的内容（网页正文等）。有的话本轮不写记忆，
-        // 理由见下面 addMemory 那一段。
-        var sawExternalContext = false
+        // 这一轮有没有拿到过外部来源的内容（网页正文等）。
+        //
+        // 它是**本次调用的局部量**，所以天然不会泄漏到下一轮——不需要额外的复位，
+        // 端口那个 lambda 每次读的也是这一份（闭包捕获的是变量，不是快照）。
+        // 别把它挪成字段：一旦共享，一轮的外部抓取会把下一轮的正常记忆一起静默掐掉，
+        // 而且绝不报错，只表现为"它怎么不记得了"。
+        var externalFetchThisTurn = false
+
+        busy[agentId] = true
+        val buffer = StringBuilder()
+        var outcome: LoopOutcome
 
         try {
+            val loop = AgentLoop(stream = stream)
+            val host = ToolHost(
+                // 记忆的两条路走同一道闸门：文本块那条在下面直接用这个变量，
+                // 工具那条在端口里读它。真值判定统一成"读到过外部内容"（与网页相反）。
+                memory = AppMemoryPort(this) { externalFetchThisTurn },
+                tasks = AppTaskPort(this),
+                web = webPort,
+                agentId = agentId,
+                conversationKey = agentId,
+            )
+
             outcome = loop.run(
                 endpoint = endpoint,
                 history = historyFor(agentId).toMutableList(),
@@ -833,8 +833,9 @@ class AppState(
                 },
                 onToolEnd = { _, result ->
                     stepResults += result
-                    // 只要有一件外部来源的结果，整轮就都不写记忆：见 addMemory 处的说明。
-                    if (result.externalContext) sawExternalContext = true
+                    // 只**累积**（取或），不写成 `= result.externalContext`：一轮里多个结果时
+                    // 后者是"最后一个说了算"，取或才是"只要有一个"。要用的属性只增不减。
+                    if (result.externalContext) externalFetchThisTurn = true
                     if (executionIndex >= 0) {
                         conversation[executionIndex] = conversation[executionIndex].copy(
                             body = MessageBody.Execution(executionStepsFor(stepCalls, stepResults)),
@@ -920,8 +921,10 @@ class AppState(
         // 模型可能把同一轮里被诱导出的话讲成"用户说的"，于是被当成事实记下来，
         // 而用户永远不会知道。同轮有一次不可信的外部抓取，本轮记忆就整轮不作数——
         // 宁可少记一次，也不要把别人写的文本沉淀成关于用户的"事实"。
-        //（正文里的记忆块照旧被剥掉，只是不落库、也不弹卡片。）
-        if (!sawExternalContext) {
+        //
+        //（这里堵的是**文本块**那条写记忆的路；模型改用 `remember` 工具写的那条，
+        //  由 AppMemoryPort 读同一个标志来堵。两条读同一个来源，才是一道闸门。）
+        if (!externalFetchThisTurn) {
             memory?.items?.forEach { item ->
                 addMemory(agent.id, item.category, item.text)
                 conversation.add(

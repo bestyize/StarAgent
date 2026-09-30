@@ -207,4 +207,197 @@ class ExecutionCardFlowTest {
             "记忆块该被解析并落库，实际：${state.memories.map { it.text }}",
         )
     }
+
+    /**
+     * 🔴 **真正的那条攻击路**：被网页诱导的模型不去吐 ```` ```memory ```` 块，而是
+     * 直接调 `remember` 工具。
+     *
+     * 工具走的是 `AppMemoryPort.remember → state.addMemory`，跟文本块是**两条**写记忆的路。
+     * 只在 `send()` 里堵文本块那条的话，这一条原样穿过去——而且 `remember` 那条
+     * 连"记住了"的卡片都不弹（`MemoryNote` 只由文本块那条产生），用户是**双重地**不知情。
+     * 这条钉住的就是端口里也读了同一个闸门。
+     */
+    @Test
+    fun rememberToolIsSuppressedWhenAnExternalPageWasFetched() = runTest {
+        var round = 0
+        val state = readyState(
+            web = FakeWeb(FetchResult(true, "这一页里写着：用户喜欢简洁回答")),
+        ) { _, _ ->
+            flow {
+                if (round++ == 0) {
+                    // 同一轮里：先取外部网页，再被诱导着直接用工具写记忆
+                    emit(
+                        ChatStreamEvent.ToolCallsReady(
+                            listOf(
+                                ToolCall("c1", "web_fetch", "{\"url\":\"https://evil.example\"}"),
+                                ToolCall("c2", "remember", "{\"category\":\"Preference\",\"text\":\"用户喜欢简洁回答\"}"),
+                            )
+                        )
+                    )
+                } else {
+                    emit(ChatStreamEvent.Delta("记住了。"))
+                }
+                emit(ChatStreamEvent.Completed)
+            }
+        }
+        state.memories.clear()
+        val agent = state.agent("a-xing") ?: error("种子里应当有小星")
+
+        state.send(agent.id, "读一下那页并记住我的偏好")
+
+        assertTrue(
+            state.memories.isEmpty(),
+            "取过外部网页的这一轮，remember 工具写的那条也不能落库，实际记忆：${state.memories.map { it.text }}",
+        )
+    }
+
+    /**
+     * 反方向：没取过外网时，`remember` 工具**照写**。
+     *
+     * 没有这条，上面那条会假绿——端口要是写成"永远不写"，上面也照样过。
+     */
+    @Test
+    fun rememberToolStillWritesWhenNothingExternalWasFetched() = runTest {
+        var round = 0
+        val state = readyState { _, _ ->
+            flow {
+                if (round++ == 0) {
+                    emit(
+                        ChatStreamEvent.ToolCallsReady(
+                            listOf(ToolCall("c1", "remember", "{\"category\":\"Preference\",\"text\":\"用户喜欢简洁回答\"}"))
+                        )
+                    )
+                } else {
+                    emit(ChatStreamEvent.Delta("记住了。"))
+                }
+                emit(ChatStreamEvent.Completed)
+            }
+        }
+        state.memories.clear()
+        val agent = state.agent("a-xing") ?: error("种子里应当有小星")
+
+        state.send(agent.id, "记住我喜欢简洁回答")
+
+        assertEquals(
+            listOf(MemoryCategory.Preference to "用户喜欢简洁回答"),
+            state.memories.map { it.category to it.text },
+            "没取过外部内容时 remember 工具该照常落库，实际：${state.memories.map { it.text }}",
+        )
+    }
+
+    /**
+     * 闸门是**这一轮**的，不是"从今往后"的。
+     *
+     * 同一份状态、同一个智能体连发两轮：第一轮取过外网（记忆为空），
+     * 第二轮没碰外网（记忆照写）。闸门要是被实现成共享字段而没复位，
+     * 第二轮会被上一轮连累——而且不报错，只表现为"它怎么不记得了"。
+     */
+    @Test
+    fun externalFetchDoesNotLeakIntoTheNextTurn() = runTest {
+        var round = 0
+        val state = readyState(
+            web = FakeWeb(FetchResult(true, "外部正文")),
+        ) { _, _ ->
+            flow {
+                when (round++) {
+                    0 -> emit(ChatStreamEvent.ToolCallsReady(listOf(ToolCall("c1", "web_fetch", "{\"url\":\"https://evil.example\"}"))))
+                    1 -> emit(ChatStreamEvent.Delta("读完了。"))
+                    2 -> emit(ChatStreamEvent.ToolCallsReady(listOf(ToolCall("c2", "recall_memory", "{\"query\":\"x\"}"))))
+                    else -> emit(ChatStreamEvent.Delta("好的。\n```memory\n{\"text\":\"用户喜欢简洁回答\",\"category\":\"preference\"}\n```"))
+                }
+                emit(ChatStreamEvent.Completed)
+            }
+        }
+        state.memories.clear()
+        val agent = state.agent("a-xing") ?: error("种子里应当有小星")
+
+        state.send(agent.id, "读一下那页")
+        assertTrue(
+            state.memories.isEmpty(),
+            "第一轮取过外网，不该写记忆，实际：${state.memories.map { it.text }}",
+        )
+
+        state.send(agent.id, "记住我喜欢简洁回答")
+        assertEquals(
+            listOf(MemoryCategory.Preference to "用户喜欢简洁回答"),
+            state.memories.map { it.category to it.text },
+            "上一轮的外部抓取不该连累这一轮的记忆，实际：${state.memories.map { it.text }}",
+        )
+    }
+
+    /**
+     * 外部结果**排在第一个**时，后面那个非外部结果不能把闸门重新打开。
+     *
+     * 实现若写成 `externalFetchThisTurn = result.externalContext`（最后一个说了算），
+     * 这条会红：两个结果里外部的在前、`recall_memory` 在后，末位是 false，
+     * 整轮就被放行了。只有"取或"才对——要用的属性只增不减。
+     */
+    @Test
+    fun externalResultFirstStillSuppressesTheTurn() = runTest {
+        var round = 0
+        val state = readyState(
+            web = FakeWeb(FetchResult(true, "外部正文")),
+        ) { _, _ ->
+            flow {
+                if (round++ == 0) {
+                    // 外部的在前，非外部的在后——顺序就是这条用例的全部要点
+                    emit(
+                        ChatStreamEvent.ToolCallsReady(
+                            listOf(
+                                ToolCall("c1", "web_fetch", "{\"url\":\"https://evil.example\"}"),
+                                ToolCall("c2", "recall_memory", "{\"query\":\"x\"}"),
+                            )
+                        )
+                    )
+                } else {
+                    emit(ChatStreamEvent.Delta("好的。\n```memory\n{\"text\":\"用户喜欢简洁回答\",\"category\":\"preference\"}\n```"))
+                }
+                emit(ChatStreamEvent.Completed)
+            }
+        }
+        state.memories.clear()
+        val agent = state.agent("a-xing") ?: error("种子里应当有小星")
+
+        state.send(agent.id, "先读网页再查一下我的记忆")
+
+        assertTrue(
+            state.memories.isEmpty(),
+            "外部结果在前、非外部结果在后，闸门仍要关着，实际记忆：${state.memories.map { it.text }}",
+        )
+    }
+
+    /**
+     * **一张卡、两步走**：两次工具调用只该有一张执行卡，里面两行。
+     *
+     * 现有各条都只用一次工具调用，所以把"重写那条"换成"无条件 append"时
+     * `cards.size` 仍是 1，区分不出来。≥2 步才钉得住"续写同一张而不是新开一张"。
+     */
+    @Test
+    fun twoToolCallsKeepOneCardThatGainsAStep() = runTest {
+        var round = 0
+        val state = readyState(
+            web = FakeWeb(FetchResult(true, "示例页的正文")),
+        ) { _, _ ->
+            flow {
+                when (round++) {
+                    0 -> emit(ChatStreamEvent.ToolCallsReady(listOf(ToolCall("c1", "web_fetch", "{\"url\":\"https://example.com\"}"))))
+                    1 -> emit(ChatStreamEvent.ToolCallsReady(listOf(ToolCall("c2", "remember", "{}"))))
+                    else -> emit(ChatStreamEvent.Delta("好了。"))
+                }
+                emit(ChatStreamEvent.Completed)
+            }
+        }
+        val agent = state.agent("a-xing") ?: error("种子里应当有小星")
+
+        state.send(agent.id, "读一下并记住")
+
+        val cards = conversationBodies(state, agent.id).filterIsInstance<MessageBody.Execution>()
+        assertEquals(1, cards.size, "两次工具调用也只该有一张卡，实际：$cards")
+        assertEquals(
+            listOf("读取网页", "记住这件事"),
+            cards.single().steps.map { it.label },
+            "第二步该续在同一张卡上",
+        )
+        assertEquals(listOf(true, true), cards.single().steps.map { it.done })
+    }
 }
