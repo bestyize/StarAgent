@@ -25,8 +25,22 @@ class FakeMemoryPort(private val existing: List<MemoryItem> = emptyList()) : Mem
     }
 }
 
+/**
+ * 一次 create 调用的**完整**入参。
+ *
+ * 只记 title 的话，"参数到底有没有被正确映射"就测不出来——把 recurrence 和
+ * schedule 写反、或者干脆硬编码成 Daily，断言照样过。字段要全记下来。
+ */
+data class CreateCall(
+    val agentId: String,
+    val title: String,
+    val recurrence: Recurrence,
+    val scheduleLabel: String,
+    val note: String?,
+)
+
 class FakeTaskPort : TaskPort {
-    val created = mutableListOf<String>()
+    val createCalls = mutableListOf<CreateCall>()
     var nextId = "task-1"
     var updateResult = true
     var cancelResult = true
@@ -39,7 +53,7 @@ class FakeTaskPort : TaskPort {
         scheduleLabel: String,
         note: String?,
     ): String {
-        created += title
+        createCalls += CreateCall(agentId, title, recurrence, scheduleLabel, note)
         return nextId
     }
 

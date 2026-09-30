@@ -63,6 +63,16 @@ class MemoryToolsTest {
     }
 
     @Test
+    fun rememberRejectsMissingCategory() = runTest {
+        // 缺 category 走的是另一条分支（字段整个没有，不是值不认识），两处都得拦住
+        val memory = FakeMemoryPort()
+        val result = RememberTool.execute(args("{\"text\":\"爱吃辣\"}"), testHost(memory = memory))
+
+        assertTrue(result.isError)
+        assertEquals(emptyList(), memory.written)
+    }
+
+    @Test
     fun recallPassesQueryThroughAndFormatsHits() = runTest {
         val memory = FakeMemoryPort(
             listOf(MemoryItem("m1", "a-xing", MemoryCategory.Preference, "爱吃辣"))
@@ -92,7 +102,11 @@ class TaskToolsTest {
             testHost(tasks = tasks),
         )
 
-        assertEquals(listOf("看新闻"), tasks.created)
+        // 每个字段都要查：参数互换或硬编码成 Daily 都会让只查 title 的断言照样过
+        assertEquals(
+            listOf(CreateCall("a-xing", "看新闻", Recurrence.Daily, "每天 09:00", null)),
+            tasks.createCalls,
+        )
         assertTrue(result.content.contains("task-1"), "要把 id 还给模型，它才能接着引用")
     }
 
@@ -104,7 +118,7 @@ class TaskToolsTest {
             testHost(tasks = tasks),
         )
         assertTrue(result.isError)
-        assertEquals(emptyList(), tasks.created)
+        assertEquals(emptyList(), tasks.createCalls)
     }
 
     @Test
@@ -125,5 +139,23 @@ class TaskToolsTest {
             testHost(tasks = tasks),
         )
         assertFalse(result.isError)
+        assertEquals("只看 AI 方向", tasks.createCalls.single().note)
+    }
+
+    @Test
+    fun createMapsBlankNoteToNull() = runTest {
+        // 空白 note 要落成 null 而不是空串——否则任务详情页会显示一片空白说明
+        val tasks = FakeTaskPort()
+        val result = CreateTaskTool.execute(
+            args("{\"title\":\"看新闻\",\"recurrence\":\"Weekly\",\"schedule\":\"每周一 09:00\"," +
+                "\"note\":\"   \"}"),
+            testHost(tasks = tasks),
+        )
+
+        assertFalse(result.isError)
+        assertEquals(
+            listOf(CreateCall("a-xing", "看新闻", Recurrence.Weekly, "每周一 09:00", null)),
+            tasks.createCalls,
+        )
     }
 }
