@@ -35,5 +35,10 @@ kotlin {
             // 用它序列化的上层模块要看得到 KSerializer 这些类型
             api(libs.kotlinx.serialization.json)
         }
+        commonTest.dependencies {
+            implementation(libs.kotlin.test)
+            // 测试要构造 JsonObject 形状的 inputSchema，序列化 JSON 在测试里直接用到
+            implementation(libs.kotlinx.serialization.json)
+        }
     }
 }
