@@ -241,6 +241,51 @@ class TaskRunsWithToolsTest {
     }
 
     /**
+     * 🔴 **两位成员各调一次工具，就该有两张执行卡**，各挂各的名下。
+     *
+     * 判据是**卡片张数**：`executionIndex` 要是被写成共享的（比如放在 `speakOnce` 外面、
+     * 或误用一个成员级的常量），第二位会去改写第一位那张卡，于是一张卡里出现两次"读取网页"、
+     * 张数变成 1。成员是轮流发言的，各人的工具活动必须看得出是各人干的。
+     */
+    @Test
+    fun eachSpeakingMemberGetsItsOwnExecutionCard() = runTest {
+        val perMember = mutableMapOf<String, Int>()
+        val state = readyState(web = FakeWeb(FetchResult(true, "示例页的正文"))) { endpoint, _ ->
+            val who = speakerOf(endpoint.systemPrompt)
+            val n = perMember.getOrDefault(who, 0)
+            perMember[who] = n + 1
+            flow {
+                // 小星和工作助手各调一次工具；英语老师不调，照常说话。
+                if ((who == "小星" || who == "工作助手") && n == 0) {
+                    emit(ChatStreamEvent.ToolCallsReady(listOf(ToolCall("c1", "web_fetch", "{\"url\":\"https://example.com\"}"))))
+                } else {
+                    emit(ChatStreamEvent.Delta("我说两句。"))
+                }
+                emit(ChatStreamEvent.Completed)
+            }
+        }
+
+        state.sendToGroup("g-1", "你们各自查一下资料")
+
+        val cards = state.messagesOfGroup("g-1").filter {
+            it.body is com.starringbox.staragent.core.model.MessageBody.Execution
+        }
+        assertEquals(
+            listOf("a-xing", "a-work"),
+            cards.map { it.speakerAgentId },
+            "两位动手的成员各留一张卡，且各自挂在自己名下，实际卡：${cards.map { it.speakerAgentId }}",
+        )
+        cards.forEach { card ->
+            val steps = (card.body as com.starringbox.staragent.core.model.MessageBody.Execution).steps
+            assertEquals(
+                listOf("读取网页"),
+                steps.map { it.label },
+                "每位成员那张卡里只该有自己那一步——出现两行说明两个人写进了同一张卡",
+            )
+        }
+    }
+
+    /**
      * 群聊里也守同一道闸门：成员这一轮取过外部网页，他自己写的记忆不算数。
      *
      * （闸门是**逐成员、逐轮**的局部量——别人取过网页不该连累这一位。）
