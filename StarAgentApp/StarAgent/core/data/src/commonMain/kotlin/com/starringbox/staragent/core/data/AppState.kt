@@ -9,6 +9,7 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.starringbox.staragent.core.data.ports.AppMemoryPort
 import com.starringbox.staragent.core.data.ports.AppTaskPort
+import com.starringbox.staragent.core.data.ports.AppUserInputPort
 import com.starringbox.staragent.core.data.ports.AppWebPort
 import com.starringbox.staragent.core.llm.ChatCompletion
 import com.starringbox.staragent.core.llm.ChatStreamEvent
@@ -89,6 +90,7 @@ class AppState(
     val channels = mutableStateListOf<Channel>()
     val providers = mutableStateListOf<ModelProvider>()
     val groups = mutableStateListOf<AgentGroup>()
+    val userInputPort = AppUserInputPort(this)
 
     private val conversations = mutableStateMapOf<String, SnapshotStateList<ChatMessage>>()
     private val busy = mutableStateMapOf<String, Boolean>()
@@ -809,6 +811,7 @@ class AppState(
                 memory = AppMemoryPort(this) { externalFetchThisTurn },
                 tasks = AppTaskPort(this),
                 web = webPort,
+                userInput = userInputPort,
                 agentId = agentId,
                 conversationKey = agentId,
             )
@@ -970,6 +973,60 @@ class AppState(
         persistState()
     }
 
+    /** 向指定智能体会话追加一张待作答的提问卡片。 */
+    fun postQuestion(
+        agentId: String,
+        questionId: String,
+        question: String,
+        options: List<String>,
+        placeholder: String?,
+    ) {
+        val conversation = messagesOf(agentId)
+        conversation.add(
+            ChatMessage(
+                id = nextId("m"),
+                author = Author.Agent,
+                body = MessageBody.Question(
+                    id = questionId,
+                    question = question,
+                    options = options,
+                    placeholder = placeholder,
+                    selectedAnswer = null,
+                ),
+                timeLabel = "刚刚",
+            )
+        )
+    }
+
+    /**
+     * 用户在提问卡片上完成了单选或输入提交。
+     *
+     * 1. 唤醒挂起的工具执行协程；
+     * 2. 将消息卡片更新为已作答只读态；
+     * 3. 触发持久化。
+     */
+    fun answerQuestion(agentId: String, questionId: String, answer: String): Boolean {
+        val completed = userInputPort.submitAnswer(questionId, answer)
+        if (!completed) return false
+
+        val conversation = messagesOf(agentId)
+        val index = conversation.indexOfFirst {
+            (it.body as? MessageBody.Question)?.id == questionId
+        }
+        if (index >= 0) {
+            val old = conversation[index].body as MessageBody.Question
+            conversation[index] = conversation[index].copy(
+                body = old.copy(selectedAnswer = answer)
+            )
+        }
+        persistState()
+        return true
+    }
+
+    fun cancelQuestion(questionId: String) {
+        userInputPort.cancelQuestion(questionId)
+    }
+
     // ── 群组讨论 ────────────────────────────────
 
     /**
@@ -1096,6 +1153,7 @@ class AppState(
                 memory = AppMemoryPort(this) { externalFetchThisTurn },
                 tasks = AppTaskPort(this),
                 web = webPort,
+                userInput = userInputPort,
                 // 记忆与任务都是**按智能体**隔离的，所以是成员自己的 id，不是群 id——
                 // 用群 id 的话群里每个人会共享同一份记忆和任务清单，那显然是错的。
                 agentId = member.id,
@@ -1346,6 +1404,7 @@ class AppState(
                 memory = AppMemoryPort(this) { externalFetchThisTurn },
                 tasks = AppTaskPort(this),
                 web = webPort,
+                userInput = userInputPort,
                 agentId = task.agentId,
                 conversationKey = task.agentId,
             )
