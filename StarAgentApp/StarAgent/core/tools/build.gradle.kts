@@ -33,6 +33,8 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+            // 工具的 execute 是挂起函数，得在测试里驱动协程
+            implementation(libs.kotlinx.coroutines.test)
         }
     }
 }
