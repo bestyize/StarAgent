@@ -132,13 +132,18 @@ object ListTasksTool : Tool {
  *
  * 只给 title 和 schedule 两个可改项：频率改了要重排期、笔记改了意义不大，
  * 而这两样是用户最常说的（"改成晚上十点""改叫别的名字"）。
+ * **重复方式只能通过 cancel + create 换**——换频率要重排期，
+ * 让模型自己拼一个 recurrence 进来会静默失效，所以在描述里说清。
  */
 object UpdateTaskTool : Tool {
 
     override val definition = ToolDefinition(
         name = "update_task",
-        description = "改一个已经托管的任务的名称或执行时间。" +
-            "改之前先用 list_tasks 拿到它的 id。用户说「改成…」「不要每天了，改成每周」时用这个。",
+        description = "改一个已经托管的任务的名称，或者执行时间。" +
+            "改之前先用 list_tasks 拿到它的 id。用户说「改个名字」「改成晚上十点」时用这个。" +
+            "**这个只能改名字和时间，改不了重复方式**（每天↔每周这种）。" +
+            "用户要换频率时，别把新频率塞进 schedule——那只会改掉显示的时间、频率照旧。" +
+            "正确做法是先 cancel_task 再用 create_task 按新频率重新建一个。",
         inputSchema = buildJsonObject {
             put("type", "object")
             putJsonObject("properties") {

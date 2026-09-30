@@ -39,8 +39,25 @@ data class CreateCall(
     val note: String?,
 )
 
+/** 一次 update 调用的**完整**入参。理由同 [CreateCall]：只记 id 的话两个字段写反照样过。 */
+data class UpdateCall(
+    val agentId: String,
+    val id: String,
+    val title: String?,
+    val scheduleLabel: String?,
+)
+
+/** 一次 cancel 调用的**完整**入参。 */
+data class CancelCall(
+    val agentId: String,
+    val id: String,
+)
+
 class FakeTaskPort : TaskPort {
     val createCalls = mutableListOf<CreateCall>()
+    val updateCalls = mutableListOf<UpdateCall>()
+    val cancelCalls = mutableListOf<CancelCall>()
+    val listedAgentIds = mutableListOf<String>()
     var nextId = "task-1"
     var updateResult = true
     var cancelResult = true
@@ -57,12 +74,25 @@ class FakeTaskPort : TaskPort {
         return nextId
     }
 
-    override suspend fun list(agentId: String): List<TaskSummary> = listed
+    override suspend fun list(agentId: String): List<TaskSummary> {
+        listedAgentIds += agentId
+        return listed
+    }
 
-    override suspend fun update(agentId: String, id: String, title: String?, scheduleLabel: String?) =
-        updateResult
+    override suspend fun update(
+        agentId: String,
+        id: String,
+        title: String?,
+        scheduleLabel: String?,
+    ): Boolean {
+        updateCalls += UpdateCall(agentId, id, title, scheduleLabel)
+        return updateResult
+    }
 
-    override suspend fun cancel(agentId: String, id: String) = cancelResult
+    override suspend fun cancel(agentId: String, id: String): Boolean {
+        cancelCalls += CancelCall(agentId, id)
+        return cancelResult
+    }
 }
 
 class FakeWebPort(var result: FetchResult = FetchResult(true, "正文")) : WebPort {

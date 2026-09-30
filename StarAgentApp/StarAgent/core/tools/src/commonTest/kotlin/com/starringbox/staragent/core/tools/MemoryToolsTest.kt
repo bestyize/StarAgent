@@ -189,6 +189,8 @@ class TaskToolsTest {
         }
         val result = ListTasksTool.execute(args("{}"), testHost(tasks = tasks))
 
+        // agentId 的检查在端口实现里，工具唯一的职责就是把它原样传下去
+        assertEquals(listOf("a-xing"), tasks.listedAgentIds)
         assertTrue(result.content.contains("task-7"))
         assertTrue(result.content.contains("看新闻"))
         assertTrue(result.content.contains("明天 09:00"))
@@ -201,24 +203,41 @@ class TaskToolsTest {
             args("{\"id\":\"task-1\",\"title\":\"新名\",\"schedule\":\"每天 21:00\"}"),
             testHost(tasks = tasks),
         )
+
+        // 两个字段都查：只查 isError 的话，title 和 schedule 互换照样过
+        assertEquals(
+            listOf(UpdateCall("a-xing", "task-1", "新名", "每天 21:00")),
+            tasks.updateCalls,
+        )
         assertFalse(result.isError)
     }
 
     @Test
     fun updateAllowsChangingOnlyTheSchedule() = runTest {
         // 改时间是最常见的用法，不该强制带 title
+        val tasks = FakeTaskPort()
         val result = UpdateTaskTool.execute(
             args("{\"id\":\"task-1\",\"schedule\":\"每天 21:00\"}"),
-            testHost(),
+            testHost(tasks = tasks),
+        )
+
+        // 没传的 title 必须落成 null（"保持原样"），不能填成空串
+        assertEquals(
+            listOf(UpdateCall("a-xing", "task-1", null, "每天 21:00")),
+            tasks.updateCalls,
         )
         assertFalse(result.isError)
     }
 
     @Test
     fun updateRequiresAtLeastOneFieldToChange() = runTest {
-        val result = UpdateTaskTool.execute(args("{\"id\":\"task-1\"}"), testHost())
+        val tasks = FakeTaskPort()
+        val result = UpdateTaskTool.execute(args("{\"id\":\"task-1\"}"), testHost(tasks = tasks))
+
         assertTrue(result.isError)
         assertTrue(result.content.contains("改什么"))
+        // 一个字段都没给时不该真的调端口——端口那边无从表达"什么都不改"
+        assertEquals(emptyList(), tasks.updateCalls)
     }
 
     @Test
@@ -235,12 +254,28 @@ class TaskToolsTest {
 
     @Test
     fun cancelReportsSuccess() = runTest {
-        val result = CancelTaskTool.execute(args("{\"id\":\"task-1\"}"), testHost())
+        val tasks = FakeTaskPort()
+        val result = CancelTaskTool.execute(args("{\"id\":\"task-1\"}"), testHost(tasks = tasks))
+
+        assertEquals(listOf(CancelCall("a-xing", "task-1")), tasks.cancelCalls)
         assertFalse(result.isError)
     }
 
     @Test
+    fun cancelReportsWhenTheTaskIsGone() = runTest {
+        // 和 update 同一条口径：端口说没找到，就把 id 回给模型让它去 list_tasks
+        val tasks = FakeTaskPort().apply { cancelResult = false }
+        val result = CancelTaskTool.execute(args("{\"id\":\"task-9\"}"), testHost(tasks = tasks))
+
+        assertTrue(result.isError)
+        assertTrue(result.content.contains("task-9"))
+    }
+
+    @Test
     fun cancelRequiresId() = runTest {
-        assertTrue(CancelTaskTool.execute(args("{}"), testHost()).isError)
+        val tasks = FakeTaskPort()
+        assertTrue(CancelTaskTool.execute(args("{}"), testHost(tasks = tasks)).isError)
+        // 缺 id 时不该拿着空串去调端口
+        assertEquals(emptyList(), tasks.cancelCalls)
     }
 }
