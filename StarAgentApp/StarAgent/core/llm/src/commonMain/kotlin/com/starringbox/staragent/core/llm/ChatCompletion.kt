@@ -243,7 +243,7 @@ internal fun JsonObjectBuilder.putAnthropicContent(turn: LlmTurn) {
     }
 }
 
-private fun JsonElement?.asTextOrNull(): String? {
+internal fun JsonElement?.asTextOrNull(): String? {
     if (this == null || this is JsonNull) return null
     val primitive = this as? JsonPrimitive ?: return null
     return primitive.content
