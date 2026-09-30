@@ -50,6 +50,8 @@ include(":core:data")
 // bootstrap    装配层：启动时把各端的平台能力一次装起来
 //              （各端实现在 core:platform 里，这里只管"什么时候装"）
 include(":core:bootstrap")
+// tools  工具执行：契约 + 注册表 + 内置工具（只依赖 core:model）
+include(":core:tools")
 
 // ── 公共层 ─────────────────────────────────────
 include(":common:apptheme")
