@@ -31,4 +31,10 @@ internal fun HttpClientConfig<*>.applyStarAgentDefaults() {
 /** 复用同一个客户端，避免每次对话都重建连接池。 */
 private val sharedClient: HttpClient by lazy { newPlatformHttpClient() }
 
-internal fun httpClient(): HttpClient = sharedClient
+/**
+ * 建一个平台对的 HTTP 客户端。
+ *
+ * 本来是 internal，现在公开给 core:data 用（WebPort 的实现需要它）。
+ * 引擎按平台分（CIO / OkHttp / Darwin），三端已经配好，没理由再造一个。
+ */
+fun httpClient(): HttpClient = sharedClient

@@ -37,6 +37,7 @@ import com.starringbox.staragent.core.model.Skill
 import com.starringbox.staragent.core.model.SpeechProvider
 import com.starringbox.staragent.core.model.TaskDraft
 import com.starringbox.staragent.core.model.TaskStatus
+import com.starringbox.staragent.core.tools.ports.TaskSummary
 import com.starringbox.staragent.core.model.describeMoment
 import com.starringbox.staragent.core.model.describeNextRun
 import com.starringbox.staragent.core.model.nextRunAtFor
@@ -363,6 +364,35 @@ class AppState(
     fun tasksOf(agentId: String): List<AgentTask> = tasks.filter { it.agentId == agentId }
 
     fun memoriesOf(agentId: String): List<MemoryItem> = memories.filter { it.agentId == agentId }
+
+    /**
+     * 按关键词检索记忆。给 recall_memory 工具用。
+     *
+     * 一期没有向量检索——记忆条数本来就少，关键词匹配够用。
+     * 参数是 query 而不是 id，是为了将来换成向量检索时接口不用改。
+     */
+    fun recallMemories(agentId: String, query: String, limit: Int): List<MemoryItem> {
+        val pool = memoriesOf(agentId)
+        val needle = query.trim().lowercase()
+        if (needle.isEmpty()) return pool.take(limit)
+
+        return pool
+            .map { it to scoreMemory(it, needle) }
+            .filter { it.second > 0 }
+            .sortedByDescending { it.second }
+            .take(limit)
+            .map { it.first }
+    }
+
+    /** 命中字数。粗糙但够用，而且结果稳定可测。 */
+    private fun scoreMemory(item: MemoryItem, needle: String): Int {
+        val haystack = item.text.lowercase()
+        return needle.length.let { _ ->
+            // 整串命中给高分，否则按逐字命中计数
+            if (haystack.contains(needle)) 100 + needle.length
+            else needle.count { it in haystack }
+        }
+    }
 
     fun activeChannels(): List<Channel> = channels.filter { it.connected }
 
@@ -1213,6 +1243,81 @@ class AppState(
         if (trimmed.isEmpty()) return
         memories.add(0, MemoryItem(nextId("mem"), agentId, category, trimmed))
         persistState()
+    }
+
+    /**
+     * 从工具建任务。跟 [confirmDraft] 不同的是：**这里不弹确认卡片，直接落库**。
+     *
+     * 为什么允许：模型的判断由工具描述约束（"只在用户明确要托管时调用"），
+     * 而且工具调用对用户是可见的（执行卡片）。草稿卡片那条路保留给文本降级。
+     */
+    fun createTaskFromTool(
+        agentId: String,
+        title: String,
+        recurrence: Recurrence,
+        scheduleLabel: String,
+        note: String?,
+    ): String {
+        val id = nextId("task")
+        val task = scheduled(
+            AgentTask(
+                id = id,
+                agentId = agentId,
+                title = title,
+                recurrence = recurrence,
+                scheduleLabel = scheduleLabel,
+                nextRunLabel = "",
+                note = note,
+            )
+        )
+        tasks.add(0, task)
+        persistState()
+        return id
+    }
+
+    /** 给模型看的任务摘要，不带 nextRunAt 这种调度字段。 */
+    fun taskSummariesFor(agentId: String): List<TaskSummary> =
+        tasks.filter { it.agentId == agentId }
+            .filter { it.status != TaskStatus.Done }
+            .map {
+                TaskSummary(
+                    id = it.id,
+                    title = it.title,
+                    recurrence = it.recurrence,
+                    scheduleLabel = it.scheduleLabel,
+                    nextRunLabel = it.nextRunLabel,
+                    status = it.status,
+                )
+            }
+
+    /** 改任务。**核对 agentId**——模型不该能改到别的智能体的任务。 */
+    fun updateTaskFromTool(
+        agentId: String,
+        id: String,
+        title: String?,
+        scheduleLabel: String?,
+    ): Boolean {
+        val index = tasks.indexOfFirst { it.id == id && it.agentId == agentId }
+        if (index < 0) return false
+
+        val current = tasks[index]
+        val updated = current.copy(
+            title = title?.takeIf { it.isNotBlank() } ?: current.title,
+            scheduleLabel = scheduleLabel?.takeIf { it.isNotBlank() } ?: current.scheduleLabel,
+        )
+        // 改了时间就要重排期，否则它还会按旧时刻跑
+        tasks[index] = if (scheduleLabel.isNullOrBlank()) updated else scheduled(updated)
+        persistState()
+        return true
+    }
+
+    /** 取消任务。**置为 Done 而不是删掉**——删了用户就看不到它出过什么。 */
+    fun cancelTaskFromTool(agentId: String, id: String): Boolean {
+        val index = tasks.indexOfFirst { it.id == id && it.agentId == agentId }
+        if (index < 0) return false
+        tasks[index] = tasks[index].copy(status = TaskStatus.Done)
+        persistState()
+        return true
     }
 
     fun removeMemory(memoryId: String) {

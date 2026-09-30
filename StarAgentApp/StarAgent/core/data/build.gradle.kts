@@ -32,6 +32,10 @@ kotlin {
             api(project(":core:model"))
             api(project(":core:llm"))
             implementation(project(":core:platform"))
+            // 实现 core:tools 的三个端口。core:tools 自己不认识 Ktor——
+            // 只有这里的 WebPort 实现要发请求，所以 HTTP 依赖只出现在这一侧。
+            implementation(project(":core:tools"))
+            implementation(libs.ktor.client.core)
             implementation(libs.compose.runtime)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
