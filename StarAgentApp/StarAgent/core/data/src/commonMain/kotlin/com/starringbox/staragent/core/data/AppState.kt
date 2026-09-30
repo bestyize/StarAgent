@@ -40,10 +40,13 @@ import com.starringbox.staragent.core.model.Skill
 import com.starringbox.staragent.core.model.SpeechProvider
 import com.starringbox.staragent.core.model.TaskDraft
 import com.starringbox.staragent.core.model.TaskStatus
+import com.starringbox.staragent.core.model.ToolCall
+import com.starringbox.staragent.core.model.ToolResult
 import com.starringbox.staragent.core.tools.ToolHost
 import com.starringbox.staragent.core.tools.ToolRegistry
 import com.starringbox.staragent.core.tools.builtin.BuiltinTools
 import com.starringbox.staragent.core.tools.ports.TaskSummary
+import com.starringbox.staragent.core.tools.ports.WebPort
 import com.starringbox.staragent.core.model.describeMoment
 import com.starringbox.staragent.core.model.describeNextRun
 import com.starringbox.staragent.core.model.nextRunAtFor
@@ -68,8 +71,14 @@ import kotlin.time.Instant
  *
  * [stream] 是给测试留的缝：单测可以塞一个假的流实现，把整条编排链路变成可回归的，
  * 默认值就是真实实现，生产路径不受影响。
+ *
+ * [webPort] 同样是缝，而且**声明在 [stream] 之前**：Kotlin 的尾随 lambda 只绑最后一个参数，
+ * `stream` 必须留在末位，`AppState { ... }` 这种现有写法才不会被迫改写。它留成参数是为了
+ * 让"这一轮取过外部内容就不写记忆"这条闸门能被单测钉住——`WebPort` 是 core:data 侧
+ * 唯一要发真实 HTTP 的能力，不换掉它就没法在不联网的前提下测那条路。
  */
 class AppState(
+    private val webPort: WebPort = AppWebPort(),
     private val stream: (LlmEndpoint, List<LlmTurn>) -> Flow<ChatStreamEvent> = ChatCompletion::stream,
 ) {
 
@@ -774,7 +783,7 @@ class AppState(
         val host = ToolHost(
             memory = AppMemoryPort(this),
             tasks = AppTaskPort(this),
-            web = AppWebPort(),
+            web = webPort,
             agentId = agentId,
             conversationKey = agentId,
         )
@@ -782,6 +791,16 @@ class AppState(
         busy[agentId] = true
         val buffer = StringBuilder()
         var outcome: LoopOutcome
+
+        // 执行卡片是**一张会变的卡**，不是一步一个气泡：记下它在对话里的位置，
+        // 之后每有进展就重写那一条——和上面流式占位符是同一个手法。
+        val stepCalls = mutableListOf<ToolCall>()
+        val stepResults = mutableListOf<ToolResult>()
+        var executionIndex = -1
+
+        // 这一轮有没有拿到过外部来源的内容（网页正文等）。有的话本轮不写记忆，
+        // 理由见下面 addMemory 那一段。
+        var sawExternalContext = false
 
         try {
             outcome = loop.run(
@@ -793,8 +812,35 @@ class AppState(
                     buffer.append(chunk)
                     conversation[index] = placeholder.copy(body = MessageBody.Text(buffer.toString()))
                 },
-                onToolStart = { /* Task 11 接执行卡片 */ },
-                onToolEnd = { _, _ -> },
+                onToolStart = { call ->
+                    stepCalls += call
+                    val steps = executionStepsFor(stepCalls, stepResults)
+                    if (executionIndex < 0) {
+                        // 第一次调工具时才插卡片，别让纯对话也顶一张空的
+                        conversation.add(
+                            ChatMessage(
+                                id = nextId("m"),
+                                author = Author.Agent,
+                                body = MessageBody.Execution(steps),
+                                timeLabel = "刚刚",
+                            )
+                        )
+                        executionIndex = conversation.lastIndex
+                    } else {
+                        conversation[executionIndex] =
+                            conversation[executionIndex].copy(body = MessageBody.Execution(steps))
+                    }
+                },
+                onToolEnd = { _, result ->
+                    stepResults += result
+                    // 只要有一件外部来源的结果，整轮就都不写记忆：见 addMemory 处的说明。
+                    if (result.externalContext) sawExternalContext = true
+                    if (executionIndex >= 0) {
+                        conversation[executionIndex] = conversation[executionIndex].copy(
+                            body = MessageBody.Execution(executionStepsFor(stepCalls, stepResults)),
+                        )
+                    }
+                },
             )
         } catch (cancelled: CancellationException) {
             // 用户点了停止：已经收到的部分保留下来，一个字都没有就留个说明。
@@ -868,16 +914,25 @@ class AppState(
 
         // 落库之后在对话里留一张卡片：记忆是最容易变成隐形功能的能力，
         // 不说一声的话，用户根本不知道它记住了什么。
-        memory?.items?.forEach { item ->
-            addMemory(agent.id, item.category, item.text)
-            conversation.add(
-                ChatMessage(
-                    id = nextId("m"),
-                    author = Author.Agent,
-                    body = MessageBody.MemoryNote(item.text),
-                    timeLabel = "刚刚",
+        //
+        // **但这一轮取过网页就整轮不写**：网页正文是别人写的内容，里面可以是
+        // "用户喜欢简洁回答"这种看起来像事实的指令。它随历史进了模型视野之后，
+        // 模型可能把同一轮里被诱导出的话讲成"用户说的"，于是被当成事实记下来，
+        // 而用户永远不会知道。同轮有一次不可信的外部抓取，本轮记忆就整轮不作数——
+        // 宁可少记一次，也不要把别人写的文本沉淀成关于用户的"事实"。
+        //（正文里的记忆块照旧被剥掉，只是不落库、也不弹卡片。）
+        if (!sawExternalContext) {
+            memory?.items?.forEach { item ->
+                addMemory(agent.id, item.category, item.text)
+                conversation.add(
+                    ChatMessage(
+                        id = nextId("m"),
+                        author = Author.Agent,
+                        body = MessageBody.MemoryNote(item.text),
+                        timeLabel = "刚刚",
+                    )
                 )
-            )
+            }
         }
 
         // 一轮回复结束才落盘：流式过程中每个字都写一次磁盘没有必要

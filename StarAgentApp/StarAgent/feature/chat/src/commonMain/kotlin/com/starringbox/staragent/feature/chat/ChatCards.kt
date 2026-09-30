@@ -133,11 +133,21 @@ internal fun AgentTextBubble(text: String) {
 /**
  * 执行过程可视化。没有"手"的阶段，用户无法靠结果本身判断可信度，
  * 所以必须让"它在为我工作"这件事被看见。
+ *
+ * 抬头是**跟着进度变的**，不是写死的"正在处理"：这张卡会留在对话流里，
+ * 一轮结束之后还顶着"正在处理"就是在说假话。全部打勾就换成"已完成"。
  */
 @Composable
 internal fun ExecutionCard(steps: List<ExecutionStep>) {
+    val allDone = steps.isNotEmpty() && steps.all { it.done }
     StarCard(modifier = Modifier.widthIn(max = 300.dp)) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+        Column(Modifier.padding(14.dp)) {
+            Text(
+                text = if (allDone) "已完成" else "正在处理",
+                style = MaterialTheme.typography.labelMedium,
+                color = StarPalette.TextMuted,
+            )
+            Spacer(Modifier.height(6.dp))
             steps.forEach { step ->
                 Row(
                     modifier = Modifier.padding(vertical = 3.dp),
