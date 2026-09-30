@@ -102,10 +102,11 @@ class AgentLoopTest {
         )
         val starts = mutableListOf<String>()
         val ends = mutableListOf<String>()
+        val history = mutableListOf<LlmTurn>()
 
         val outcome = loop.run(
             endpoint = endpoint,
-            history = mutableListOf(),
+            history = history,
             host = testHost(),
             registry = ToolRegistry.of(stubTool("remember")),
             onText = {},
@@ -116,6 +117,10 @@ class AgentLoopTest {
         assertEquals(LoopOutcome.Done("记住了"), outcome)
         assertEquals(listOf("remember"), starts)
         assertEquals(listOf("ok"), ends)
+        // 工具自己不知道 callId（stub 返回的是空串），循环必须背填成模型给的那个。
+        // 这是线上的关联键，发出去是 tool_call_id——空串会被真实 API 拒掉，
+        // 而少了这条断言，删掉背填整个测试套件都发现不了。
+        assertEquals("c1", history[1].toolResults.single().callId)
     }
 
     @Test
@@ -154,6 +159,7 @@ class AgentLoopTest {
             listOf(ChatStreamEvent.ToolCallsReady(listOf(ToolCall("c$it", "t", "{}"))))
         }
         val loop = AgentLoop(scriptedStream(always), maxIterations = 3)
+        val starts = mutableListOf<String>()
 
         val outcome = loop.run(
             endpoint = endpoint,
@@ -161,13 +167,17 @@ class AgentLoopTest {
             host = testHost(),
             registry = ToolRegistry.of(stubTool("t")),
             onText = {},
-            onToolStart = {},
+            onToolStart = { starts += it.name },
             onToolEnd = { _, _ -> },
         )
 
         assertTrue(outcome is LoopOutcome.Stopped)
         // 提示要能看懂，不能是"error"或空串
         assertTrue((outcome as LoopOutcome.Stopped).reason.isNotBlank())
+        // 上限必须**精确**是 3 次请求：脚本是每轮都调工具，所以每轮恰好一次执行。
+        // 这条断言钉住边界——把比较写成 `iteration >= maxIterations` 会少发一次请求
+        // （上限变成 2），光看"停下来了"发现不了。
+        assertEquals(3, starts.size)
     }
 
     @Test
@@ -223,6 +233,9 @@ class AgentLoopTest {
         val fedBack = history[1].toolResults.single()
         assertTrue(fedBack.isError)
         assertTrue(fedBack.content.contains("没这个工具"))
+        // 错误路径也要带上模型给的 callId——工具没找到、结果是我们自己造的，
+        // 但关联键仍然得对得上，否则模型分不清这是哪一次调用的回复。
+        assertEquals("c1", fedBack.callId)
     }
 
     @Test
