@@ -7,6 +7,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.staticCompositionLocalOf
+import com.starringbox.staragent.core.data.ports.AppMemoryPort
+import com.starringbox.staragent.core.data.ports.AppTaskPort
+import com.starringbox.staragent.core.data.ports.AppWebPort
 import com.starringbox.staragent.core.llm.ChatCompletion
 import com.starringbox.staragent.core.llm.ChatStreamEvent
 import com.starringbox.staragent.core.llm.LlmEndpoint
@@ -37,6 +40,9 @@ import com.starringbox.staragent.core.model.Skill
 import com.starringbox.staragent.core.model.SpeechProvider
 import com.starringbox.staragent.core.model.TaskDraft
 import com.starringbox.staragent.core.model.TaskStatus
+import com.starringbox.staragent.core.tools.ToolHost
+import com.starringbox.staragent.core.tools.ToolRegistry
+import com.starringbox.staragent.core.tools.builtin.BuiltinTools
 import com.starringbox.staragent.core.tools.ports.TaskSummary
 import com.starringbox.staragent.core.model.describeMoment
 import com.starringbox.staragent.core.model.describeNextRun
@@ -597,7 +603,7 @@ class AppState(
     fun configuredProviders(): List<ModelProvider> = providers.filter { it.configured }
 
     /** 这个智能体当前能不能真正对话——不能的话界面要给出明确的去配置入口。 */
-    fun endpointFor(agent: Agent): LlmEndpoint? = endpointFor(agent, systemPromptFor(agent))
+    fun endpointFor(agent: Agent): LlmEndpoint? = endpointFor(agent, systemPromptFor(agent, toolsAvailable = true))
 
     /**
      * 同上，但由调用方给系统提示。群聊走这条：模型与 Key 的解析完全一样，
@@ -614,8 +620,17 @@ class AppState(
             apiKey = provider.apiKey,
             model = model,
             systemPrompt = systemPrompt,
+            tools = registryFor(agent).definitions(),
         )
     }
+
+    /**
+     * 这个智能体能用哪些工具。
+     *
+     * 一期是"全部"——技能门控（装上哪个技能才给哪些工具）是后续的事，
+     * 因为技能本身还没有内容可挂。
+     */
+    private fun registryFor(agent: Agent): ToolRegistry = BuiltinTools.all
 
     fun updateProvider(updated: ModelProvider) {
         val index = providers.indexOfFirst { it.id == updated.id }
@@ -730,7 +745,6 @@ class AppState(
             return
         }
 
-        val history = historyFor(agentId)
         val placeholder = ChatMessage(
             id = nextId("m"),
             author = Author.Agent,
@@ -740,26 +754,41 @@ class AppState(
         conversation.add(placeholder)
         val index = conversation.lastIndex
 
+        // 循环自己消费 ToolCallsReady：工具调用不再在这里分发，请求 → 调工具 → 回喂
+        // 全在 AgentLoop 里。它拿的是一份**可变副本**——回喂要往历史里追加轮次，
+        // 拿 historyFor 每次现拼的那份来改没有意义。
+        //
+        // stream 走构造注入的那一个而不是直接写 ChatCompletion.stream：类文档里那条
+        // "测试能塞假流"的缝得留着，否则这个文件里的编排就再也测不了了。
+        val loop = AgentLoop(stream = stream)
+        val host = ToolHost(
+            memory = AppMemoryPort(this),
+            tasks = AppTaskPort(this),
+            web = AppWebPort(),
+            agentId = agentId,
+            conversationKey = agentId,
+        )
+
         busy[agentId] = true
         val buffer = StringBuilder()
-        var failure: String? = null
+        var outcome: LoopOutcome
 
         try {
-            stream(endpoint, history).collect { event ->
-                when (event) {
-                    is ChatStreamEvent.Delta -> {
-                        buffer.append(event.text)
-                        conversation[index] = placeholder.copy(body = MessageBody.Text(buffer.toString()))
-                    }
-
-                    // 工具调用的分发要到 AgentLoop 接进来才做，这里先占位
-                    is ChatStreamEvent.ToolCallsReady -> Unit
-                    is ChatStreamEvent.Failed -> failure = event.message
-                    ChatStreamEvent.Completed -> Unit
-                }
-            }
+            outcome = loop.run(
+                endpoint = endpoint,
+                history = historyFor(agentId).toMutableList(),
+                host = host,
+                registry = registryFor(agent),
+                onText = { chunk ->
+                    buffer.append(chunk)
+                    conversation[index] = placeholder.copy(body = MessageBody.Text(buffer.toString()))
+                },
+                onToolStart = { /* Task 11 接执行卡片 */ },
+                onToolEnd = { _, _ -> },
+            )
         } catch (cancelled: CancellationException) {
             // 用户点了停止：已经收到的部分保留下来，一个字都没有就留个说明。
+            // 取消必须原样抛出——吞掉的话用户按了停止却停不下来。
             if (buffer.isEmpty()) {
                 conversation[index] = placeholder.copy(body = MessageBody.Notice("已停止"))
             }
@@ -768,15 +797,25 @@ class AppState(
             busy[agentId] = false
         }
 
-        val failureMessage = failure
-        if (failureMessage != null) {
-            conversation[index] = placeholder.copy(
-                body = MessageBody.Notice(failureMessage, isError = true),
-            )
-            return
+        when (outcome) {
+            is LoopOutcome.Failed -> {
+                conversation[index] = placeholder.copy(
+                    body = MessageBody.Notice(outcome.message, isError = true),
+                )
+                return
+            }
+            is LoopOutcome.Stopped -> {
+                // 上限停下：保留已经说出来的部分，再补一条说明
+                if (buffer.isEmpty()) {
+                    conversation[index] = placeholder.copy(body = MessageBody.Notice(outcome.reason))
+                } else {
+                    conversation.add(notice(outcome.reason))
+                }
+            }
+            is LoopOutcome.Done -> Unit
         }
 
-        val raw = buffer.toString()
+        val raw = outcome.let { if (it is LoopOutcome.Done) it.text else buffer.toString() }
         if (raw.isBlank()) {
             conversation[index] = placeholder.copy(
                 body = MessageBody.Notice("模型没有返回内容", isError = true),
@@ -786,10 +825,10 @@ class AppState(
 
         // 模型如果判断出这是可托管的任务，会附一个任务块——把它变成草稿卡片。
         // 但这个智能体没开任务能力时，即便模型多吐了块，也只把块抹掉，不给用户看原始 JSON。
-        val outcome = resolveReply(raw, agent.canScheduleTasks)
-        val spoken = when (outcome) {
-            is ReplyOutcome.Plain -> outcome.text
-            is ReplyOutcome.AsTask -> outcome.text
+        val reply = resolveReply(raw, agent.canScheduleTasks)
+        val spoken = when (reply) {
+            is ReplyOutcome.Plain -> reply.text
+            is ReplyOutcome.AsTask -> reply.text
         }
 
         // 记忆块从剥完任务块的正文里再剥一层：两件事可以同时发生
@@ -803,12 +842,12 @@ class AppState(
         }
         conversation[index] = placeholder.copy(body = MessageBody.Text(answer))
 
-        if (outcome is ReplyOutcome.AsTask) {
+        if (reply is ReplyOutcome.AsTask) {
             conversation.add(
                 ChatMessage(
                     id = nextId("m"),
                     author = Author.Agent,
-                    body = MessageBody.Draft(outcome.draft),
+                    body = MessageBody.Draft(reply.draft),
                     timeLabel = "刚刚",
                 )
             )
@@ -1365,12 +1404,13 @@ class AppState(
             .takeLast(24)
 
     /**
-     * 系统提示由三部分组成：这个智能体是谁、这次要多快多深、以及要不要带任务识别。
+     * 系统提示的四部分：这个智能体是谁、这次要多快多深、已经记住了什么、以及工具用不了时的降级指令。
      *
-     * 任务识别是**按智能体开关**的：关掉时提示里根本不出现任务指令，
-     * 模型也就无从输出任务块——陪聊、答疑类的智能体不该动不动就弹任务卡片。
+     * **任务与记忆的文本块指令是条件注入的**：发得出工具时（[toolsAvailable] 为真），
+     * 提示里根本不出现 ` ```task ` / ` ```memory ` 的格式要求。
+     * 两套同时给的话模型会两套都用——既调了工具，又附一个文本块，用户看到重复的卡片。
      */
-    private fun systemPromptFor(agent: Agent): String = buildString {
+    private fun systemPromptFor(agent: Agent, toolsAvailable: Boolean): String = buildString {
         append("你是「").append(agent.name).append("」。")
         if (agent.persona.isNotBlank()) {
             append(agent.persona.trim().trimEnd('。', '！', '!', '.')).append("。")
@@ -1382,6 +1422,7 @@ class AppState(
                 ResponseMode.Deep -> "回答前充分思考，给出推理过程与依据，必要时分点展开。"
             }
         )
+
         // 已经记住的事要回灌进来，否则"记住"就只是把它存进了某个用户看不见也问不着的地方。
         // 取最近的若干条而不是全部：记忆会越攒越多，全塞进去既挤占上下文，
         // 也会让早期的琐事一直压着近期的对话。
@@ -1392,15 +1433,20 @@ class AppState(
             append("\n自然地用上这些，不要刻意复述，也不要逐条罗列。")
         }
 
-        if (agent.canScheduleTasks) {
+        if (!toolsAvailable) {
+            // 降级路径：服务商不支持工具调用时，仍靠文本块。
+            // 记忆不跟着任务开关走——记忆是"认不认识你"，陪聊型智能体也该记得住。
+            if (agent.canScheduleTasks) {
+                append("\n\n")
+                append(TaskBlock.INSTRUCTION)
+            }
             append("\n\n")
-            append(TaskBlock.INSTRUCTION)
+            append(MemoryBlock.INSTRUCTION)
         }
-        // 记忆不跟着任务开关走：任务是"替不替你干活"，记忆是"认不认识你"，
-        // 陪聊型的智能体同样该记得住你说过的事。
-        append("\n\n")
-        append(MemoryBlock.INSTRUCTION)
     }
+
+    /** 测试用：默认按"发得出工具"来拼。 */
+    internal fun systemPromptForTest(agent: Agent): String = systemPromptFor(agent, toolsAvailable = true)
 
     // ── 持久化 ──────────────────────────────────
 
