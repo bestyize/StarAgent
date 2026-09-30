@@ -16,5 +16,6 @@ object BuiltinTools {
         ListTasksTool,
         UpdateTaskTool,
         CancelTaskTool,
+        WebFetchTool,
     )
 }
