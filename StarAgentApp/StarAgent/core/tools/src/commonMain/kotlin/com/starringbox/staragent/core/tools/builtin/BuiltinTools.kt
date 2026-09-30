@@ -13,5 +13,8 @@ object BuiltinTools {
         RecallMemoryTool,
         RememberTool,
         CreateTaskTool,
+        ListTasksTool,
+        UpdateTaskTool,
+        CancelTaskTool,
     )
 }

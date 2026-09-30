@@ -3,9 +3,14 @@ package com.starringbox.staragent.core.tools
 import com.starringbox.staragent.core.model.MemoryCategory
 import com.starringbox.staragent.core.model.MemoryItem
 import com.starringbox.staragent.core.model.Recurrence
+import com.starringbox.staragent.core.model.TaskStatus
+import com.starringbox.staragent.core.tools.builtin.CancelTaskTool
 import com.starringbox.staragent.core.tools.builtin.CreateTaskTool
+import com.starringbox.staragent.core.tools.builtin.ListTasksTool
 import com.starringbox.staragent.core.tools.builtin.RecallMemoryTool
 import com.starringbox.staragent.core.tools.builtin.RememberTool
+import com.starringbox.staragent.core.tools.builtin.UpdateTaskTool
+import com.starringbox.staragent.core.tools.ports.TaskSummary
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -157,5 +162,85 @@ class TaskToolsTest {
             listOf(CreateCall("a-xing", "看新闻", Recurrence.Weekly, "每周一 09:00", null)),
             tasks.createCalls,
         )
+    }
+
+    @Test
+    fun listTellsTheModelThereAreNoTasksRatherThanReturningEmpty() = runTest {
+        // 空结果要说成一句话。返回空字符串的话模型会以为工具坏了、反复重试。
+        val result = ListTasksTool.execute(args("{}"), testHost())
+        assertTrue(result.content.contains("没有"))
+        assertFalse(result.isError)
+    }
+
+    @Test
+    fun listFormatsTasksWithTheirIds() = runTest {
+        // id 必须在里面，否则模型没法接着 update 或 cancel
+        val tasks = FakeTaskPort().apply {
+            listed = listOf(
+                TaskSummary(
+                    id = "task-7",
+                    title = "看新闻",
+                    recurrence = Recurrence.Daily,
+                    scheduleLabel = "每天 09:00",
+                    nextRunLabel = "明天 09:00",
+                    status = TaskStatus.Active,
+                )
+            )
+        }
+        val result = ListTasksTool.execute(args("{}"), testHost(tasks = tasks))
+
+        assertTrue(result.content.contains("task-7"))
+        assertTrue(result.content.contains("看新闻"))
+        assertTrue(result.content.contains("明天 09:00"))
+    }
+
+    @Test
+    fun updatePassesBothFieldsThrough() = runTest {
+        val tasks = FakeTaskPort()
+        val result = UpdateTaskTool.execute(
+            args("{\"id\":\"task-1\",\"title\":\"新名\",\"schedule\":\"每天 21:00\"}"),
+            testHost(tasks = tasks),
+        )
+        assertFalse(result.isError)
+    }
+
+    @Test
+    fun updateAllowsChangingOnlyTheSchedule() = runTest {
+        // 改时间是最常见的用法，不该强制带 title
+        val result = UpdateTaskTool.execute(
+            args("{\"id\":\"task-1\",\"schedule\":\"每天 21:00\"}"),
+            testHost(),
+        )
+        assertFalse(result.isError)
+    }
+
+    @Test
+    fun updateRequiresAtLeastOneFieldToChange() = runTest {
+        val result = UpdateTaskTool.execute(args("{\"id\":\"task-1\"}"), testHost())
+        assertTrue(result.isError)
+        assertTrue(result.content.contains("改什么"))
+    }
+
+    @Test
+    fun updateReportsWhenTheTaskIsGone() = runTest {
+        // 端口返回 false：任务不存在、或者不属于这个智能体。两种都由实现判断。
+        val tasks = FakeTaskPort().apply { updateResult = false }
+        val result = UpdateTaskTool.execute(
+            args("{\"id\":\"task-9\",\"title\":\"x\"}"),
+            testHost(tasks = tasks),
+        )
+        assertTrue(result.isError)
+        assertTrue(result.content.contains("task-9"))
+    }
+
+    @Test
+    fun cancelReportsSuccess() = runTest {
+        val result = CancelTaskTool.execute(args("{\"id\":\"task-1\"}"), testHost())
+        assertFalse(result.isError)
+    }
+
+    @Test
+    fun cancelRequiresId() = runTest {
+        assertTrue(CancelTaskTool.execute(args("{}"), testHost()).isError)
     }
 }
