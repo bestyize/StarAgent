@@ -4,6 +4,10 @@ import com.starringbox.staragent.core.platform.media.DesktopMediaPicker
 import com.starringbox.staragent.core.platform.media.DesktopMediaSaver
 import com.starringbox.staragent.core.platform.media.MediaPickers
 import com.starringbox.staragent.core.platform.media.MediaSavers
+import com.starringbox.staragent.core.platform.notify.DesktopNotifier
+import com.starringbox.staragent.core.platform.notify.Notifiers
+import com.starringbox.staragent.core.platform.schedule.DesktopTaskScheduler
+import com.starringbox.staragent.core.platform.schedule.TaskSchedulers
 import com.starringbox.staragent.core.platform.storage.DesktopLocalStore
 import com.starringbox.staragent.core.platform.storage.LocalStores
 import com.starringbox.staragent.core.platform.voice.DeviceVoice
@@ -26,6 +30,10 @@ fun PlatformInstall.install() {
     LocalStores.install(DesktopLocalStore())
     MediaPickers.install(DesktopMediaPicker())
     MediaSavers.install(DesktopMediaSaver())
+
+    // 调度与系统通知
+    TaskSchedulers.install(DesktopTaskScheduler())
+    Notifiers.install(DesktopNotifier())
 
     // 桌面只有录音和播放；识别与合成在 JDK 里没有系统级的对应物，走模型那一路
     DeviceVoice.install()
