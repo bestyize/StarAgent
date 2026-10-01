@@ -3,6 +3,9 @@
 
     <!-- 语音输入要录音。这是危险权限，运行时申请（见 AndroidVoiceRecorder）。 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <!--
       探测系统识别与朗读靠的是 queryIntentServices，而从 Android 11 起应用默认
@@ -35,6 +38,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <receiver
+            android:name="com.starringbox.staragent.core.platform.schedule.TaskAlarmReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name="com.starringbox.staragent.core.platform.schedule.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

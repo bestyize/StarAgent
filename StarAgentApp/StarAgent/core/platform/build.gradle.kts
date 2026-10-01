@@ -56,6 +56,7 @@ kotlin {
             // ActivityResultCaller 出现在 DeviceVoice.install 的**公开签名**里，
             // 各端入口编译时要看得到这个类型，所以是 api 不是 implementation。
             api(libs.androidx.activity)
+            implementation(libs.androidx.core.ktx)
             // AndroidSystemSynthesizer 的 ready 靠快照状态驱动重组，见那个类的注释。
             // 必须用 catalog 里这一个源：换成别处来的 compose runtime，
             // 快照就不互通，重组会**静默**失效（不报编译错），表现为朗读按钮一直不出现。
