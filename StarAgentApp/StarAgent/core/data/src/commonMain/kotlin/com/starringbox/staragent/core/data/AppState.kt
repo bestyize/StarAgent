@@ -25,6 +25,7 @@ import com.starringbox.staragent.core.platform.platformCommandPort
 import com.starringbox.staragent.core.platform.platformMcpManager
 import com.starringbox.staragent.core.platform.platformDevicePort
 import com.starringbox.staragent.core.platform.schedule.TaskSchedulers
+import com.starringbox.staragent.core.platform.schedule.TaskSchedulerStatus
 import com.starringbox.staragent.core.platform.schedule.WakeupTrigger
 import com.starringbox.staragent.core.platform.storage.LocalStores
 import com.starringbox.staragent.core.platform.voice.SpeechOutcome
@@ -195,11 +196,17 @@ class AppState(
             skills.addAll(saved.skills)
             channels.addAll(saved.channels)
             groups.addAll(saved.groups)
-            saved.conversations.forEach { (agentId, messages) -> messagesOf(agentId).addAll(messages) }
+            var removedSeedMessages = false
+            saved.conversations.forEach { (agentId, messages) ->
+                // 旧版本曾给内置智能体写入 seed-m* 演示消息；升级后也清掉，保持首次会话干净。
+                val cleaned = messages.filterNot { it.id.startsWith("seed-") }
+                removedSeedMessages = removedSeedMessages || cleaned.size != messages.size
+                messagesOf(agentId).addAll(cleaned)
+            }
 
-            // 修过 id 就顺手落盘，否则这份存档每次启动都要重修一遍。
+            // 修过 id 或清掉旧种子消息就顺手落盘，否则这份存档每次启动都要再处理一遍。
             // 必须等上面填完再写——persistState 是从这些列表里取的，提前调会写出空存档。
-            if (saved != loaded.state || loaded.fromLegacyFile) persistState()
+            if (saved != loaded.state || loaded.fromLegacyFile || removedSeedMessages) persistState()
         } else {
             Seed.populateDemo(this)
             // 首次运行立刻落盘：否则用户这次删的东西，下次启动又会被种子灌回来
@@ -996,7 +1003,14 @@ class AppState(
     }
 
     /** 用户点「创建」才真正落一条任务——草稿只是建议。 */
-    fun confirmDraft(agentId: String, draft: TaskDraft) {
+    fun confirmDraft(agentId: String, draft: TaskDraft): Boolean {
+        schedulerBlockMessage()?.let { message ->
+            messagesOf(agentId).add(
+                ChatMessage(nextId("m"), Author.Agent, MessageBody.Notice(message, isError = true), "刚刚")
+            )
+            persistState()
+            return false
+        }
         // 排期统一走 scheduled：它同时算出"给人看的文案"和"调度用的时刻"
         val task = scheduled(
             draft.toTask(id = nextId("task"), agentId = agentId, nextRunLabel = "")
@@ -1012,6 +1026,7 @@ class AppState(
         )
         persistState()
         syncNextSystemWakeup()
+        return true
     }
 
     /** 向指定智能体会话追加一张待作答的提问卡片。 */
@@ -1680,6 +1695,7 @@ class AppState(
         scheduleLabel: String,
         note: String?,
     ): String {
+        checkSchedulerAvailable()
         val id = nextId("task")
         val task = scheduled(
             AgentTask(
@@ -1714,12 +1730,24 @@ class AppState(
             }
 
     /** 改任务。**核对 agentId**——模型不该能改到别的智能体的任务。 */
+    private fun schedulerBlockMessage(): String? = when (TaskSchedulers.current.status) {
+        TaskSchedulerStatus.Available -> null
+        TaskSchedulerStatus.Unavailable -> "当前设备不支持后台任务调度，任务无法创建。"
+        TaskSchedulerStatus.PermissionRequired ->
+            "Android 需要先授予「闹钟和提醒」特殊访问权限（SCHEDULE_EXACT_ALARM）。请到「设置 → 应用 → 星环智能 Agent → 闹钟和提醒」中允许后，再创建定时任务。"
+    }
+
+    private fun checkSchedulerAvailable() {
+        schedulerBlockMessage()?.let { error(it) }
+    }
+
     fun updateTaskFromTool(
         agentId: String,
         id: String,
         title: String?,
         scheduleLabel: String?,
     ): Boolean {
+        if (!scheduleLabel.isNullOrBlank()) checkSchedulerAvailable()
         val index = tasks.indexOfFirst { it.id == id && it.agentId == agentId }
         if (index < 0) return false
 

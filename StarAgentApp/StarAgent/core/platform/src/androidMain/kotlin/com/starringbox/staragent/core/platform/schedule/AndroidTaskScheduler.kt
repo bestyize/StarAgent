@@ -10,8 +10,17 @@ class AndroidTaskScheduler(private val context: Context) : TaskScheduler {
 
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
 
+    override val status: TaskSchedulerStatus
+        get() = when {
+            alarmManager == null -> TaskSchedulerStatus.Unavailable
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms() ->
+                TaskSchedulerStatus.PermissionRequired
+            else -> TaskSchedulerStatus.Available
+        }
+
     override fun scheduleNextWakeup(triggerAtMillis: Long?) {
         if (alarmManager == null) return
+        if (triggerAtMillis != null && status == TaskSchedulerStatus.PermissionRequired) return
 
         val intent = Intent(context, TaskAlarmReceiver::class.java)
         val pendingIntent = PendingIntent.getBroadcast(
@@ -26,18 +35,22 @@ class AndroidTaskScheduler(private val context: Context) : TaskScheduler {
             return
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             alarmManager.setExactAndAllowWhileIdle(
                 AlarmManager.RTC_WAKEUP,
                 triggerAtMillis,
                 pendingIntent,
             )
         } else {
-            alarmManager.setExact(
-                AlarmManager.RTC_WAKEUP,
-                triggerAtMillis,
-                pendingIntent,
-            )
+                alarmManager.setExact(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    pendingIntent,
+                )
+            }
+        } catch (_: SecurityException) {
+            // 用户尚未授予精确闹钟特殊访问权限；由上层展示引导，不让创建任务崩溃。
         }
     }
 
