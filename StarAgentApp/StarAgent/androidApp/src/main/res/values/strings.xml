@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">StarAgent</string>
+    <string name="accessibility_service_description">星环智能 Agent 在用户明确授权后读取当前界面并执行受控操作。</string>
 </resources>

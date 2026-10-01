@@ -4,13 +4,16 @@ import com.starringbox.staragent.core.model.ToolDefinition
 import com.starringbox.staragent.core.model.ToolResult
 import com.starringbox.staragent.core.tools.Tool
 import com.starringbox.staragent.core.tools.ToolHost
+import com.starringbox.staragent.core.tools.ports.DeviceScope
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -173,6 +176,85 @@ object McpDisconnectTool : Tool {
         val result = host.mcp.disconnect(id)
         return ToolResult("", result.message, !result.ok)
     }
+}
+
+object DeviceInspectTool : Tool {
+    override val definition = ToolDefinition("device_inspect", "读取当前 Android 前台窗口的可访问控件树，返回短期有效的元素句柄。用户需要先启用 StarAgent 无障碍服务。", schema(properties = {
+        putJsonObject("scope") {
+            put("type", "string")
+            put("enum", buildJsonArray { add("active_window"); add("full_tree") })
+        }
+    }))
+
+    override suspend fun execute(args: JsonObject, host: ToolHost): ToolResult {
+        val scope = when (args.str("scope")) {
+            "full_tree" -> DeviceScope.FullTree
+            else -> DeviceScope.ActiveWindow
+        }
+        val result = host.device.inspect(scope)
+        if (!result.ok) return ToolResult("", result.error ?: "无法读取设备界面", true)
+        val text = buildString {
+            append("screen_id=").append(result.screenId).append("\n")
+            append("package=").append(result.packageName ?: "unknown").append("\n")
+            result.elements.forEach { element ->
+                append("- id=").append(element.id)
+                    .append(" role=").append(element.role)
+                    .append(" label=").append(element.label)
+                    .append(" text=").append(element.text)
+                    .append(" clickable=").append(element.clickable)
+                    .append(" editable=").append(element.editable)
+                    .append(" enabled=").append(element.enabled)
+                    .append(" bounds=").append("[").append(element.left).append(",").append(element.top)
+                    .append(",").append(element.right).append(",").append(element.bottom).append("]\n")
+            }
+        }
+        return ToolResult("", text.take(30000))
+    }
+}
+
+object DeviceUseTool : Tool {
+    override val definition = ToolDefinition("device_use", "在用户已授权的设备上执行一个受控操作。支持 click、type、swipe、back、launch_app；危险操作必须经过用户确认。", schema("operation", properties = {
+        putJsonObject("operation") {
+            put("type", "string")
+            put("enum", buildJsonArray { add("click"); add("type"); add("swipe"); add("back"); add("launch_app") })
+        }
+        putJsonObject("screen_id") { put("type", "string") }
+        putJsonObject("element_id") { put("type", "string") }
+        putJsonObject("text") { put("type", "string") }
+        putJsonObject("from_x") { put("type", "number") }
+        putJsonObject("from_y") { put("type", "number") }
+        putJsonObject("to_x") { put("type", "number") }
+        putJsonObject("to_y") { put("type", "number") }
+        putJsonObject("duration_ms") { put("type", "integer") }
+        putJsonObject("package_name") { put("type", "string") }
+    }))
+    override val requiresConfirmation = true
+
+    override suspend fun execute(args: JsonObject, host: ToolHost): ToolResult {
+        val operation = args.str("operation") ?: return ToolResult("", "缺少 operation", true)
+        val result = when (operation) {
+            "click" -> {
+                val screen = args.str("screen_id") ?: return ToolResult("", "click 需要 screen_id", true)
+                val element = args.str("element_id") ?: return ToolResult("", "click 需要 element_id", true)
+                host.device.click(screen, element)
+            }
+            "type" -> {
+                val screen = args.str("screen_id") ?: return ToolResult("", "type 需要 screen_id", true)
+                host.device.type(screen, args.str("element_id"), args.str("text") ?: "")
+            }
+            "swipe" -> host.device.swipe(
+                number(args, "from_x"), number(args, "from_y"), number(args, "to_x"), number(args, "to_y"),
+                (((args["duration_ms"] as? JsonPrimitive)?.intOrNull ?: 400).coerceIn(80, 2_000)).toLong(),
+            )
+            "back" -> host.device.pressBack()
+            "launch_app" -> host.device.launchApp(args.str("package_name") ?: return ToolResult("", "launch_app 需要 package_name", true))
+            else -> return ToolResult("", "不支持的 device_use operation：$operation", true)
+        }
+        return ToolResult("", result.message, !result.ok)
+    }
+
+    private fun number(args: JsonObject, name: String): Float =
+        (args[name] as? JsonPrimitive)?.doubleOrNull?.toFloat() ?: 0f
 }
 
 object BrowserOpenTool : Tool {

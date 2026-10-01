@@ -349,3 +349,15 @@ Android/iOS 不会启动本地 MCP 进程，相关调用会返回平台不支持
 ```bash
 ./gradlew allTests -Pstaragent.runIosSimulatorTests=true
 ```
+
+
+## Android device_use
+
+Android 端新增了受控设备工具：
+
+- `device_inspect`：读取当前前台窗口的可访问控件树，返回短期有效的 `screen_id` / `element_id`
+- `device_use`：经用户确认后执行 `click`、`type`、`swipe`、`back`、`launch_app`
+
+首次使用前，需要用户在 Android 系统设置中手动启用「星环智能 Agent」无障碍服务。句柄只保留 15 秒，并且会校验 screen、前台包名和控件路径，页面变化后必须重新 `device_inspect`。密码字段不会返回文本内容。
+
+Desktop 和 iOS 当前通过统一 `DevicePort` 返回明确的未安装/不支持状态；后续分别接入 macOS Accessibility、Windows UI Automation，以及 iOS 自有页面/App Intents 能力。

@@ -39,6 +39,19 @@
             </intent-filter>
         </activity>
 
+        <service
+            android:name="com.starringbox.staragent.core.platform.device.AndroidAccessibilityService"
+            android:description="@string/accessibility_service_description"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/staragent_accessibility_service" />
+        </service>
+
         <receiver
             android:name="com.starringbox.staragent.core.platform.schedule.TaskAlarmReceiver"
             android:exported="false" />

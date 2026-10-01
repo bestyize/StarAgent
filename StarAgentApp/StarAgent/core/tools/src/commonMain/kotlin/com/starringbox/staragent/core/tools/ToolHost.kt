@@ -13,6 +13,8 @@ import com.starringbox.staragent.core.tools.ports.SkillPort
 import com.starringbox.staragent.core.tools.ports.BrowserPort
 import com.starringbox.staragent.core.tools.ports.NoopBrowserPort
 import com.starringbox.staragent.core.tools.ports.McpManagerPort
+import com.starringbox.staragent.core.tools.ports.DevicePort
+import com.starringbox.staragent.core.tools.ports.NoopDevicePort
 import com.starringbox.staragent.core.tools.ports.NoopMcpManagerPort
 import com.starringbox.staragent.core.tools.ports.NoopFilePort
 import com.starringbox.staragent.core.tools.ports.NoopCommandPort
@@ -36,6 +38,7 @@ class ToolHost(
     val skills: SkillPort = NoopSkillPort,
     val browser: BrowserPort = NoopBrowserPort,
     val mcp: McpManagerPort = NoopMcpManagerPort,
+    val device: DevicePort = NoopDevicePort,
     val executionPolicy: ExecutionPolicy = ExecutionPolicy.Auto,
     val agentId: String,
     val conversationKey: String,
