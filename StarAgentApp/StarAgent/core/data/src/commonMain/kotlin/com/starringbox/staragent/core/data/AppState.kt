@@ -20,6 +20,9 @@ import com.starringbox.staragent.core.llm.ModelSynthesizer
 import com.starringbox.staragent.core.llm.ModelTranscriber
 import com.starringbox.staragent.core.llm.SpeechEndpoint
 import com.starringbox.staragent.core.model.MediaAsset
+import com.starringbox.staragent.core.platform.notify.Notifiers
+import com.starringbox.staragent.core.platform.schedule.TaskSchedulers
+import com.starringbox.staragent.core.platform.schedule.WakeupTrigger
 import com.starringbox.staragent.core.platform.storage.LocalStores
 import com.starringbox.staragent.core.platform.voice.SpeechOutcome
 import com.starringbox.staragent.core.platform.voice.Voice
@@ -210,6 +213,12 @@ class AppState(
         // 兜底默认模型取第一家的第一个；没有服务商时留空，交给 SettingsStore 里用户自己的选择
         providers.firstOrNull()?.let { defaultModelId = modelKey(it.id, 0) }
         restoreSettings()
+
+        // 注册系统级后台唤醒处理器：操作系统在后台或锁屏被 Alarm/WorkManager 触发时调用
+        WakeupTrigger.registerHandler {
+            runDueTasksAndNotify()
+        }
+        syncNextSystemWakeup()
     }
 
     /** 把当前状态落盘。没装存储实现（iOS）时整段跳过。 */
@@ -983,6 +992,7 @@ class AppState(
             )
         )
         persistState()
+        syncNextSystemWakeup()
     }
 
     /** 向指定智能体会话追加一张待作答的提问卡片。 */
@@ -1288,6 +1298,7 @@ class AppState(
         val index = tasks.indexOfFirst { it.id == task.id }
         if (index >= 0) tasks[index] = scheduled else tasks.add(0, scheduled)
         persistState()
+        syncNextSystemWakeup()
     }
 
     /** 编辑页的实时预览：按当前时间算出"下次什么时候跑"。 */
@@ -1335,6 +1346,31 @@ class AppState(
         }
         // 串行跑：每个任务都是一次模型调用，并发发出去既没必要也更容易撞上同一个会话
         due.forEach { runTask(it) }
+    }
+
+    /**
+     * 计算当前所有活跃任务中，未来最早需要执行的唤醒时间戳（epoch 毫秒）。
+     * 若无活跃的未来任务，返回 null。
+     */
+    internal fun nextSystemWakeupMillis(currentMillis: Long = now().toEpochMilliseconds()): Long? =
+        tasks.filter { it.status == TaskStatus.Active }
+            .mapNotNull { it.nextRunAt }
+            .filter { it > currentMillis }
+            .minOrNull()
+
+    /**
+     * 将最近的唤醒点同步给操作系统的任务调度器（Android AlarmManager / Desktop 守护线程 / iOS BGTask）。
+     */
+    fun syncNextSystemWakeup(currentMillis: Long = now().toEpochMilliseconds()) {
+        TaskSchedulers.current.scheduleNextWakeup(nextSystemWakeupMillis(currentMillis))
+    }
+
+    /**
+     * 系统级后台调度唤醒时调用的完整闭环：执行到期任务，跑完后预约下一次系统唤醒。
+     */
+    suspend fun runDueTasksAndNotify() {
+        runDueTasks()
+        syncNextSystemWakeup()
     }
 
     /**
@@ -1509,6 +1545,11 @@ class AppState(
         }
         conversation[index] = placeholder.copy(body = MessageBody.Text(spoken))
         finish(ran = true)
+        Notifiers.current.notify(
+            id = task.id,
+            title = "定时任务「${task.title}」已完成",
+            content = spoken.take(120).trim(),
+        )
     }
 
     /**
@@ -1552,6 +1593,7 @@ class AppState(
 
         tasks[index] = updated
         persistState()
+        syncNextSystemWakeup()
     }
 
     fun completeTask(taskId: String) {
@@ -1612,6 +1654,7 @@ class AppState(
         )
         tasks.add(0, task)
         persistState()
+        syncNextSystemWakeup()
         return id
     }
 
@@ -1648,6 +1691,7 @@ class AppState(
         // 改了时间就要重排期，否则它还会按旧时刻跑
         tasks[index] = if (scheduleLabel.isNullOrBlank()) updated else scheduled(updated)
         persistState()
+        syncNextSystemWakeup()
         return true
     }
 
@@ -1657,6 +1701,7 @@ class AppState(
         if (index < 0) return false
         tasks[index] = tasks[index].copy(status = TaskStatus.Done)
         persistState()
+        syncNextSystemWakeup()
         return true
     }
 
