@@ -29,11 +29,14 @@ import com.starringbox.staragent.core.data.LocalAppState
 import com.starringbox.staragent.core.designsystem.component.CircleIconButton
 import com.starringbox.staragent.core.designsystem.component.SettingsRow
 import com.starringbox.staragent.core.designsystem.component.StarCard
+import com.starringbox.staragent.core.designsystem.component.StarDivider
 import com.starringbox.staragent.core.designsystem.component.StarTopBar
+import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.navigation.Navigator
 import com.starringbox.staragent.core.designsystem.navigation.Route
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
+import com.starringbox.staragent.core.model.ExecutionPolicy
 import com.starringbox.staragent.core.platform.storage.LocalStores
 
 /**
@@ -81,6 +84,52 @@ fun SettingsScreen(navigator: Navigator) {
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            item { SectionLabel("执行权限") }
+            item {
+                StarCard(modifier = Modifier.fillMaxWidth()) {
+                    Column {
+                        val policy = state.executionPolicy
+                        SettingsRow(
+                            glyph = StarIconGlyph.Bolt,
+                            title = ExecutionPolicy.Auto.label,
+                            subtitle = ExecutionPolicy.Auto.summary,
+                            containerColor = if (policy == ExecutionPolicy.Auto) Color(0xFFE7E8FF) else StarPalette.SurfaceAlt,
+                            tint = if (policy == ExecutionPolicy.Auto) StarPalette.Indigo else StarPalette.TextFaint,
+                            trailing = if (policy == ExecutionPolicy.Auto) {
+                                {
+                                    StarIcon(
+                                        icon = StarIconGlyph.Check,
+                                        iconSize = 16.dp,
+                                        tint = StarPalette.Indigo,
+                                        strokeWidth = 2.2f,
+                                    )
+                                }
+                            } else null,
+                            onClick = { state.selectExecutionPolicy(ExecutionPolicy.Auto) },
+                        )
+                        StarDivider(inset = 56.dp)
+                        SettingsRow(
+                            glyph = StarIconGlyph.Task,
+                            title = ExecutionPolicy.OnDemand.label,
+                            subtitle = ExecutionPolicy.OnDemand.summary,
+                            containerColor = if (policy == ExecutionPolicy.OnDemand) Color(0xFFE7E8FF) else StarPalette.SurfaceAlt,
+                            tint = if (policy == ExecutionPolicy.OnDemand) StarPalette.Indigo else StarPalette.TextFaint,
+                            trailing = if (policy == ExecutionPolicy.OnDemand) {
+                                {
+                                    StarIcon(
+                                        icon = StarIconGlyph.Check,
+                                        iconSize = 16.dp,
+                                        tint = StarPalette.Indigo,
+                                        strokeWidth = 2.2f,
+                                    )
+                                }
+                            } else null,
+                            onClick = { state.selectExecutionPolicy(ExecutionPolicy.OnDemand) },
+                        )
+                    }
+                }
+            }
+
             item { SectionLabel("存储") }
             item {
                 StarCard(modifier = Modifier.fillMaxWidth()) {

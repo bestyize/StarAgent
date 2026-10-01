@@ -60,6 +60,8 @@ object CreateTaskTool : Tool {
         },
     )
 
+    override val requiresConfirmation: Boolean = true
+
     override suspend fun execute(args: JsonObject, host: ToolHost): ToolResult {
         val title = args.stringOrNull("title")
         if (title.isNullOrBlank()) {
@@ -164,6 +166,8 @@ object UpdateTaskTool : Tool {
         },
     )
 
+    override val requiresConfirmation: Boolean = true
+
     override suspend fun execute(args: JsonObject, host: ToolHost): ToolResult {
         val id = args.stringOrNull("id")
             ?: return ToolResult(callId = "", content = "缺参数 id，先用 list_tasks 查一下", isError = true)
@@ -215,6 +219,8 @@ object CancelTaskTool : Tool {
             putJsonArray("required") { add("id") }
         },
     )
+
+    override val requiresConfirmation: Boolean = true
 
     override suspend fun execute(args: JsonObject, host: ToolHost): ToolResult {
         val id = args.stringOrNull("id")

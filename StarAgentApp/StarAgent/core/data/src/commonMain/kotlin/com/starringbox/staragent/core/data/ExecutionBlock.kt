@@ -26,7 +26,7 @@ internal fun executionStepsFor(
     }
 }
 
-private fun readableLabelFor(call: ToolCall): String = when (call.name) {
+internal fun readableLabelFor(call: ToolCall): String = when (call.name) {
     "recall_memory" -> "回忆关于你的事"
     "remember" -> "记住这件事"
     "create_task" -> "创建托管任务"

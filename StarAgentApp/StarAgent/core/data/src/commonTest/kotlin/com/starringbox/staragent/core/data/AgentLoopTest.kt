@@ -15,6 +15,9 @@ import com.starringbox.staragent.core.tools.ToolHost
 import com.starringbox.staragent.core.tools.ToolRegistry
 import com.starringbox.staragent.core.tools.ports.FetchResult
 import com.starringbox.staragent.core.tools.ports.MemoryPort
+import com.starringbox.staragent.core.tools.ports.NoopMemoryPort
+import com.starringbox.staragent.core.tools.ports.NoopTaskPort
+import com.starringbox.staragent.core.tools.ports.NoopWebPort
 import com.starringbox.staragent.core.tools.ports.TaskPort
 import com.starringbox.staragent.core.tools.ports.TaskSummary
 import com.starringbox.staragent.core.tools.ports.WebPort
@@ -483,22 +486,3 @@ private fun testHost() = ToolHost(
     agentId = "a-xing",
     conversationKey = "agent:a-xing",
 )
-
-private object NoopMemoryPort : MemoryPort {
-    override suspend fun recall(agentId: String, query: String, limit: Int) = emptyList<MemoryItem>()
-    override suspend fun remember(agentId: String, category: MemoryCategory, text: String) = Unit
-}
-
-private object NoopTaskPort : TaskPort {
-    override suspend fun create(
-        agentId: String, title: String, recurrence: Recurrence,
-        scheduleLabel: String, note: String?,
-    ) = "task-1"
-    override suspend fun list(agentId: String) = emptyList<TaskSummary>()
-    override suspend fun update(agentId: String, id: String, title: String?, scheduleLabel: String?) = true
-    override suspend fun cancel(agentId: String, id: String) = true
-}
-
-private object NoopWebPort : WebPort {
-    override suspend fun fetch(url: String) = FetchResult(true, "")
-}

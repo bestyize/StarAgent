@@ -4,6 +4,7 @@ import com.starringbox.staragent.core.llm.ChatStreamEvent
 import com.starringbox.staragent.core.llm.LlmEndpoint
 import com.starringbox.staragent.core.llm.LlmRole
 import com.starringbox.staragent.core.llm.LlmTurn
+import com.starringbox.staragent.core.model.ExecutionPolicy
 import com.starringbox.staragent.core.model.ToolCall
 import com.starringbox.staragent.core.model.ToolResult
 import com.starringbox.staragent.core.tools.ToolHost
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 
 /** 循环的结局。 */
@@ -46,6 +48,8 @@ internal class AgentLoop(
      * 留成构造参数是给测试用的：不必为了让一条用例跑完而真等 30 秒。
      */
     private val toolTimeoutMillis: Long = DEFAULT_TOOL_TIMEOUT_MILLIS,
+    /** 按需确认等待用户操作的超时，毫秒。默认 5 分钟。留成参数供测试注入短超时。 */
+    private val confirmationTimeoutMillis: Long = DEFAULT_CONFIRMATION_TIMEOUT_MILLIS,
 ) {
 
     suspend fun run(
@@ -145,6 +149,32 @@ internal class AgentLoop(
             )
 
         return try {
+            // 🔴 执行权限门控：如果当前策略是「按需（OnDemand）」且工具属于关键/有副作用操作（如建/改/取消任务），
+            // 系统先原地向用户弹出提问卡片等待确认。用户允许后才真正执行；若用户拒绝或超时，操作直接取消。
+            if (host.executionPolicy == ExecutionPolicy.OnDemand && tool.requiresConfirmation) {
+                val operationDesc = describeOperationForConfirmation(call, args)
+                val userChoice = withTimeoutOrNull(confirmationTimeoutMillis) {
+                    host.userInput.requestInput(
+                        agentId = host.agentId,
+                        question = "智能体申请执行操作「$operationDesc」，是否允许？",
+                        options = listOf("允许", "拒绝"),
+                        placeholder = null,
+                    )
+                } ?: return ToolResult(
+                    callId = call.id,
+                    content = "操作确认超时（用户未在时限内回应），该操作已取消。",
+                    isError = true,
+                )
+
+                if (!userChoice.trim().contains("允许")) {
+                    return ToolResult(
+                        callId = call.id,
+                        content = "用户未同意执行该操作（用户选择：$userChoice），操作已取消。请向用户汇报并调整方案。",
+                        isError = true,
+                    )
+                }
+            }
+
             val effectiveTimeout = tool.timeoutMillis ?: toolTimeoutMillis
             // 工具超时是**给模型看的信息**，不是异常：它看到"这个操作超时了"可以
             // 换个办法或换个地址重试。
@@ -176,6 +206,29 @@ internal class AgentLoop(
         }.copy(callId = call.id) // 工具自己不知道 callId，在这里补上
     }
 
+    /** 把申请执行的操作翻译成易懂的人话，给确认卡片展示。 */
+    private fun describeOperationForConfirmation(call: ToolCall, args: JsonObject): String =
+        when (call.name) {
+            "create_task" -> {
+                val title = (args["title"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+                if (title != null) "创建托管任务：$title" else "创建托管任务"
+            }
+            "update_task" -> {
+                val id = (args["id"] as? JsonPrimitive)?.content
+                val title = (args["title"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+                when {
+                    title != null && id != null -> "将任务 $id 改名为「$title」"
+                    id != null -> "调整任务 $id 的执行时间"
+                    else -> "调整托管任务"
+                }
+            }
+            "cancel_task" -> {
+                val id = (args["id"] as? JsonPrimitive)?.content
+                if (id != null) "取消托管任务 $id" else "取消托管任务"
+            }
+            else -> readableLabelFor(call)
+        }
+
     /** 参数解析失败返回 null，由调用方变成一条错误结果——不抛。 */
     private fun parseArguments(raw: String): JsonObject? =
         runCatching { Json.parseToJsonElement(raw.ifBlank { "{}" }).jsonObject }.getOrNull()
@@ -188,6 +241,9 @@ internal class AgentLoop(
          * 又不至于在模型死循环时烧掉太多 token。
          */
         const val DEFAULT_MAX_ITERATIONS = 8
+
+        /** 按需确认等待用户操作的默认超时：5 分钟（300 秒）。 */
+        const val DEFAULT_CONFIRMATION_TIMEOUT_MILLIS = 300_000L
 
         /**
          * 单个工具的看门狗，30 秒。设计文档 §5.3 三个护栏里的第二条。

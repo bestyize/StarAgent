@@ -72,3 +72,25 @@ object NoopUserInputPort : UserInputPort {
         placeholder: String?,
     ): String = ""
 }
+
+object NoopMemoryPort : MemoryPort {
+    override suspend fun recall(agentId: String, query: String, limit: Int) = emptyList<com.starringbox.staragent.core.model.MemoryItem>()
+    override suspend fun remember(agentId: String, category: com.starringbox.staragent.core.model.MemoryCategory, text: String) = Unit
+}
+
+object NoopTaskPort : TaskPort {
+    override suspend fun create(
+        agentId: String,
+        title: String,
+        recurrence: com.starringbox.staragent.core.model.Recurrence,
+        scheduleLabel: String,
+        note: String?,
+    ) = "task-noop"
+    override suspend fun list(agentId: String) = emptyList<TaskSummary>()
+    override suspend fun update(agentId: String, id: String, title: String?, scheduleLabel: String?) = true
+    override suspend fun cancel(agentId: String, id: String) = true
+}
+
+object NoopWebPort : WebPort {
+    override suspend fun fetch(url: String) = FetchResult(true, "")
+}

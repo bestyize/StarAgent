@@ -26,6 +26,18 @@ data class Agent(
     val pinned: Boolean = false,
 )
 
+/**
+ * 工具执行权限策略。
+ *
+ * 自动：智能体自主调用工具，无需每次向用户请示。
+ * 按需：对有副作用的操作（如新建/修改/取消任务），系统会自动弹出提问卡片征求用户同意。
+ */
+@Serializable
+enum class ExecutionPolicy(val label: String, val summary: String) {
+    Auto("自动", "智能体自主调用工具，无需每次打扰"),
+    OnDemand("按需", "创建或修改任务等写入操作需用户二次确认"),
+}
+
 /** 响应模式。用户关心的是"这次要多快、多深"，而不是具体用了哪个模型。 */
 @Serializable
 enum class ResponseMode(val label: String, val hint: String) {

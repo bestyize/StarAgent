@@ -1,5 +1,6 @@
 package com.starringbox.staragent.core.tools
 
+import com.starringbox.staragent.core.model.ExecutionPolicy
 import com.starringbox.staragent.core.tools.ports.MemoryPort
 import com.starringbox.staragent.core.tools.ports.NoopUserInputPort
 import com.starringbox.staragent.core.tools.ports.TaskPort
@@ -17,6 +18,7 @@ class ToolHost(
     val tasks: TaskPort,
     val web: WebPort,
     val userInput: UserInputPort = NoopUserInputPort,
+    val executionPolicy: ExecutionPolicy = ExecutionPolicy.Auto,
     val agentId: String,
     val conversationKey: String,
 )

@@ -30,6 +30,7 @@ import com.starringbox.staragent.core.model.AgentTask
 import com.starringbox.staragent.core.model.Author
 import com.starringbox.staragent.core.model.Channel
 import com.starringbox.staragent.core.model.ChatMessage
+import com.starringbox.staragent.core.model.ExecutionPolicy
 import com.starringbox.staragent.core.model.LlmProtocol
 import com.starringbox.staragent.core.model.MemoryCategory
 import com.starringbox.staragent.core.model.MemoryItem
@@ -96,6 +97,10 @@ class AppState(
     private val busy = mutableStateMapOf<String, Boolean>()
 
     var responseMode by mutableStateOf(ResponseMode.Standard)
+        private set
+
+    /** 工具执行权限策略：Auto（自动）或 OnDemand（按需二次确认）。 */
+    var executionPolicy by mutableStateOf(ExecutionPolicy.Auto)
         private set
 
     /** 语音引擎偏好。null = 自动：优先设备能力（不要 Key、不花钱）。 */
@@ -731,6 +736,12 @@ class AppState(
         SettingsStore.put(KEY_RESPONSE_MODE, mode.name)
     }
 
+    /** 切换执行权限策略。自动 vs 按需。 */
+    fun selectExecutionPolicy(policy: ExecutionPolicy) {
+        executionPolicy = policy
+        SettingsStore.put(KEY_EXECUTION_POLICY, policy.name)
+    }
+
     fun setAgentModel(agentId: String, modelId: String) {
         val index = agents.indexOfFirst { it.id == agentId }
         if (index >= 0) agents[index] = agents[index].copy(modelId = modelId)
@@ -812,6 +823,7 @@ class AppState(
                 tasks = AppTaskPort(this),
                 web = webPort,
                 userInput = userInputPort,
+                executionPolicy = executionPolicy,
                 agentId = agentId,
                 conversationKey = agentId,
             )
@@ -1154,6 +1166,7 @@ class AppState(
                 tasks = AppTaskPort(this),
                 web = webPort,
                 userInput = userInputPort,
+                executionPolicy = executionPolicy,
                 // 记忆与任务都是**按智能体**隔离的，所以是成员自己的 id，不是群 id——
                 // 用群 id 的话群里每个人会共享同一份记忆和任务清单，那显然是错的。
                 agentId = member.id,
@@ -1405,6 +1418,7 @@ class AppState(
                 tasks = AppTaskPort(this),
                 web = webPort,
                 userInput = userInputPort,
+                executionPolicy = executionPolicy,
                 agentId = task.agentId,
                 conversationKey = task.agentId,
             )
@@ -1801,6 +1815,10 @@ class AppState(
             ?.let { saved -> ResponseMode.entries.firstOrNull { it.name == saved } }
             ?.let { responseMode = it }
 
+        SettingsStore.get(KEY_EXECUTION_POLICY)
+            ?.let { saved -> ExecutionPolicy.entries.firstOrNull { it.name == saved } }
+            ?.let { executionPolicy = it }
+
         // 预置模型清单更新后，要把本地缓存的那份丢掉，否则用户永远看不到新模型。
         // API Key 必须保留——只重置模型名。
         val savedSeedVersion = SettingsStore.get(KEY_SEED_VERSION)?.toIntOrNull() ?: 0
@@ -1886,6 +1904,7 @@ class AppState(
 
         const val KEY_DEFAULT_MODEL = "defaultModel"
         const val KEY_RESPONSE_MODE = "responseMode"
+        const val KEY_EXECUTION_POLICY = "executionPolicy"
         const val KEY_CUSTOM_IDS = "customIds"
         const val KEY_VOICE_SOURCE = "voiceSource"
         const val KEY_SPEECH_PROVIDER = "speechProvider"

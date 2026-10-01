@@ -1,5 +1,6 @@
 package com.starringbox.staragent.core.tools
 
+import com.starringbox.staragent.core.model.ExecutionPolicy
 import com.starringbox.staragent.core.model.MemoryCategory
 import com.starringbox.staragent.core.model.MemoryItem
 import com.starringbox.staragent.core.model.Recurrence
@@ -131,5 +132,6 @@ fun testHost(
     tasks: TaskPort = FakeTaskPort(),
     web: WebPort = FakeWebPort(),
     userInput: UserInputPort = FakeUserInputPort(),
+    executionPolicy: ExecutionPolicy = ExecutionPolicy.Auto,
     agentId: String = "a-xing",
-) = ToolHost(memory, tasks, web, userInput, agentId, conversationKey = "agent:a-xing")
+) = ToolHost(memory, tasks, web, userInput, executionPolicy, agentId, conversationKey = "agent:a-xing")

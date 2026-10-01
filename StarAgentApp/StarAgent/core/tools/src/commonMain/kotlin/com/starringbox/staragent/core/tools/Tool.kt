@@ -21,5 +21,13 @@ interface Tool {
      */
     val timeoutMillis: Long? get() = null
 
+    /**
+     * 是否属于关键/有副作用的操作。
+     *
+     * 在「按需（On-Demand）」执行权限策略下，系统会在调用前自动弹出确认卡片询问用户，
+     * 用户同意后才真正执行；若为 false 则直接放行。
+     */
+    val requiresConfirmation: Boolean get() = false
+
     suspend fun execute(args: JsonObject, host: ToolHost): ToolResult
 }
