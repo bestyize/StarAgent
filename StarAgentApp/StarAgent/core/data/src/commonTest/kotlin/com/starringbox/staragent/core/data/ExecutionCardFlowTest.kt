@@ -98,6 +98,35 @@ class ExecutionCardFlowTest {
      * 没有这条，上面那条会假绿——把卡片无条件地插在每一轮里，上面也照样过。
      */
     @Test
+    fun executionCardAppearsBeforeFinalReply() = runTest {
+        var round = 0
+        val state = readyState(web = FakeWeb(FetchResult(true, "示例页的正文"))) { _, _ ->
+            flow {
+                if (round++ == 0) {
+                    emit(ChatStreamEvent.ToolCallsReady(listOf(ToolCall("c1", "web_fetch", "{\"url\":\"https://example.com\"}"))))
+                } else {
+                    emit(ChatStreamEvent.Delta("最终回复"))
+                }
+                emit(ChatStreamEvent.Completed)
+            }
+        }
+        val agent = state.agent("a-xing") ?: error("种子里应当有小星")
+
+        state.send(agent.id, "查一下资料")
+
+        val messages = state.messagesOf(agent.id)
+        val executionIndex = messages.indexOfFirst { it.body is MessageBody.Execution }
+        val replyIndex = messages.indexOfLast {
+            it.author == com.starringbox.staragent.core.model.Author.Agent &&
+                it.body is MessageBody.Text &&
+                (it.body as MessageBody.Text).text == "最终回复"
+        }
+        assertTrue(executionIndex >= 0)
+        assertTrue(replyIndex >= 0)
+        assertTrue(executionIndex < replyIndex, "tool-use 执行卡必须位于最终回复之前")
+    }
+
+    @Test
     fun pureConversationGetsNoExecutionCard() = runTest {
         val state = readyState { _, _ ->
             flow {

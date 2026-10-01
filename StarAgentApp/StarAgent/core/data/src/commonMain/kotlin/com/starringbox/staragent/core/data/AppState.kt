@@ -811,7 +811,7 @@ class AppState(
             timeLabel = "刚刚",
         )
         conversation.add(placeholder)
-        val index = conversation.lastIndex
+        var index = conversation.lastIndex
 
         // 执行卡片是**一张会变的卡**，不是一步一个气泡：记下它在对话里的位置，
         // 之后每有进展就重写那一条——和上面流式占位符是同一个手法。
@@ -866,7 +866,10 @@ class AppState(
                     val steps = executionStepsFor(stepCalls, stepResults)
                     if (executionIndex < 0) {
                         // 第一次调工具时才插卡片，别让纯对话也顶一张空的
+                        // 回复占位已经先插入以承载流式文本；工具卡必须插到它前面，
+                        // 用户看到的顺序才是「工具执行 → 最终回复」。
                         conversation.add(
+                            index,
                             ChatMessage(
                                 id = nextId("m"),
                                 author = Author.Agent,
@@ -874,7 +877,8 @@ class AppState(
                                 timeLabel = "刚刚",
                             )
                         )
-                        executionIndex = conversation.lastIndex
+                        executionIndex = index
+                        index++
                     } else {
                         conversation[executionIndex] =
                             conversation[executionIndex].copy(body = MessageBody.Execution(steps))
@@ -1170,8 +1174,8 @@ class AppState(
             roundIndex = round,
         )
         conversation.add(placeholder)
-        // 本成员发言期间不会再往列表里 append，index 是稳的
-        val index = conversation.lastIndex
+        // 工具卡会插到回复占位之前，因此回复索引在首次调工具时会后移一格。
+        var index = conversation.lastIndex
 
         // 每位成员各有**一张自己的执行卡**（index 逐位各记一份）：成员是轮流发言的，
         // 共用一张的话后一位的工具步骤会写进上一位那张卡里，看起来像一个人干的。
@@ -1219,7 +1223,9 @@ class AppState(
                     stepCalls += call
                     val steps = executionStepsFor(stepCalls, stepResults)
                     if (executionIndex < 0) {
+                        // 工具卡必须位于这位成员的回复占位之前。
                         conversation.add(
+                            index,
                             ChatMessage(
                                 id = nextId("m"),
                                 author = Author.Agent,
@@ -1230,7 +1236,8 @@ class AppState(
                                 roundIndex = round,
                             )
                         )
-                        executionIndex = conversation.lastIndex
+                        executionIndex = index
+                        index++
                     } else {
                         conversation[executionIndex] =
                             conversation[executionIndex].copy(body = MessageBody.Execution(steps))
@@ -1441,7 +1448,7 @@ class AppState(
 
         val placeholder = ChatMessage(nextId("m"), Author.Agent, MessageBody.Text(""), "刚刚")
         conversation.add(placeholder)
-        val index = conversation.lastIndex
+        var index = conversation.lastIndex
 
         // 执行卡片和 send() 一样是**一张会变的卡**：记下它在对话里的位置，
         // 之后每有进展就重写那一条，而不是一步一个气泡。
@@ -1502,7 +1509,10 @@ class AppState(
                     val steps = executionStepsFor(stepCalls, stepResults)
                     if (executionIndex < 0) {
                         // 第一次调工具时才插卡片，别让纯任务叙述也顶一张空的
+                        // 回复占位已经先插入以承载流式文本；工具卡必须插到它前面，
+                        // 用户看到的顺序才是「工具执行 → 最终回复」。
                         conversation.add(
+                            index,
                             ChatMessage(
                                 id = nextId("m"),
                                 author = Author.Agent,
@@ -1510,7 +1520,8 @@ class AppState(
                                 timeLabel = "刚刚",
                             )
                         )
-                        executionIndex = conversation.lastIndex
+                        executionIndex = index
+                        index++
                     } else {
                         conversation[executionIndex] =
                             conversation[executionIndex].copy(body = MessageBody.Execution(steps))
