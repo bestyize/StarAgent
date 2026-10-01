@@ -93,6 +93,9 @@ class TaskSchedulerSyncTest {
                 }
             }
         )
+        state.updateProvider(
+            state.providerById("deepseek")!!.copy(apiKey = "test-key", models = listOf("test-model")),
+        )
         state.tasks.clear()
         val dueTask = AgentTask("t-due", "a-xing", "科技早报", Recurrence.Daily, "09:00", "", nextRunAt = 500L, status = TaskStatus.Active)
         state.tasks.add(dueTask)

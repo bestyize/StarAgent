@@ -21,6 +21,8 @@ import com.starringbox.staragent.core.llm.ModelTranscriber
 import com.starringbox.staragent.core.llm.SpeechEndpoint
 import com.starringbox.staragent.core.model.MediaAsset
 import com.starringbox.staragent.core.platform.notify.Notifiers
+import com.starringbox.staragent.core.platform.platformCommandPort
+import com.starringbox.staragent.core.platform.platformMcpManager
 import com.starringbox.staragent.core.platform.schedule.TaskSchedulers
 import com.starringbox.staragent.core.platform.schedule.WakeupTrigger
 import com.starringbox.staragent.core.platform.storage.LocalStores
@@ -49,9 +51,14 @@ import com.starringbox.staragent.core.model.ToolCall
 import com.starringbox.staragent.core.model.ToolResult
 import com.starringbox.staragent.core.tools.ToolHost
 import com.starringbox.staragent.core.tools.ToolRegistry
+import com.starringbox.staragent.core.tools.McpRegistry
 import com.starringbox.staragent.core.tools.builtin.BuiltinTools
 import com.starringbox.staragent.core.tools.ports.TaskSummary
 import com.starringbox.staragent.core.tools.ports.WebPort
+import com.starringbox.staragent.core.data.ports.AppFilePort
+import com.starringbox.staragent.core.data.ports.AppSearchPort
+import com.starringbox.staragent.core.data.ports.AppSkillPort
+import com.starringbox.staragent.core.data.ports.AppBrowserPort
 import com.starringbox.staragent.core.model.describeMoment
 import com.starringbox.staragent.core.model.describeNextRun
 import com.starringbox.staragent.core.model.nextRunAtFor
@@ -672,9 +679,9 @@ class AppState(
      */
     internal fun registryFor(agent: Agent): ToolRegistry =
         if (agent.canScheduleTasks) {
-            BuiltinTools.all
+            BuiltinTools.all + McpRegistry.registry()
         } else {
-            BuiltinTools.withoutTaskCreation
+            BuiltinTools.withoutTaskCreation + McpRegistry.registry()
         }
 
     fun updateProvider(updated: ModelProvider) {
@@ -832,6 +839,12 @@ class AppState(
                 tasks = AppTaskPort(this),
                 web = webPort,
                 userInput = userInputPort,
+                files = AppFilePort(),
+                commands = platformCommandPort(),
+                search = AppSearchPort(),
+                skills = AppSkillPort(this),
+                browser = AppBrowserPort(webPort),
+                mcp = platformMcpManager(),
                 executionPolicy = executionPolicy,
                 agentId = agentId,
                 conversationKey = agentId,
@@ -1176,6 +1189,12 @@ class AppState(
                 tasks = AppTaskPort(this),
                 web = webPort,
                 userInput = userInputPort,
+                files = AppFilePort(),
+                commands = platformCommandPort(),
+                search = AppSearchPort(),
+                skills = AppSkillPort(this),
+                browser = AppBrowserPort(webPort),
+                mcp = platformMcpManager(),
                 executionPolicy = executionPolicy,
                 // 记忆与任务都是**按智能体**隔离的，所以是成员自己的 id，不是群 id——
                 // 用群 id 的话群里每个人会共享同一份记忆和任务清单，那显然是错的。
@@ -1454,6 +1473,12 @@ class AppState(
                 tasks = AppTaskPort(this),
                 web = webPort,
                 userInput = userInputPort,
+                files = AppFilePort(),
+                commands = platformCommandPort(),
+                search = AppSearchPort(),
+                skills = AppSkillPort(this),
+                browser = AppBrowserPort(webPort),
+                mcp = platformMcpManager(),
                 executionPolicy = executionPolicy,
                 agentId = task.agentId,
                 conversationKey = task.agentId,
@@ -1715,6 +1740,29 @@ class AppState(
         if (index < 0) return
         skills[index] = skills[index].copy(installed = !skills[index].installed)
         persistState()
+    }
+
+    fun setSkillInstalled(skillId: String, installed: Boolean): Boolean {
+        val index = skills.indexOfFirst { it.id == skillId }
+        if (index < 0) return false
+        if (skills[index].installed != installed) {
+            skills[index] = skills[index].copy(installed = installed)
+            persistState()
+        }
+        return true
+    }
+
+    fun addSkill(skill: Skill): Boolean {
+        if (skills.any { it.id == skill.id }) return false
+        skills.add(skill)
+        persistState()
+        return true
+    }
+
+    fun removeSkill(skillId: String): Boolean {
+        val removed = skills.removeAll { it.id == skillId }
+        if (removed) persistState()
+        return removed
     }
 
     fun toggleChannel(channelId: String) {

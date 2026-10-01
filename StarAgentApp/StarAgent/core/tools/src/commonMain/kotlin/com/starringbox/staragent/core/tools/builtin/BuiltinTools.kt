@@ -18,6 +18,8 @@ object BuiltinTools {
         CancelTaskTool,
         WebFetchTool,
         RequestUserInputTool,
+        ListFilesTool, ReadFileTool, WriteFileTool, DeleteFileTool,
+        WebSearchTool, RunCommandTool, ListSkillsTool, SetSkillInstalledTool, InstallSkillTool, RemoveSkillTool, BrowserOpenTool, BrowserReadTool, McpListServersTool, McpConnectTool, McpDisconnectTool,
     )
 
     /**
@@ -34,5 +36,7 @@ object BuiltinTools {
         CancelTaskTool,
         WebFetchTool,
         RequestUserInputTool,
+        ListFilesTool, ReadFileTool, WriteFileTool, DeleteFileTool,
+        WebSearchTool, RunCommandTool, ListSkillsTool, SetSkillInstalledTool, InstallSkillTool, RemoveSkillTool, BrowserOpenTool, BrowserReadTool, McpListServersTool, McpConnectTool, McpDisconnectTool,
     )
 }

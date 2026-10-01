@@ -55,13 +55,13 @@ class ToolRegistryTest {
     }
 
     @Test
-    fun builtinToolsContainAllEightToolsAndWithoutTaskCreationExcludesCreateTask() {
-        assertEquals(8, BuiltinTools.all.definitions().size)
+    fun builtinToolsContainExtendedToolsAndWithoutTaskCreationExcludesCreateTask() {
+        assertEquals(23, BuiltinTools.all.definitions().size)
         assertNotNull(BuiltinTools.all.find("create_task"))
         assertNotNull(BuiltinTools.all.find("web_fetch"))
         assertNotNull(BuiltinTools.all.find("request_user_input"))
 
-        assertEquals(7, BuiltinTools.withoutTaskCreation.definitions().size)
+        assertEquals(22, BuiltinTools.withoutTaskCreation.definitions().size)
         assertNull(BuiltinTools.withoutTaskCreation.find("create_task"))
         assertNotNull(BuiltinTools.withoutTaskCreation.find("list_tasks"))
         assertNotNull(BuiltinTools.withoutTaskCreation.find("request_user_input"))

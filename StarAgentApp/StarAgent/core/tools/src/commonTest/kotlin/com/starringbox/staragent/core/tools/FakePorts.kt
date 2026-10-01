@@ -134,4 +134,12 @@ fun testHost(
     userInput: UserInputPort = FakeUserInputPort(),
     executionPolicy: ExecutionPolicy = ExecutionPolicy.Auto,
     agentId: String = "a-xing",
-) = ToolHost(memory, tasks, web, userInput, executionPolicy, agentId, conversationKey = "agent:a-xing")
+) = ToolHost(
+    memory = memory,
+    tasks = tasks,
+    web = web,
+    userInput = userInput,
+    executionPolicy = executionPolicy,
+    agentId = agentId,
+    conversationKey = "agent:a-xing",
+)

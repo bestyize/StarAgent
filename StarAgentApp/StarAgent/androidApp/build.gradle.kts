@@ -14,6 +14,8 @@ dependencies {
     implementation(project(":shared"))
     // 各端平台能力由装配层一次装齐；core:data / core:platform 都由它带进来
     implementation(project(":core:bootstrap"))
+    // Manifest 直接引用 core:platform 的 BroadcastReceiver；声明直接依赖让 Android Lint 能解析到类。
+    implementation(project(":core:platform"))
 
     implementation(libs.androidx.activity.compose)
 

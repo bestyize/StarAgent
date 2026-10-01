@@ -272,3 +272,80 @@ Android 本地构建需要 `local.properties` 中的 `sdk.dir` 指向本机 SDK�
 - `core` / `feature` 各模块的 `build.gradle.kts` 目前是逐模块复制的最小 KMP 配置，
   模块再多一些时值得抽成 `buildSrc` 约定插件。
 - iOS 目标只写了代码，尚未在 Mac 环境编译验证过。
+
+## 当前 Agent 工具
+
+除记忆、任务、网页读取和用户提问外，当前工具注册表还包含：
+
+- `list_files` / `read_file` / `write_file` / `delete_file`：智能体专属文件沙箱
+- `run_command`：受平台限制的命令执行（Desktop 可用，Android/iOS 默认禁用）
+- `web_search`：DuckDuckGo HTML 搜索适配
+- `list_skills` / `set_skill_enabled` / `install_skill` / `remove_skill`：查看、安装、启停和卸载本地 Skill
+
+文件写入、删除、命令执行和 Skill 状态变更会在“按需确认”策略下先请求用户确认。动态下载 Skill、MCP、浏览器控制和任意第三方 App 读屏/点击仍需后续阶段接入。
+
+## MCP 工具扩展
+
+MCP 工具已经接入统一 Tool 系统：
+
+```kotlin
+McpRegistry.install(
+    port = myMcpPort,
+    descriptors = descriptorsFromServer,
+)
+```
+
+注册后会自动出现在每个 Agent 的工具列表中，工具名格式为：
+
+```text
+mcp__<serverId>__<toolName>
+```
+
+MCP 工具默认要求用户确认，并通过 `agentId` 保持调用隔离；MCP 返回内容默认视为外部上下文，不会直接写入长期记忆。当前仓库已经完成协议/注册/调用适配层，具体 stdio、HTTP 或 Streamable HTTP transport 仍需由平台连接器实现。
+
+### Desktop stdio MCP
+
+Desktop 端可显式启动一个本地 MCP Server：
+
+```kotlin
+val tools = DesktopMcp.connect(
+    serverId = "filesystem",
+    command = "npx",
+    args = listOf("-y", "@modelcontextprotocol/server-filesystem", "/tmp/staragent"),
+)
+```
+
+连接过程会执行：
+
+```text
+启动进程 → initialize → notifications/initialized → tools/list → 注册工具
+```
+
+后续 Agent 调用会复用该 MCP 进程，通过 `tools/call` 执行。应用不会自动执行外部命令；连接必须由 Desktop 入口或设置页面显式发起。
+
+### 浏览器工具
+
+当前新增：
+
+- `browser_open`：Desktop 打开系统默认浏览器；移动端未注入时返回不可用
+- `browser_read`：复用安全网页抓取能力读取 HTTPS 正文，并标记为外部上下文
+
+这两个工具不等同于自动点击任意第三方 App；浏览器内的点击、输入和页面会话仍需要后续 WebView/浏览器驱动适配。
+
+### MCP Server 管理工具
+
+Agent 现在可以在 Desktop 上管理 MCP Server：
+
+- `mcp_list_servers`：列出已连接 Server 和工具数量
+- `mcp_connect`：经用户确认后启动本地 MCP 进程并发现工具
+- `mcp_disconnect`：经用户确认后断开 Server
+
+Android/iOS 不会启动本地 MCP 进程，相关调用会返回平台不支持。Desktop 连接仍不会自动持久化到下次启动，避免应用启动时未经用户同意执行外部命令。
+
+### 测试环境说明
+
+默认情况下，`allTests` 会跳过需要真实 iOS Simulator Runtime 的 `iosSimulatorArm64Test`，但仍会编译 iOS 模拟器目标并运行 JVM 测试。安装了 Xcode Simulator Runtime 后，可显式运行：
+
+```bash
+./gradlew allTests -Pstaragent.runIosSimulatorTests=true
+```

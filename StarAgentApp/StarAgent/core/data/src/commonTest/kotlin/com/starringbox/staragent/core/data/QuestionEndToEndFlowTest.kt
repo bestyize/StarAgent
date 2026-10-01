@@ -55,6 +55,9 @@ class QuestionEndToEndFlowTest {
         }
 
         val state = AppState(stream = fakeStream)
+        state.updateProvider(
+            state.providerById("deepseek")!!.copy(apiKey = "test-key", models = listOf("test-model")),
+        )
         val agent = state.agents.first()
 
         // 异步发送消息

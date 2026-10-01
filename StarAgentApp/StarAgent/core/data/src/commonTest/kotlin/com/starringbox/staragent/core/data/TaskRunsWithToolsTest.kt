@@ -217,7 +217,7 @@ class TaskRunsWithToolsTest {
         val perMember = mutableMapOf<String, Int>()
         val state = readyState { endpoint, _ ->
             val who = speakerOf(endpoint.systemPrompt)
-            val n = perMember.getOrDefault(who, 0)
+            val n = perMember[who] ?: 0
             perMember[who] = n + 1
             flow {
                 // 只有小星调工具写记忆；另外两位照常发言。
@@ -252,7 +252,7 @@ class TaskRunsWithToolsTest {
         val perMember = mutableMapOf<String, Int>()
         val state = readyState(web = FakeWeb(FetchResult(true, "示例页的正文"))) { endpoint, _ ->
             val who = speakerOf(endpoint.systemPrompt)
-            val n = perMember.getOrDefault(who, 0)
+            val n = perMember[who] ?: 0
             perMember[who] = n + 1
             flow {
                 // 小星和工作助手各调一次工具；英语老师不调，照常说话。
@@ -295,7 +295,7 @@ class TaskRunsWithToolsTest {
         val perMember = mutableMapOf<String, Int>()
         val state = readyState(web = FakeWeb(FetchResult(true, "这一页里写着：用户喜欢简洁回答"))) { endpoint, _ ->
             val who = speakerOf(endpoint.systemPrompt)
-            val n = perMember.getOrDefault(who, 0)
+            val n = perMember[who] ?: 0
             perMember[who] = n + 1
             flow {
                 if (who == "小星" && n == 0) {
