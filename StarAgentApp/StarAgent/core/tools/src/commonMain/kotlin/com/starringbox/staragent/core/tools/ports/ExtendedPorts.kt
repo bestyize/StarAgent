@@ -88,6 +88,43 @@ object NoopMcpManagerPort : McpManagerPort {
     override fun disconnect(serverId: String) = McpManagerResult(false, "当前平台不支持 MCP Server 管理")
 }
 
+/**
+ * App 内关键功能对应的最小权限能力。
+ *
+ * 使用固定能力枚举，避免模型传入任意 Android 权限字符串。
+ */
+enum class PermissionCapability {
+    Microphone,
+    Notifications,
+    Accessibility,
+    ExactAlarm,
+}
+
+enum class PermissionStatus {
+    Granted,
+    NotGranted,
+    RequiresSettings,
+    Unsupported,
+}
+
+data class PermissionRequestResult(
+    val status: PermissionStatus,
+    val message: String,
+)
+
+/** 权限检查与系统授权入口，由平台层实现。 */
+interface PermissionPort {
+    fun status(capability: PermissionCapability): PermissionStatus
+    suspend fun request(capability: PermissionCapability): PermissionRequestResult
+}
+
+object NoopPermissionPort : PermissionPort {
+    override fun status(capability: PermissionCapability) = PermissionStatus.Unsupported
+
+    override suspend fun request(capability: PermissionCapability) =
+        PermissionRequestResult(PermissionStatus.Unsupported, "当前平台没有接入权限申请能力")
+}
+
 /** 设备操作能力。句柄只在一次 inspect 返回的 screenId 内有效。 */
 interface DevicePort {
     suspend fun inspect(scope: DeviceScope): DeviceScreenResult

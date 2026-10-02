@@ -7,6 +7,8 @@ import com.starringbox.staragent.core.model.Recurrence
 import com.starringbox.staragent.core.model.TaskStatus
 import com.starringbox.staragent.core.tools.ports.FetchResult
 import com.starringbox.staragent.core.tools.ports.MemoryPort
+import com.starringbox.staragent.core.tools.ports.PermissionPort
+import com.starringbox.staragent.core.tools.ports.NoopPermissionPort
 import com.starringbox.staragent.core.tools.ports.TaskPort
 import com.starringbox.staragent.core.tools.ports.TaskSummary
 import com.starringbox.staragent.core.tools.ports.UserInputPort
@@ -132,6 +134,7 @@ fun testHost(
     tasks: TaskPort = FakeTaskPort(),
     web: WebPort = FakeWebPort(),
     userInput: UserInputPort = FakeUserInputPort(),
+    permissions: PermissionPort = NoopPermissionPort,
     executionPolicy: ExecutionPolicy = ExecutionPolicy.Auto,
     agentId: String = "a-xing",
 ) = ToolHost(
@@ -139,6 +142,7 @@ fun testHost(
     tasks = tasks,
     web = web,
     userInput = userInput,
+    permissions = permissions,
     executionPolicy = executionPolicy,
     agentId = agentId,
     conversationKey = "agent:a-xing",

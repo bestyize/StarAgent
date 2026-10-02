@@ -14,6 +14,8 @@ import com.starringbox.staragent.core.tools.ports.BrowserPort
 import com.starringbox.staragent.core.tools.ports.NoopBrowserPort
 import com.starringbox.staragent.core.tools.ports.McpManagerPort
 import com.starringbox.staragent.core.tools.ports.DevicePort
+import com.starringbox.staragent.core.tools.ports.PermissionPort
+import com.starringbox.staragent.core.tools.ports.NoopPermissionPort
 import com.starringbox.staragent.core.tools.ports.NoopDevicePort
 import com.starringbox.staragent.core.tools.ports.NoopMcpManagerPort
 import com.starringbox.staragent.core.tools.ports.NoopFilePort
@@ -39,6 +41,7 @@ class ToolHost(
     val browser: BrowserPort = NoopBrowserPort,
     val mcp: McpManagerPort = NoopMcpManagerPort,
     val device: DevicePort = NoopDevicePort,
+    val permissions: PermissionPort = NoopPermissionPort,
     val executionPolicy: ExecutionPolicy = ExecutionPolicy.Auto,
     val agentId: String,
     val conversationKey: String,
