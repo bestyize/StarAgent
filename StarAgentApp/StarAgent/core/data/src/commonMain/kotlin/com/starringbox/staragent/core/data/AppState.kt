@@ -24,6 +24,7 @@ import com.starringbox.staragent.core.platform.notify.Notifiers
 import com.starringbox.staragent.core.platform.platformCommandPort
 import com.starringbox.staragent.core.platform.platformMcpManager
 import com.starringbox.staragent.core.platform.platformDevicePort
+import com.starringbox.staragent.core.platform.permissions.PermissionRequests
 import com.starringbox.staragent.core.platform.schedule.TaskSchedulers
 import com.starringbox.staragent.core.platform.schedule.TaskSchedulerStatus
 import com.starringbox.staragent.core.platform.schedule.WakeupTrigger
@@ -854,6 +855,7 @@ class AppState(
                 browser = AppBrowserPort(webPort),
                 mcp = platformMcpManager(),
                 device = platformDevicePort(),
+                permissions = PermissionRequests,
                 executionPolicy = executionPolicy,
                 agentId = agentId,
                 conversationKey = agentId,
@@ -1217,6 +1219,7 @@ class AppState(
                 browser = AppBrowserPort(webPort),
                 mcp = platformMcpManager(),
                 device = platformDevicePort(),
+                permissions = PermissionRequests,
                 executionPolicy = executionPolicy,
                 // 记忆与任务都是**按智能体**隔离的，所以是成员自己的 id，不是群 id——
                 // 用群 id 的话群里每个人会共享同一份记忆和任务清单，那显然是错的。
@@ -1505,6 +1508,7 @@ class AppState(
                 browser = AppBrowserPort(webPort),
                 mcp = platformMcpManager(),
                 device = platformDevicePort(),
+                permissions = PermissionRequests,
                 executionPolicy = executionPolicy,
                 agentId = task.agentId,
                 conversationKey = task.agentId,
