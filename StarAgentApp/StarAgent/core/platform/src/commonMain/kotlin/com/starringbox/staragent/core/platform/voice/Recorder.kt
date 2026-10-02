@@ -15,6 +15,8 @@ interface Recorder {
      * 那时候 `available` 要是 true，界面就会显示一个点了没反应的按钮。
      */
     val available: Boolean
+    val inputLevel: Float get() = 0f
+    val speechEnded: Boolean get() = false
 
     /** 开始录。返回 false 表示起不来（没权限、没有设备、已经在录）。 */
     suspend fun start(): Boolean
@@ -43,6 +45,8 @@ object Recorders {
     }
 
     val available: Boolean get() = installed.available
+    val inputLevel: Float get() = installed.inputLevel
+    val speechEnded: Boolean get() = installed.speechEnded
 
     suspend fun start(): Boolean = installed.start()
 

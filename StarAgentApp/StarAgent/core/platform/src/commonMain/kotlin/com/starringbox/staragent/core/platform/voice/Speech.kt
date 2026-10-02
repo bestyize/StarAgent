@@ -37,6 +37,8 @@ interface Transcriber {
      * 刻意不是挂起函数——界面要拿它决定入口显不显示，在组合期能同步读到是必要条件。
      */
     val ready: Boolean
+    val inputLevel: Float get() = 0f
+    val speechEnded: Boolean get() = false
 
     /** 开始听。返回 false 表示起不来（权限被拒、没配服务商、设备不认）。 */
     suspend fun start(): Boolean

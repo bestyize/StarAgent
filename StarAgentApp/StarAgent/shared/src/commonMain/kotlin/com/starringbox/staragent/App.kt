@@ -10,11 +10,14 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,6 +43,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.starringbox.staragent.core.data.AppState
 import com.starringbox.staragent.core.data.LocalAppState
+import com.starringbox.staragent.core.model.BuiltInCompanion
+import com.starringbox.staragent.core.designsystem.theme.avatarGradient
 import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.navigation.NavAction
@@ -52,6 +57,7 @@ import com.starringbox.staragent.feature.agents.AgentEditorScreen
 import com.starringbox.staragent.feature.agents.AgentListScreen
 import com.starringbox.staragent.feature.agents.GroupEditorScreen
 import com.starringbox.staragent.feature.chat.ChatScreen
+import com.starringbox.staragent.feature.chat.CompanionScreen
 import com.starringbox.staragent.feature.chat.GroupChatScreen
 import com.starringbox.staragent.feature.settings.ChannelsScreen
 import com.starringbox.staragent.feature.settings.MeScreen
@@ -75,10 +81,21 @@ import kotlinx.coroutines.delay
 data class AppNavigationEvent(val sequence: Long, val route: Route)
 
 @Composable
-fun App(notificationEvent: AppNavigationEvent? = null) {
+fun App(
+    notificationEvent: AppNavigationEvent? = null,
+    appState: AppState? = null,
+    initialRoute: Route = Route.Agents,
+) {
     StarAgentTheme {
-        val state = remember { AppState() }
-        val navigator = remember { Navigator(Route.Agents) }
+        val state = remember { appState ?: AppState() }
+        val navigator = remember { Navigator(initialRoute) }
+        val companionDark = (navigator.current == Route.Companion ||
+            (navigator.current as? Route.Chat)?.agentId == BuiltInCompanion.ID) &&
+            (state.companionDarkMode ?: isSystemInDarkTheme())
+        PlatformSystemBars(companionDark)
+        PlatformBackgroundEffect {
+            if (state.companionVoice.active) state.companionVoice.stop()
+        }
         LaunchedEffect(notificationEvent?.sequence) {
             val route = notificationEvent?.route ?: return@LaunchedEffect
             when (route) {
@@ -116,7 +133,7 @@ fun App(notificationEvent: AppNavigationEvent? = null) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
+                    .background(if (companionDark) Color(0xFF080A12) else MaterialTheme.colorScheme.background)
                     // 只让开底部。顶部交给各页自己的顶栏去处理：
                     // 顶栏的底色要一直铺到状态栏后面，内容再用 statusBarsPadding() 躲开。
                     // 在这里统一内缩的话，状态栏那一条就只能是背景色，
@@ -131,7 +148,7 @@ fun App(notificationEvent: AppNavigationEvent? = null) {
                     Box(Modifier.weight(1f)) {
                         RouteHost(navigator)
                     }
-                    // 只有在三个根页面才显示底部导航——进入对话或二级页时让位给内容。
+                    // 根页面显示底部导航，二级页面让位给内容。
                     if (navigator.current.isTabRoot) {
                         StarBottomBar(navigator)
                     }
@@ -194,7 +211,9 @@ private fun RouteHost(navigator: Navigator) {
     ) { target ->
         when (val route = target.route) {
             Route.Agents -> AgentListScreen(navigator)
-            is Route.Chat -> ChatScreen(navigator, route.agentId)
+            Route.Companion -> CompanionScreen(navigator)
+            is Route.Chat -> if (route.agentId == BuiltInCompanion.ID) CompanionScreen(navigator)
+                else ChatScreen(navigator, route.agentId)
             is Route.GroupChat -> GroupChatScreen(navigator, route.groupId)
             is Route.GroupEditor -> GroupEditorScreen(navigator, route.groupId)
             Route.Tasks -> TaskCenterScreen(navigator)
@@ -219,6 +238,7 @@ private data class Tab(val route: Route, val glyph: StarIconGlyph, val label: St
 private val Tabs = listOf(
     Tab(Route.Agents, StarIconGlyph.Chat, "首页"),
     Tab(Route.Tasks, StarIconGlyph.Task, "任务"),
+    Tab(Route.Companion, StarIconGlyph.Sparkle, "伙伴"),
     Tab(Route.Memories, StarIconGlyph.Book, "记忆"),
     Tab(Route.Me, StarIconGlyph.Person, "我的"),
 )
@@ -226,18 +246,22 @@ private val Tabs = listOf(
 @Composable
 private fun StarBottomBar(navigator: Navigator) {
     val current = navigator.current
+    val state = LocalAppState.current
+    val companionDark = current == Route.Companion &&
+        (state.companionDarkMode ?: isSystemInDarkTheme())
+    val surface = if (companionDark) Color(0xFF080A12) else StarPalette.Surface
 
     Column {
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(StarPalette.Divider),
+                .background(if (companionDark) Color(0xFF202331) else StarPalette.Divider),
         )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(StarPalette.Surface)
+                .background(surface)
                 .padding(top = 10.dp, bottom = 14.dp),
         ) {
             Tabs.forEach { tab ->
@@ -253,12 +277,19 @@ private fun StarBottomBar(navigator: Navigator) {
                         ) { if (!selected) navigator.switchTab(tab.route) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    StarIcon(
+                    Box(
+                        Modifier.size(30.dp).then(
+                            if (tab.route == Route.Companion) Modifier.clip(CircleShape)
+                                .background(Brush.linearGradient(avatarGradient(state.companion.accentIndex)))
+                            else Modifier,
+                        ),
+                        contentAlignment = Alignment.Center,
+                    ) { StarIcon(
                         icon = tab.glyph,
                         iconSize = 24.dp,
-                        tint = tint,
+                        tint = if (tab.route == Route.Companion) Color.White else tint,
                         strokeWidth = if (selected) 2.15f else 1.8f,
-                    )
+                    ) }
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = tab.label,

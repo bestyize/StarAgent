@@ -1,6 +1,7 @@
 package com.starringbox.staragent.core.data
 
 import com.starringbox.staragent.core.model.AgentGroup
+import com.starringbox.staragent.core.model.isBuiltInCompanion
 import com.starringbox.staragent.core.model.MessageBody
 import com.starringbox.staragent.core.platform.storage.LocalStores
 import kotlin.test.AfterTest
@@ -135,7 +136,7 @@ class AppStateStartupTest {
 
         val state = AppState()
 
-        assertEquals(1, state.agents.size, "旧存档必须原样恢复，不能被种子数据盖掉")
+        assertEquals(1, state.agents.count { !it.isBuiltInCompanion }, "旧存档必须原样恢复，不能被种子数据盖掉")
         assertEquals("老智能体", state.agents.first().name)
         assertTrue(state.groups.isEmpty(), "旧存档里没有群组，读出来就该是空的")
 

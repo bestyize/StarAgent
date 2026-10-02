@@ -30,6 +30,8 @@ enum class StarIconGlyph {
     More,
     Send,
     Mic,
+    MicOff,
+    Waveform,
     Camera,
     Keyboard,
     Check,
@@ -170,6 +172,21 @@ fun StarIcon(
                 roundRect(9f, 3f, 15f, 13.5f, 3f)
                 arc(5.5f, 8f, 18.5f, 19f, 0f, 180f)
                 line(12f, 19f, 12f, 21.5f)
+            }
+
+            StarIconGlyph.MicOff -> {
+                roundRect(9f, 3f, 15f, 13.5f, 3f)
+                arc(5.5f, 8f, 18.5f, 19f, 0f, 180f)
+                line(12f, 19f, 12f, 21.5f)
+                line(3f, 3f, 21f, 21f)
+            }
+
+            StarIconGlyph.Waveform -> {
+                line(4f, 10f, 4f, 14f)
+                line(8f, 6f, 8f, 18f)
+                line(12f, 3f, 12f, 21f)
+                line(16f, 7f, 16f, 17f)
+                line(20f, 10f, 20f, 14f)
             }
 
             StarIconGlyph.Camera -> {

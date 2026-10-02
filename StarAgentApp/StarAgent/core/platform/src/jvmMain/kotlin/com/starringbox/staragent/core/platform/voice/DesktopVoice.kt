@@ -35,6 +35,9 @@ class DesktopVoiceRecorder : Recorder {
     private var line: TargetDataLine? = null
     private var sink: ByteArrayOutputStream? = null
     private var pump: Thread? = null
+    private val activity = SpeechActivity()
+    override val inputLevel: Float get() = activity.level
+    override val speechEnded: Boolean get() = activity.ended
 
     override val available: Boolean get() = hasInput
 
@@ -47,6 +50,7 @@ class DesktopVoiceRecorder : Recorder {
             opened.start()
 
             val collected = ByteArrayOutputStream()
+            activity.reset()
             // 单独一条线程持续把音频读进内存：开始/结束由用户点两下控制，
             // 不能阻塞在调用方那边。
             val worker = Thread {
@@ -54,6 +58,7 @@ class DesktopVoiceRecorder : Recorder {
                 while (true) {
                     val read = runCatching { opened.read(chunk, 0, chunk.size) }.getOrDefault(-1)
                     if (read <= 0) break
+                    activity.acceptPcm(chunk, read)
                     collected.write(chunk, 0, read)
                 }
             }

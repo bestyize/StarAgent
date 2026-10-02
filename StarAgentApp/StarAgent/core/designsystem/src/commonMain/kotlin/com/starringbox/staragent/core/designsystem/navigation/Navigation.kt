@@ -13,6 +13,9 @@ sealed interface Route {
     /** 首页：智能体联系人列表。 */
     data object Agents : Route
 
+    /** The permanent companion's own conversation space. */
+    data object Companion : Route
+
     /** 与某个智能体的对话。 */
     data class Chat(val agentId: String) : Route
 
@@ -78,7 +81,7 @@ sealed interface Route {
  */
 val Route.isTabRoot: Boolean
     get() = this is Route.Agents || this is Route.Tasks ||
-        this is Route.Memories || this is Route.Me
+        this is Route.Companion || this is Route.Memories || this is Route.Me
 
 /** 上一次导航动作。界面据此决定转场方向：前进从右侧滑入，返回则相反。 */
 enum class NavAction { Push, Pop, Replace }

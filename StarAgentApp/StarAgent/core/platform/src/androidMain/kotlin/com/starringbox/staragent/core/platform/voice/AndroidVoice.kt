@@ -41,6 +41,9 @@ class AndroidVoiceRecorder(
     private var record: AudioRecord? = null
     private var sink: ByteArrayOutputStream? = null
     private var pump: Thread? = null
+    private val activity = SpeechActivity()
+    override val inputLevel: Float get() = activity.level
+    override val speechEnded: Boolean get() = activity.ended
 
     /**
      * 能力本身是有的——**没权限不算不可用**，点一下就会去申请。
@@ -79,11 +82,13 @@ class AndroidVoiceRecorder(
                 opened.startRecording()
 
                 val collected = ByteArrayOutputStream()
+                activity.reset()
                 val worker = Thread {
-                    val chunk = ByteArray(bufferBytes)
+                    val chunk = ByteArray(3_200)
                     while (true) {
                         val read = runCatching { opened.read(chunk, 0, chunk.size) }.getOrDefault(-1)
                         if (read <= 0) break
+                        activity.acceptPcm(chunk, read)
                         collected.write(chunk, 0, read)
                     }
                 }

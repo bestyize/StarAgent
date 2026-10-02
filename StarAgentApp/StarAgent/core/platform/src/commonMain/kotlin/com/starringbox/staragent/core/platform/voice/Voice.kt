@@ -122,6 +122,8 @@ object Voice {
 
     /** 正在听。界面据此把输入区换成"正在听…"。 */
     val isListening: Boolean get() = listening != null
+    val inputLevel: Float get() = listening?.inputLevel ?: 0f
+    val speechEnded: Boolean get() = listening?.speechEnded == true
 
     private fun pickTranscriber(): Transcriber? = when (preference) {
         VoiceSource.Device -> deviceTranscriber?.takeIf { it.ready }

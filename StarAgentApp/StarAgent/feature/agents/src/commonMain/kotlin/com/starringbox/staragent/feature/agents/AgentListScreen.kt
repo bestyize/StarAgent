@@ -49,6 +49,7 @@ import com.starringbox.staragent.core.designsystem.navigation.Navigator
 import com.starringbox.staragent.core.designsystem.navigation.Route
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.model.Agent
+import com.starringbox.staragent.core.model.isBuiltInCompanion
 import com.starringbox.staragent.core.model.AgentGroup
 
 /**
@@ -63,7 +64,7 @@ fun AgentListScreen(navigator: Navigator) {
     val state = LocalAppState.current
     val query = state.searchQuery
     val agents = state.agents.filter { agent ->
-        query.isBlank() || agent.name.contains(query, ignoreCase = true) || agent.persona.contains(query, ignoreCase = true) || state.lastMessage(agent.id)?.let { state.previewOf(it).contains(query, ignoreCase = true) } == true
+        !agent.isBuiltInCompanion && (query.isBlank() || agent.name.contains(query, ignoreCase = true) || agent.persona.contains(query, ignoreCase = true) || state.lastMessage(agent.id)?.let { state.previewOf(it).contains(query, ignoreCase = true) } == true)
     }
     val groups = state.groups.filter { group ->
         query.isBlank() || group.name.contains(query, ignoreCase = true) || state.lastGroupMessage(group.id)?.let { state.previewOf(it).contains(query, ignoreCase = true) } == true

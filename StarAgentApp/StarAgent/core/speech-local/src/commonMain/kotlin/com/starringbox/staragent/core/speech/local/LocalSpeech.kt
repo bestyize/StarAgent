@@ -14,6 +14,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class LocalTranscriber : Transcriber {
+    override val inputLevel: Float get() = Recorders.inputLevel
+    override val speechEnded: Boolean get() = Recorders.speechEnded
     private var request: Job? = null
     override val ready: Boolean get() = SenseVoiceAsr.installed() && Recorders.available
     override suspend fun start(): Boolean = Recorders.start()

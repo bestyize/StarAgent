@@ -72,6 +72,8 @@ class ModelTranscriber(
     private val requestGate = Mutex()
     private var requestJob: Job? = null
     private var startedWith: SpeechEndpoint? = null
+    override val inputLevel: Float get() = Recorders.inputLevel
+    override val speechEnded: Boolean get() = Recorders.speechEnded
 
     override val ready: Boolean
         get() = endpoint()?.asrModel != null && Recorders.available

@@ -50,6 +50,7 @@ import com.starringbox.staragent.core.platform.voice.SpeechOutcome
 import com.starringbox.staragent.core.platform.voice.Voice
 import com.starringbox.staragent.core.platform.voice.VoiceSource
 import com.starringbox.staragent.core.model.Agent
+import com.starringbox.staragent.core.model.BuiltInCompanion
 import com.starringbox.staragent.core.model.AgentGroup
 import com.starringbox.staragent.core.model.AgentTask
 import com.starringbox.staragent.core.model.Author
@@ -122,6 +123,16 @@ class AppState(
     val providers = mutableStateListOf<ModelProvider>()
     val groups = mutableStateListOf<AgentGroup>()
     val userInputPort = AppUserInputPort(this)
+    val companionVoice = CompanionVoiceSession(this)
+    val companion: Agent get() = requireNotNull(agent(BuiltInCompanion.ID))
+
+    var companionDarkMode by mutableStateOf<Boolean?>(null)
+        private set
+
+    fun setCompanionAppearance(dark: Boolean?) {
+        companionDarkMode = dark
+        SettingsStore.put("companionDarkMode", dark?.toString().orEmpty())
+    }
 
     private val conversations = mutableStateMapOf<String, SnapshotStateList<ChatMessage>>()
     private val busy = mutableStateMapOf<String, Boolean>()
@@ -171,6 +182,8 @@ class AppState(
     private var localModelJob: Job? = null
     private var replySpeechSession: ReplySpeechSession? = null
     private var speechGeneration = 0L
+    var speakingAgentId by mutableStateOf<String?>(null)
+        private set
     var speechError by mutableStateOf<String?>(null)
         private set
     var streamReplies by mutableStateOf(true)
@@ -281,11 +294,21 @@ class AppState(
         localTtsInstalled = PiperTts.installed()
         Voice.installLocal(LocalTranscriber(), LocalSynthesizer())
         Voice.installSpeakingPreference { ttsVoiceSource }
-        Voice.installStopHandler { speechGeneration++; replySpeechSession?.stop() }
+        Voice.installStopHandler {
+            speechGeneration++
+            replySpeechSession?.stop()
+            speakingAgentId = null
+        }
 
         // 兜底默认模型取第一家的第一个；没有服务商时留空，交给 SettingsStore 里用户自己的选择
         providers.firstOrNull()?.let { defaultModelId = modelKey(it.id, 0) }
         restoreSettings()
+        companionDarkMode = SettingsStore.get("companionDarkMode")?.toBooleanStrictOrNull()
+        // Upgrade old saves additively; never replace any existing agents or companion edits.
+        if (agent(BuiltInCompanion.ID) == null) {
+            agents.add(BuiltInCompanion.create(defaultModelId))
+            persistState()
+        }
 
         // 注册系统级后台唤醒处理器：操作系统在后台或锁屏被 Alarm/WorkManager 触发时调用
         WakeupTrigger.registerHandler {
@@ -375,6 +398,7 @@ class AppState(
     fun agent(id: String): Agent? = agents.firstOrNull { it.id == id }
 
     fun deleteAgent(id: String) {
+        if (id == BuiltInCompanion.ID) return
         agents.removeAll { it.id == id }
         conversations.remove(id)
         // 人删了，群成员里也要摘掉——否则群的成员计数对不上，
@@ -916,16 +940,27 @@ class AppState(
         withReplySpeech(agentId, readAloud) { speech -> sendImpl(agentId, text, images, speech) }
     }
 
-    private suspend fun withReplySpeech(key: String, readAloud: Boolean, work: suspend (ReplySpeechSession?) -> Unit) = coroutineScope {
+    /** Entering a voice conversation explicitly opts into speaking for this turn only. */
+    suspend fun sendCompanionVoice(text: String) {
+        if (isBusy(BuiltInCompanion.ID)) return
+        withReplySpeech(BuiltInCompanion.ID, readAloud = true, forceSpeech = true) { speech ->
+            sendImpl(BuiltInCompanion.ID, text, emptyList(), speech)
+        }
+    }
+
+    private suspend fun withReplySpeech(key: String, readAloud: Boolean, forceSpeech: Boolean = false, work: suspend (ReplySpeechSession?) -> Unit) = coroutineScope {
         if (readAloud) speechError = null
-        if (!readAloud || !speakReplies || !canSpeak) { work(null); return@coroutineScope }
+        if (!readAloud || (!speakReplies && !forceSpeech) || !canSpeak) { work(null); return@coroutineScope }
         stopSpeaking()
         val generation = speechGeneration
         val before = messagesOf(key).size
         val session = if (streamReplies && Voice.canStreamSpeak) ReplySpeechSession(
             scope = this,
             synthesize = { sentence, emit -> Voice.streamSpeak(sentence, emit) },
-            play = { PcmPlayers.enqueue(it) },
+            play = {
+                if (generation == speechGeneration) speakingAgentId = key
+                PcmPlayers.enqueue(it)
+            },
             drain = { PcmPlayers.drain() },
             stopPlayback = { PcmPlayers.stop() },
             onFailure = { if (generation == speechGeneration) speechError = it },
@@ -938,11 +973,13 @@ class AppState(
                 val reply = messagesOf(key).drop(before).lastOrNull { it.author == Author.Agent && it.body is MessageBody.Text }
                 val text = (reply?.body as? MessageBody.Text)?.text.orEmpty()
                 if (text.isNotBlank()) {
+                    speakingAgentId = key
                     val result = speak(text)
                     if (result is SpeechOutcome.Failed) speechError = result.message
                 }
             }
         } finally {
+            if (generation == speechGeneration) speakingAgentId = null
             if (replySpeechSession === session) {
                 session?.stop()
                 replySpeechSession = null
@@ -2069,7 +2106,15 @@ class AppState(
     }
 
     fun addAgent(agent: Agent) {
+        if (agents.any { it.id == agent.id }) return
         agents.add(agent)
+        persistState()
+    }
+
+    fun updateAgent(agent: Agent) {
+        val index = agents.indexOfFirst { it.id == agent.id }
+        if (index < 0) return
+        agents[index] = agent
         persistState()
     }
 

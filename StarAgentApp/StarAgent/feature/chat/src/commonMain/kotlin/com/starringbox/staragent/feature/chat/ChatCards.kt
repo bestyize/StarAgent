@@ -149,24 +149,29 @@ private fun linkifiedText(source: String): AnnotatedString {
 }
 
 @Composable
-internal fun AgentTextBubble(text: String, onOpenArtifact: (String) -> Unit = {}) {
+internal fun AgentTextBubble(
+    text: String,
+    onOpenArtifact: (String) -> Unit = {},
+    immersive: Boolean = false,
+    textColor: Color = StarPalette.Text,
+) {
     val uriHandler = LocalUriHandler.current
     val richText = remember(text) { linkifiedText(text) }
     val layout = remember { mutableStateOf<TextLayoutResult?>(null) }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
         Box(
             modifier = Modifier
-                .widthIn(max = 296.dp)
+                .then(if (immersive) Modifier.fillMaxWidth() else Modifier.widthIn(max = 296.dp))
                 .clip(BubbleShapeAgent)
-                .background(StarPalette.Surface)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .background(if (immersive) Color.Transparent else StarPalette.Surface)
+                .padding(horizontal = if (immersive) 0.dp else 14.dp, vertical = 10.dp),
         ) {
             SelectionContainer {
                 Text(
                     text = richText,
                     onTextLayout = { layout.value = it },
                     style = MaterialTheme.typography.bodyLarge,
-                    color = StarPalette.Text,
+                    color = textColor,
                     modifier = Modifier.pointerInput(richText) {
                         detectTapGestures { position ->
                             val offset = layout.value?.getOffsetForPosition(position) ?: return@detectTapGestures

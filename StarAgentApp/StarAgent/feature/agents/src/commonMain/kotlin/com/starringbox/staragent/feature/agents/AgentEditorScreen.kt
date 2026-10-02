@@ -16,6 +16,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -43,6 +46,8 @@ import com.starringbox.staragent.core.designsystem.component.StarCard
 import com.starringbox.staragent.core.designsystem.component.StarTopBar
 import com.starringbox.staragent.core.designsystem.navigation.Navigator
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
+import com.starringbox.staragent.core.designsystem.theme.avatarGradient
+import com.starringbox.staragent.core.model.isBuiltInCompanion
 import com.starringbox.staragent.core.model.Agent
 
 private data class AgentTemplate(
@@ -78,6 +83,7 @@ fun AgentEditorScreen(navigator: Navigator, agentId: String?) {
     var persona by remember { mutableStateOf(editing?.persona ?: "") }
     var modelId by remember { mutableStateOf(editing?.modelId ?: state.defaultModelId) }
     var glyph by remember { mutableStateOf(editing?.glyph ?: "星") }
+    var accentIndex by remember { mutableStateOf(editing?.accentIndex ?: state.agents.size) }
     var description by remember { mutableStateOf("") }
 
     // 新智能体默认**不开**任务能力——默认保持纯对话，想要的人自己打开。
@@ -91,7 +97,8 @@ fun AgentEditorScreen(navigator: Navigator, agentId: String?) {
 
     Column(Modifier.fillMaxSize()) {
         StarTopBar(
-            title = if (editing == null) "创建智能体" else "编辑智能体",
+            title = if (editing?.isBuiltInCompanion == true) "编辑智能伙伴"
+                else if (editing == null) "创建智能体" else "编辑智能体",
             onBack = { navigator.pop() },
         )
 
@@ -105,7 +112,7 @@ fun AgentEditorScreen(navigator: Navigator, agentId: String?) {
 
             // 实时预览：改名字和人设，上面的头像立刻跟着变。
             Row(verticalAlignment = Alignment.CenterVertically) {
-                AgentAvatar(glyph = glyph, accentIndex = editing?.accentIndex ?: state.agents.size)
+                AgentAvatar(glyph = glyph, accentIndex = accentIndex)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
@@ -123,6 +130,22 @@ fun AgentEditorScreen(navigator: Navigator, agentId: String?) {
                 }
             }
 
+            Spacer(Modifier.height(22.dp))
+            if (editing?.isBuiltInCompanion == true) {
+                Text("她会一直在这里。修改名称与人设后，对话和记忆会保留。",
+                    style = MaterialTheme.typography.bodySmall, color = StarPalette.TextMuted)
+                Spacer(Modifier.height(16.dp))
+            }
+            SectionLabel("形象配色")
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                repeat(6) { index ->
+                    Box(Modifier.size(36.dp).clip(CircleShape)
+                        .background(Brush.linearGradient(avatarGradient(index)))
+                        .clickable { accentIndex = index }, contentAlignment = Alignment.Center) {
+                        if (accentIndex % 6 == index) Text("✓", color = Color.White)
+                    }
+                }
+            }
             Spacer(Modifier.height(22.dp))
             SectionLabel("从模板开始")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -254,21 +277,19 @@ fun AgentEditorScreen(navigator: Navigator, agentId: String?) {
                             glyph = glyph,
                             persona = persona.trim(),
                             modelId = modelId,
-                            accentIndex = state.agents.size,
+                            accentIndex = accentIndex,
                             canScheduleTasks = canScheduleTasks,
                         )
                     )
                 } else {
-                    val index = state.agents.indexOfFirst { it.id == existing.id }
-                    if (index >= 0) {
-                        state.agents[index] = existing.copy(
+                    state.updateAgent(existing.copy(
                             name = name.trim(),
                             glyph = glyph,
                             persona = persona.trim(),
                             modelId = modelId,
                             canScheduleTasks = canScheduleTasks,
-                        )
-                    }
+                            accentIndex = accentIndex,
+                        ))
                 }
                 navigator.pop()
             },

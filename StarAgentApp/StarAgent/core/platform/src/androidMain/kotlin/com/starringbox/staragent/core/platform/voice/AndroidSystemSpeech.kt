@@ -49,6 +49,9 @@ class AndroidSystemTranscriber(
     /** 结果可能比"结束"先到（系统静音后自己收尾），所以两边都要能接住。 */
     private var waiting: ((SpeechOutcome<String>) -> Unit)? = null
     private var settled: SpeechOutcome<String>? = null
+    private var level by mutableStateOf(0f)
+    override val inputLevel: Float get() = level
+    override val speechEnded: Boolean get() = settled != null
 
     private fun granted(): Boolean =
         context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -68,6 +71,7 @@ class AndroidSystemTranscriber(
         if (!granted() && !requestPermission()) return false
 
         settled = null
+        level = 0f
         main.post {
             val engine = recognizer ?: SpeechRecognizer.createSpeechRecognizer(context).also {
                 it.setRecognitionListener(listener)
@@ -134,7 +138,7 @@ class AndroidSystemTranscriber(
 
         override fun onReadyForSpeech(params: Bundle?) = Unit
         override fun onBeginningOfSpeech() = Unit
-        override fun onRmsChanged(rmsdB: Float) = Unit
+        override fun onRmsChanged(rmsdB: Float) { level = (rmsdB / 10f).coerceIn(0f, 1f) }
         override fun onBufferReceived(buffer: ByteArray?) = Unit
         override fun onEndOfSpeech() = Unit
         override fun onPartialResults(partialResults: Bundle?) = Unit
