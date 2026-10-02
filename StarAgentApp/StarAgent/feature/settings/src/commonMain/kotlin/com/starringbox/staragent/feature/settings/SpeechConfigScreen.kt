@@ -77,39 +77,95 @@ fun SpeechConfigScreen(navigator: Navigator) {
             item { SpeechSectionLabel("识别方式") }
             item { SourcePicker(state, deviceInstalled, modelReady, localAsrSupported, localAsrInstalled) }
 
-            item { SpeechSectionLabel("离线模型") }
-            item { LocalSpeechCard(state) }
-
-            item { SpeechSectionLabel("语音服务商") }
-            item {
-                StarCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(14.dp)) {
-                        ProviderGrid(state.speechProviders, active?.id) { provider ->
-                            // 选家的同时把方式切到「云端识别」——否则在自动档下
-                            // 设备那路仍然优先，看起来像是没生效。
-                            state.selectSpeechProvider(provider.id)
-                            state.selectVoiceSource(VoiceSource.Model)
+            // 依据识别方式，仅露出当前选中类别的详细选项
+            when (state.voiceSource) {
+                VoiceSource.Device -> {
+                    item { SpeechSectionLabel("系统识别") }
+                    item {
+                        StarCard(modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(14.dp)) {
+                                Text("系统原生语音引擎", style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = if (deviceInstalled) {
+                                        "当前设备已就绪系统语音识别服务。语音转文字完全在设备底层处理，极速响应，无需网络流量与 API Key。"
+                                    } else {
+                                        "当前设备未检测到可用的系统语音识别服务。建议切换至「离线模型」或「云端识别」。"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (deviceInstalled) StarPalette.TextMuted else MaterialTheme.colorScheme.error,
+                                )
+                            }
                         }
-
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            text = "这里的 Key 和「模型接入」里填的是两份，分开存、互不影响。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = StarPalette.TextFaint,
-                        )
                     }
                 }
-            }
 
-            if (active != null) {
-                item { SpeechSectionLabel("${active.name} 的 API Key") }
-                item { ApiKeyCard(state, active) }
-
-                if (active.asrChoices.size > 1) {
-                    item { SpeechSectionLabel("识别模型") }
-                    item { AsrModelPicker(state, active) }
+                VoiceSource.Local -> {
+                    item { SpeechSectionLabel("离线识别模型") }
+                    item { LocalSpeechCard(state, showAsr = true, showTts = false) }
                 }
 
+                VoiceSource.Model -> {
+                    item { SpeechSectionLabel("云端识别服务商") }
+                    item {
+                        StarCard(modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(14.dp)) {
+                                ProviderGrid(state.speechProviders, active?.id) { provider ->
+                                    state.selectSpeechProvider(provider.id)
+                                    state.selectVoiceSource(VoiceSource.Model)
+                                }
+
+                                Spacer(Modifier.height(10.dp))
+                                Text(
+                                    text = "这里的 Key 和「模型服务」里填的是两份，分开存、互不影响。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = StarPalette.TextFaint,
+                                )
+                            }
+                        }
+                    }
+
+                    if (active != null) {
+                        item { SpeechSectionLabel("${active.name} 的 API Key") }
+                        item { ApiKeyCard(state, active) }
+
+                        if (active.asrChoices.size > 1) {
+                            item { SpeechSectionLabel("识别模型") }
+                            item { AsrModelPicker(state, active) }
+                        }
+                    }
+                }
+
+                null -> {
+                    item { SpeechSectionLabel("自动策略说明") }
+                    item {
+                        StarCard(modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(14.dp)) {
+                                Text("智能降级顺序", style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = "优先尝试设备系统识别；不可用时使用离线 SenseVoice 模型；模型未就绪时自动由云端服务商兜底。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = StarPalette.TextMuted,
+                                )
+                            }
+                        }
+                    }
+                    item { SpeechSectionLabel("兜底云端服务商") }
+                    item {
+                        StarCard(modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(14.dp)) {
+                                ProviderGrid(state.speechProviders, active?.id) { provider ->
+                                    state.selectSpeechProvider(provider.id)
+                                }
+                            }
+                        }
+                    }
+                    if (active != null) {
+                        item { SpeechSectionLabel("${active.name} 的 API Key") }
+                        item { ApiKeyCard(state, active) }
+                    }
+                }
             }
 
             item { SpeechSectionLabel("朗读") }
@@ -429,67 +485,87 @@ private fun ReadingSettings(state: AppState) {
             }
         }
 
-        if (source == VoiceSource.Model || source == null) {
-            StarCard(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp)) {
-                    Text("云端朗读服务商", style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
-                    Spacer(Modifier.height(8.dp))
-                    ProviderGrid(state.speechProviders.filter { it.canSynthesize }, state.ttsProviderId) { provider ->
-                        state.selectTtsProvider(provider.id)
+        when {
+            source == VoiceSource.Local || (source == null && state.voiceSource == VoiceSource.Local) -> {
+                LocalSpeechCard(state, showAsr = false, showTts = true)
+            }
+            source == VoiceSource.Model || (source == null && (state.voiceSource == VoiceSource.Model || state.voiceSource == null)) -> {
+                StarCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text("云端朗读服务商", style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
+                        Spacer(Modifier.height(8.dp))
+                        ProviderGrid(state.speechProviders.filter { it.canSynthesize }, state.ttsProviderId) { provider ->
+                            state.selectTtsProvider(provider.id)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "跟随识别服务商",
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = StarPalette.TextMuted,
+                            )
+                            ActionLabel(
+                                text = if (state.ttsProviderId == null) "已选择" else "使用",
+                                enabled = state.ttsProviderId != null,
+                                onClick = { state.selectTtsProvider(null) },
+                            )
+                        }
+                        if (state.ttsProviderId == null && inheritedTtsProvider?.canSynthesize != true) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "当前识别服务商没有云端朗读，可在上方选择一家。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = StarPalette.TextFaint,
+                            )
+                        }
                     }
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "跟随识别服务商",
-                            modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = StarPalette.TextMuted,
-                        )
-                        ActionLabel(
-                            text = if (state.ttsProviderId == null) "已选择" else "使用",
-                            enabled = state.ttsProviderId != null,
-                            onClick = { state.selectTtsProvider(null) },
-                        )
-                    }
-                    if (state.ttsProviderId == null && inheritedTtsProvider?.canSynthesize != true) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "当前识别服务商没有云端朗读，可在上方选择一家。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = StarPalette.TextFaint,
-                        )
+                }
+                ttsProvider?.let { provider ->
+                    Column {
+                        SpeechSectionLabel("${provider.name} 的 API Key")
+                        ApiKeyCard(state, provider)
                     }
                 }
             }
-            ttsProvider?.let { provider ->
-                Column {
-                    SpeechSectionLabel("${provider.name} 的 API Key")
-                    ApiKeyCard(state, provider)
+            source == VoiceSource.Device -> {
+                StarCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text("系统设备原生声音", style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "使用当前设备系统的 Text-To-Speech (TTS) 引擎进行朗读，无需云端服务商和 API Key。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = StarPalette.TextMuted,
+                        )
+                    }
                 }
             }
         }
 
-        StarCard(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(14.dp)) {
-                Text("音色", style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
-                Spacer(Modifier.height(8.dp))
-                StarTextField(
-                    value = voiceDraft.value,
-                    onValueChange = { voiceDraft.value = it },
-                    placeholder = "默认音色（可留空）",
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "音色名称会按所选朗读方式保存。",
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = StarPalette.TextFaint,
+        if (source != VoiceSource.Local) {
+            StarCard(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("音色", style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
+                    Spacer(Modifier.height(8.dp))
+                    StarTextField(
+                        value = voiceDraft.value,
+                        onValueChange = { voiceDraft.value = it },
+                        placeholder = "默认音色（可留空）",
                     )
-                    SaveButton(
-                        enabled = voiceDraft.value != state.ttsVoiceId.orEmpty(),
-                        onClick = { state.selectTtsVoice(voiceDraft.value.trim().ifBlank { null }) },
-                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "音色名称会按所选朗读方式保存。",
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = StarPalette.TextFaint,
+                        )
+                        SaveButton(
+                            enabled = voiceDraft.value != state.ttsVoiceId.orEmpty(),
+                            onClick = { state.selectTtsVoice(voiceDraft.value.trim().ifBlank { null }) },
+                        )
+                    }
                 }
             }
         }

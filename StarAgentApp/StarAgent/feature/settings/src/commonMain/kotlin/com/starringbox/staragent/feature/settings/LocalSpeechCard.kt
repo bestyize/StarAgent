@@ -24,36 +24,57 @@ import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun LocalSpeechCard(state: AppState) {
+internal fun LocalSpeechCard(
+    state: AppState,
+    showAsr: Boolean = true,
+    showTts: Boolean = true,
+) {
     val scope = rememberCoroutineScope()
 
     StarCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
-            Text("离线语音", style = MaterialTheme.typography.titleSmall, color = StarPalette.Text)
+            val title = when {
+                showAsr && !showTts -> "离线识别模型"
+                !showAsr && showTts -> "离线朗读模型"
+                else -> "离线语音模型"
+            }
+            val subtitle = when {
+                showAsr && !showTts -> "SenseVoice 模型保存在设备本地，无需联网即可完成语音识别。"
+                !showAsr && showTts -> "Piper 模型保存在设备本地，无需联网即可将文字转换为自然语音。"
+                else -> "模型保存在这台设备上，首次使用时下载，使用时无需联网。"
+            }
+            Text(title, style = MaterialTheme.typography.titleSmall, color = StarPalette.Text)
             Spacer(Modifier.height(4.dp))
             Text(
-                "模型保存在这台设备上，首次使用时下载。",
+                subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = StarPalette.TextFaint,
             )
             Spacer(Modifier.height(12.dp))
-            LocalModelRow(
-                title = "离线识别 · 约 240 MB",
-                supported = state.localAsrSupported,
-                installed = state.localAsrInstalled,
-                busy = state.localModelBusy,
-                onInstall = { scope.launch { state.installLocalAsr() } },
-                onRemove = { scope.launch { state.removeLocalAsr() } },
-            )
-            Spacer(Modifier.height(8.dp))
-            LocalModelRow(
-                title = "离线朗读 · 约 21 MB",
-                supported = state.localTtsSupported,
-                installed = state.localTtsInstalled,
-                busy = state.localModelBusy,
-                onInstall = { scope.launch { state.installLocalTts() } },
-                onRemove = { scope.launch { state.removeLocalTts() } },
-            )
+
+            if (showAsr) {
+                LocalModelRow(
+                    title = "SenseVoice 中英文识别 · 约 240 MB",
+                    supported = state.localAsrSupported,
+                    installed = state.localAsrInstalled,
+                    busy = state.localModelBusy,
+                    onInstall = { scope.launch { state.installLocalAsr() } },
+                    onRemove = { scope.launch { state.removeLocalAsr() } },
+                )
+            }
+            if (showAsr && showTts) {
+                Spacer(Modifier.height(8.dp))
+            }
+            if (showTts) {
+                LocalModelRow(
+                    title = "Piper 中文超文音色 · 约 21 MB",
+                    supported = state.localTtsSupported,
+                    installed = state.localTtsInstalled,
+                    busy = state.localModelBusy,
+                    onInstall = { scope.launch { state.installLocalTts() } },
+                    onRemove = { scope.launch { state.removeLocalTts() } },
+                )
+            }
             if (state.localModelBusy) {
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
