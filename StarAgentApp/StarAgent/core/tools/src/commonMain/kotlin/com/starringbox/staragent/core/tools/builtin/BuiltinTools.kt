@@ -37,6 +37,6 @@ object BuiltinTools {
         WebFetchTool,
         RequestUserInputTool,
         ListFilesTool, ReadFileTool, WriteFileTool, DeleteFileTool,
-        WebSearchTool, RunCommandTool, ListSkillsTool, SetSkillInstalledTool, InstallSkillTool, RemoveSkillTool, BrowserOpenTool, BrowserReadTool, McpListServersTool, McpConnectTool, McpDisconnectTool, DeviceInspectTool, DeviceUseTool,
+        WebSearchTool, RunCommandTool, ListSkillsTool, SetSkillInstalledTool, InstallSkillTool, RemoveSkillTool, BrowserOpenTool, BrowserReadTool, McpListServersTool, McpConnectTool, McpDisconnectTool, DeviceInspectTool, DeviceUseTool, RequestPermissionTool,
     )
 }
