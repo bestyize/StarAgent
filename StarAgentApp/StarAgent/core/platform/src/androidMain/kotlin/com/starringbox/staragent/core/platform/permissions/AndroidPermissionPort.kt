@@ -17,6 +17,7 @@ import com.starringbox.staragent.core.tools.ports.PermissionPort
 import com.starringbox.staragent.core.tools.ports.PermissionRequestResult
 import com.starringbox.staragent.core.tools.ports.PermissionStatus
 import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
@@ -127,6 +128,7 @@ private class AndroidPermissionPort(
         capability: PermissionCapability,
         permission: String,
     ): PermissionRequestResult {
+        var launchFailure: Throwable? = null
         val granted = try {
             withContext(Dispatchers.Main.immediate) {
                 suspendCancellableCoroutine { continuation ->
@@ -136,16 +138,26 @@ private class AndroidPermissionPort(
                     }
                     runCatching {
                         runtimePermissionLauncher.launch(permission)
-                    }.onFailure {
+                    }.onFailure { error ->
+                        launchFailure = error
                         pendingRuntimeRequest = null
                         if (continuation.isActive) continuation.resume(false)
                     }
                 }
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: Throwable) {
             return PermissionRequestResult(
                 PermissionStatus.NotGranted,
                 "无法打开系统权限请求：" + (error.message ?: "未知错误"),
+            )
+        }
+
+        if (launchFailure != null) {
+            return PermissionRequestResult(
+                PermissionStatus.NotGranted,
+                "无法打开系统权限请求：" + (launchFailure?.message ?: "未知错误"),
             )
         }
 
@@ -160,6 +172,7 @@ private class AndroidPermissionPort(
         capability: PermissionCapability,
         intent: Intent,
     ): PermissionRequestResult {
+        var launchFailure: Throwable? = null
         try {
             withContext(Dispatchers.Main.immediate) {
                 suspendCancellableCoroutine { continuation ->
@@ -169,16 +182,26 @@ private class AndroidPermissionPort(
                     }
                     runCatching {
                         settingsLauncher.launch(intent)
-                    }.onFailure {
+                    }.onFailure { error ->
+                        launchFailure = error
                         pendingSettingsRequest = null
                         if (continuation.isActive) continuation.resume(Unit)
                     }
                 }
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: Throwable) {
             return PermissionRequestResult(
                 PermissionStatus.NotGranted,
                 "无法打开系统设置：" + (error.message ?: "未知错误"),
+            )
+        }
+
+        if (launchFailure != null) {
+            return PermissionRequestResult(
+                PermissionStatus.NotGranted,
+                "无法打开系统设置：" + (launchFailure?.message ?: "未知错误"),
             )
         }
 
