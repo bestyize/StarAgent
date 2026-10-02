@@ -60,7 +60,7 @@ private class AndroidPermissionPort(
                 runtimeStatus(Manifest.permission.RECORD_AUDIO)
 
             PermissionCapability.Notifications ->
-                if (Build.VERSION.SDK_INT < 33) PermissionStatus.Granted
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) PermissionStatus.Granted
                 else runtimeStatus(Manifest.permission.POST_NOTIFICATIONS)
 
             PermissionCapability.Accessibility ->
@@ -238,7 +238,7 @@ private class AndroidPermissionPort(
         val target = ComponentName(appContext, AndroidAccessibilityService::class.java)
         return enabledServices
             .split(':')
-            .mapNotNull(ComponentName::unflattenFromString)
+            .mapNotNull { ComponentName.unflattenFromString(it) }
             .any { it == target }
     }
 
