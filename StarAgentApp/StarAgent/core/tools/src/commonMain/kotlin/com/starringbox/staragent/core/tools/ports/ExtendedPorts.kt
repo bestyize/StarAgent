@@ -5,6 +5,9 @@ interface FilePort {
     fun list(agentId: String, path: String): List<FileEntry>
     fun read(agentId: String, path: String): String?
     fun write(agentId: String, path: String, content: String): FileOperationResult
+    fun readBytes(agentId: String, path: String): ByteArray? = null
+    fun writeBytes(agentId: String, path: String, content: ByteArray): FileOperationResult =
+        FileOperationResult(false, "当前文件端口不支持二进制文件")
     fun delete(agentId: String, path: String): FileOperationResult
 }
 
@@ -133,40 +136,3 @@ interface DevicePort {
     suspend fun swipe(fromX: Float, fromY: Float, toX: Float, toY: Float, durationMillis: Long): DeviceActionResult
     suspend fun pressBack(): DeviceActionResult
     suspend fun launchApp(packageOrBundleId: String): DeviceActionResult
-}
-
-enum class DeviceScope { ActiveWindow, FullTree }
-
-data class DeviceScreenResult(
-    val ok: Boolean,
-    val screenId: String = "",
-    val packageName: String? = null,
-    val elements: List<DeviceElement> = emptyList(),
-    val error: String? = null,
-)
-
-data class DeviceElement(
-    val id: String,
-    val role: String,
-    val label: String,
-    val text: String,
-    val className: String,
-    val clickable: Boolean,
-    val editable: Boolean,
-    val enabled: Boolean,
-    val left: Int,
-    val top: Int,
-    val right: Int,
-    val bottom: Int,
-)
-
-data class DeviceActionResult(val ok: Boolean, val message: String)
-
-object NoopDevicePort : DevicePort {
-    override suspend fun inspect(scope: DeviceScope) = DeviceScreenResult(false, error = "当前平台未安装设备控制能力")
-    override suspend fun click(screenId: String, elementId: String) = DeviceActionResult(false, "当前平台未安装设备控制能力")
-    override suspend fun type(screenId: String, elementId: String?, text: String) = DeviceActionResult(false, "当前平台未安装设备控制能力")
-    override suspend fun swipe(fromX: Float, fromY: Float, toX: Float, toY: Float, durationMillis: Long) = DeviceActionResult(false, "当前平台未安装设备控制能力")
-    override suspend fun pressBack() = DeviceActionResult(false, "当前平台未安装设备控制能力")
-    override suspend fun launchApp(packageOrBundleId: String) = DeviceActionResult(false, "当前平台未安装设备控制能力")
-}

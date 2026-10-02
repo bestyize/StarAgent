@@ -18,7 +18,7 @@ object BuiltinTools {
         CancelTaskTool,
         WebFetchTool,
         RequestUserInputTool,
-        ListFilesTool, ReadFileTool, WriteFileTool, DeleteFileTool,
+        ListFilesTool, ReadFileTool, WriteFileTool, DeleteFileTool, CreateArtifactTool,
         WebSearchTool, RunCommandTool, ListSkillsTool, SetSkillInstalledTool, InstallSkillTool, RemoveSkillTool, BrowserOpenTool, BrowserReadTool, McpListServersTool, McpConnectTool, McpDisconnectTool, DeviceInspectTool, DeviceUseTool, RequestPermissionTool,
     )
 
@@ -36,7 +36,7 @@ object BuiltinTools {
         CancelTaskTool,
         WebFetchTool,
         RequestUserInputTool,
-        ListFilesTool, ReadFileTool, WriteFileTool, DeleteFileTool,
+        ListFilesTool, ReadFileTool, WriteFileTool, DeleteFileTool, CreateArtifactTool,
         WebSearchTool, RunCommandTool, ListSkillsTool, SetSkillInstalledTool, InstallSkillTool, RemoveSkillTool, BrowserOpenTool, BrowserReadTool, McpListServersTool, McpConnectTool, McpDisconnectTool, DeviceInspectTool, DeviceUseTool, RequestPermissionTool,
     )
 }

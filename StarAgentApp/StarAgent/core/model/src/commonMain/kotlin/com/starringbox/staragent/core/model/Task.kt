@@ -222,6 +222,10 @@ data class AgentTask(
     val scheduleLabel: String,
     val nextRunLabel: String,
     val lastRunLabel: String? = null,
+    /** 最近一次执行的正文，通知点击后在任务承接页显示。 */
+    val lastRunResult: String? = null,
+    /** 最近一次生成的文件产物，存在时通知直接打开产物预览。 */
+    val lastArtifactId: String? = null,
     /**
      * 下一次该跑的时刻（epoch 毫秒）。
      *

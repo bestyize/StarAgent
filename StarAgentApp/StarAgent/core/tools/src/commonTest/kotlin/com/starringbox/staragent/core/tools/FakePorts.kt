@@ -5,6 +5,8 @@ import com.starringbox.staragent.core.model.MemoryCategory
 import com.starringbox.staragent.core.model.MemoryItem
 import com.starringbox.staragent.core.model.Recurrence
 import com.starringbox.staragent.core.model.TaskStatus
+import com.starringbox.staragent.core.tools.ports.FilePort
+import com.starringbox.staragent.core.tools.ports.NoopFilePort
 import com.starringbox.staragent.core.tools.ports.FetchResult
 import com.starringbox.staragent.core.tools.ports.MemoryPort
 import com.starringbox.staragent.core.tools.ports.PermissionPort
@@ -137,11 +139,13 @@ fun testHost(
     permissions: PermissionPort = NoopPermissionPort,
     executionPolicy: ExecutionPolicy = ExecutionPolicy.Auto,
     agentId: String = "a-xing",
+    files: FilePort = NoopFilePort,
 ) = ToolHost(
     memory = memory,
     tasks = tasks,
     web = web,
     userInput = userInput,
+    files = files,
     permissions = permissions,
     executionPolicy = executionPolicy,
     agentId = agentId,

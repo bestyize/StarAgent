@@ -20,7 +20,9 @@ import com.starringbox.staragent.core.llm.ModelSynthesizer
 import com.starringbox.staragent.core.llm.ModelTranscriber
 import com.starringbox.staragent.core.llm.SpeechEndpoint
 import com.starringbox.staragent.core.model.MediaAsset
+import com.starringbox.staragent.core.model.Artifact
 import com.starringbox.staragent.core.platform.notify.Notifiers
+import com.starringbox.staragent.core.platform.notify.NotificationTarget
 import com.starringbox.staragent.core.platform.platformCommandPort
 import com.starringbox.staragent.core.platform.platformMcpManager
 import com.starringbox.staragent.core.platform.platformDevicePort
@@ -390,6 +392,27 @@ class AppState(
     fun isBusy(agentId: String): Boolean = busy[agentId] == true
 
     fun lastMessage(agentId: String): ChatMessage? = conversations[agentId]?.lastOrNull()
+
+    /** 产物元数据随聊天记录保存；按 id 查找供聊天链接与通知落地页使用。 */
+    fun artifactById(id: String): Artifact? =
+        conversations.values.asSequence()
+            .flatMap { it.asSequence() }
+            .mapNotNull { (it.body as? MessageBody.Delivered)?.artifact }
+            .firstOrNull { it.id == id }
+
+    fun readArtifactText(artifact: Artifact): String? =
+        if (artifact.agentId != null && artifact.filePath != null) {
+            AppFilePort().read(artifact.agentId, artifact.filePath)
+        } else {
+            null
+        }
+
+    fun readArtifactBytes(artifact: Artifact): ByteArray? =
+        if (artifact.agentId != null && artifact.filePath != null) {
+            AppFilePort().readBytes(artifact.agentId, artifact.filePath)
+        } else {
+            null
+        }
 
     /** 删掉对话里的某一条消息。 */
     fun removeMessage(agentId: String, messageId: String) {
@@ -825,6 +848,7 @@ class AppState(
         // 之后每有进展就重写那一条——和上面流式占位符是同一个手法。
         val stepCalls = mutableListOf<ToolCall>()
         val stepResults = mutableListOf<ToolResult>()
+        val generatedArtifacts = mutableListOf<Artifact>()
         var executionIndex = -1
 
         // 这一轮有没有拿到过外部来源的内容（网页正文等）。
@@ -898,6 +922,7 @@ class AppState(
                     // 只**累积**（取或），不写成 `= result.externalContext`：一轮里多个结果时
                     // 后者是"最后一个说了算"，取或才是"只要有一个"。要用的属性只增不减。
                     if (result.externalContext) externalFetchThisTurn = true
+                    result.artifact?.takeUnless { result.isError }?.let(generatedArtifacts::add)
                     if (executionIndex >= 0) {
                         conversation[executionIndex] = conversation[executionIndex].copy(
                             body = MessageBody.Execution(executionStepsFor(stepCalls, stepResults)),
@@ -907,10 +932,12 @@ class AppState(
             )
         } catch (cancelled: CancellationException) {
             // 用户点了停止：已经收到的部分保留下来，一个字都没有就留个说明。
-            // 取消必须原样抛出——吞掉的话用户按了停止却停不下来。
+            // 已完成写入的文件仍作为产物交付，取消必须原样抛出。
             if (buffer.isEmpty()) {
                 conversation[index] = placeholder.copy(body = MessageBody.Notice("已停止"))
             }
+            appendArtifacts(conversation, index + 1, generatedArtifacts)
+            persistState()
             throw cancelled
         } finally {
             busy[agentId] = false
@@ -921,6 +948,8 @@ class AppState(
                 conversation[index] = placeholder.copy(
                     body = MessageBody.Notice(outcome.message, isError = true),
                 )
+                appendArtifacts(conversation, index + 1, generatedArtifacts)
+                persistState()
                 return
             }
             is LoopOutcome.Stopped -> {
@@ -932,13 +961,15 @@ class AppState(
                 } else {
                     conversation.add(notice(outcome.reason))
                 }
+                appendArtifacts(conversation, index + 1, generatedArtifacts)
+                persistState()
                 return
             }
             is LoopOutcome.Done -> Unit
         }
 
         val raw = outcome.let { if (it is LoopOutcome.Done) it.text else buffer.toString() }
-        if (raw.isBlank()) {
+        if (raw.isBlank() && generatedArtifacts.isEmpty()) {
             conversation[index] = placeholder.copy(
                 body = MessageBody.Notice("模型没有返回内容", isError = true),
             )
@@ -957,6 +988,8 @@ class AppState(
         //（「以后每周一提醒我复盘」既可以建任务，也值得记住这个习惯）。
         val memory = MemoryBlock.extract(spoken)
         val answer = when {
+            memory == null && spoken.isBlank() && generatedArtifacts.isNotEmpty() ->
+                "已生成文件，见下方预览卡片。"
             memory == null -> spoken
             // 只回了一个记忆块、没有正文时补一句，否则气泡会是空的
             memory.remainingText.isBlank() -> "好的，我记下了。"
@@ -999,6 +1032,8 @@ class AppState(
                 )
             }
         }
+
+        appendArtifacts(conversation, index + 1, generatedArtifacts)
 
         // 一轮回复结束才落盘：流式过程中每个字都写一次磁盘没有必要
         persistState()
@@ -1198,6 +1233,7 @@ class AppState(
         // 共用一张的话后一位的工具步骤会写进上一位那张卡里，看起来像一个人干的。
         val stepCalls = mutableListOf<ToolCall>()
         val stepResults = mutableListOf<ToolResult>()
+        val generatedArtifacts = mutableListOf<Artifact>()
         var executionIndex = -1
 
         // 与单聊、定时执行同一道闸门：这一轮取过外部网页就不写记忆。
@@ -1265,6 +1301,7 @@ class AppState(
                     stepResults += result
                     // 只累积（取或）：一轮里多个结果时"最后一个说了算"会把闸门重新打开
                     if (result.externalContext) externalFetchThisTurn = true
+                    result.artifact?.takeUnless { result.isError }?.let(generatedArtifacts::add)
                     if (executionIndex >= 0) {
                         conversation[executionIndex] = conversation[executionIndex].copy(
                             body = MessageBody.Execution(executionStepsFor(stepCalls, stepResults)),
@@ -1273,16 +1310,18 @@ class AppState(
                 },
             )
         } catch (cancelled: CancellationException) {
-            // 用户点了停止：已经说出的半句留着，再往上抛，让整场讨论一起停下来
+            // 用户点了停止：已完成写入的文件仍作为产物交付，再往上抛以停止整场讨论
             if (buffer.isEmpty()) {
                 conversation[index] = placeholder.copy(body = MessageBody.Notice("已停止"))
             }
+            appendArtifacts(conversation, index + 1, generatedArtifacts, member.id, round)
             throw cancelled
         }
 
         when (outcome) {
             is LoopOutcome.Failed -> {
                 conversation[index] = placeholder.copy(body = MessageBody.Notice(outcome.message, isError = true))
+                appendArtifacts(conversation, index + 1, generatedArtifacts, member.id, round)
                 return
             }
             is LoopOutcome.Stopped -> {
@@ -1292,20 +1331,48 @@ class AppState(
                 } else {
                     conversation.add(notice(outcome.reason).copy(speakerAgentId = member.id, roundIndex = round))
                 }
+                appendArtifacts(conversation, index + 1, generatedArtifacts, member.id, round)
                 return
             }
             is LoopOutcome.Done -> Unit
         }
 
         val raw = outcome.let { if (it is LoopOutcome.Done) it.text else buffer.toString() }
-        if (raw.isBlank()) {
+        if (raw.isBlank() && generatedArtifacts.isEmpty()) {
             conversation[index] = placeholder.copy(body = MessageBody.Notice("模型没有返回内容", isError = true))
             return
         }
 
-        conversation[index] = when (val resolved = resolveGroupReply(raw)) {
-            is GroupReplyOutcome.Speak -> placeholder.copy(body = MessageBody.Text(resolved.text))
-            is GroupReplyOutcome.Skip -> placeholder.copy(body = MessageBody.Skipped(resolved.reason))
+        conversation[index] = if (raw.isBlank()) {
+            placeholder.copy(body = MessageBody.Text("已生成文件，见下方预览卡片。"))
+        } else {
+            when (val resolved = resolveGroupReply(raw)) {
+                is GroupReplyOutcome.Speak -> placeholder.copy(body = MessageBody.Text(resolved.text))
+                is GroupReplyOutcome.Skip -> placeholder.copy(body = MessageBody.Skipped(resolved.reason))
+            }
+        }
+        appendArtifacts(conversation, index + 1, generatedArtifacts, member.id, round)
+    }
+
+    private fun appendArtifacts(
+        conversation: SnapshotStateList<ChatMessage>,
+        insertionIndex: Int,
+        artifacts: List<Artifact>,
+        speakerAgentId: String? = null,
+        roundIndex: Int? = null,
+    ) {
+        artifacts.forEachIndexed { offset, artifact ->
+            conversation.add(
+                insertionIndex + offset,
+                ChatMessage(
+                    id = nextId("m"),
+                    author = Author.Agent,
+                    body = MessageBody.Delivered(artifact),
+                    timeLabel = "刚刚",
+                    speakerAgentId = speakerAgentId,
+                    roundIndex = roundIndex,
+                ),
+            )
         }
     }
 
@@ -1472,6 +1539,7 @@ class AppState(
         // 之后每有进展就重写那一条，而不是一步一个气泡。
         val stepCalls = mutableListOf<ToolCall>()
         val stepResults = mutableListOf<ToolResult>()
+        val generatedArtifacts = mutableListOf<Artifact>()
         var executionIndex = -1
 
         // 这一轮取过外部网页就不写记忆，与 send() 是同一道闸门：
@@ -1488,9 +1556,16 @@ class AppState(
 
         // 收尾：把这一期的结果写成"上次执行"的文案，并把期排到下一次。
         // 提前 return 的几条路都要经过它，否则任务会永远停在"到点"。
-        fun finish(ran: Boolean) {
+        fun finish(ran: Boolean, result: String? = null, artifactId: String? = null) {
             val finished = now()
             val stamp = "${describeMoment(finished, finished, zone())} ${if (ran) "已完成" else "执行失败"}"
+            val taskIndex = tasks.indexOfFirst { it.id == task.id }
+            if (taskIndex >= 0) {
+                tasks[taskIndex] = tasks[taskIndex].copy(
+                    lastRunResult = result?.take(4_000) ?: if (ran) null else "本次任务执行失败，请打开对话查看详情。",
+                    lastArtifactId = artifactId,
+                )
+            }
             reschedule(task, lastRun = stamp)
         }
 
@@ -1550,6 +1625,7 @@ class AppState(
                     stepResults += result
                     // 只累积（取或）：一轮里多个结果时"最后一个说了算"会把闸门重新打开
                     if (result.externalContext) externalFetchThisTurn = true
+                    result.artifact?.takeUnless { result.isError }?.let(generatedArtifacts::add)
                     if (executionIndex >= 0) {
                         conversation[executionIndex] = conversation[executionIndex].copy(
                             body = MessageBody.Execution(executionStepsFor(stepCalls, stepResults)),
@@ -1559,6 +1635,8 @@ class AppState(
             )
         } catch (cancelled: CancellationException) {
             if (buffer.isEmpty()) conversation[index] = placeholder.copy(body = MessageBody.Notice("已停止"))
+            appendArtifacts(conversation, index + 1, generatedArtifacts)
+            persistState()
             throw cancelled
         } finally {
             busy[task.agentId] = false
@@ -1569,7 +1647,8 @@ class AppState(
                 conversation[index] = placeholder.copy(
                     body = MessageBody.Notice(outcome.message, isError = true),
                 )
-                finish(ran = false)
+                appendArtifacts(conversation, index + 1, generatedArtifacts)
+                finish(ran = false, artifactId = generatedArtifacts.lastOrNull()?.id)
                 return
             }
             is LoopOutcome.Stopped -> {
@@ -1581,14 +1660,15 @@ class AppState(
                 }
                 // 撞上限**不算跑完**：lastRunLabel 得如实说"执行失败"，
                 // 否则用户会以为那次半截的结果是完整的（一次性任务还会因此被标成已完成）。
-                finish(ran = false)
+                appendArtifacts(conversation, index + 1, generatedArtifacts)
+                finish(ran = false, artifactId = generatedArtifacts.lastOrNull()?.id)
                 return
             }
             is LoopOutcome.Done -> Unit
         }
 
         val raw = outcome.let { if (it is LoopOutcome.Done) it.text else buffer.toString() }
-        if (raw.isBlank()) {
+        if (raw.isBlank() && generatedArtifacts.isEmpty()) {
             conversation[index] = placeholder.copy(
                 body = MessageBody.Notice("模型没有返回内容", isError = true),
             )
@@ -1602,12 +1682,17 @@ class AppState(
             is ReplyOutcome.Plain -> reply.text
             is ReplyOutcome.AsTask -> reply.text
         }
-        conversation[index] = placeholder.copy(body = MessageBody.Text(spoken))
-        finish(ran = true)
+        val finalText = spoken.ifBlank { "任务已生成文件，点击下方产物预览。" }
+        conversation[index] = placeholder.copy(body = MessageBody.Text(finalText))
+        appendArtifacts(conversation, index + 1, generatedArtifacts)
+        val latestArtifact = generatedArtifacts.lastOrNull()
+        finish(ran = true, result = finalText, artifactId = latestArtifact?.id)
         Notifiers.current.notify(
             id = task.id,
             title = "定时任务「${task.title}」已完成",
-            content = spoken.take(120).trim(),
+            content = finalText.take(120).trim(),
+            destination = latestArtifact?.let { NotificationTarget.Artifact(it.id) }
+                ?: NotificationTarget.Task(task.id),
         )
     }
 
@@ -1622,6 +1707,7 @@ class AppState(
         append("\n时间：").append(task.scheduleLabel)
         task.note?.takeIf { it.isNotBlank() }?.let { append("\n备注：").append(it) }
         append("\n\n现在到点了。用你能用的工具把这件事做出来，然后给出结果。")
+        append("如果用户要日报、报告或计划，优先调用 create_artifact 生成可预览的 HTML；图片优先交付 SVG 矢量文件；已有图像可以用 image_url 引用。")
         append("如果需要查资料就用 web_fetch；如果这次得到的结论值得长期记住，用 remember 存下来。")
     }
 

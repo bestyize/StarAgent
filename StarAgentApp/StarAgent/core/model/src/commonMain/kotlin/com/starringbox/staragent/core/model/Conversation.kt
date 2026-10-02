@@ -103,6 +103,10 @@ enum class ArtifactKind(val label: String) {
     Report("报告"),
     Checklist("清单"),
     Draft("草稿"),
+    Plan("计划"),
+    Html("HTML"),
+    Image("图片"),
+    File("文件"),
 }
 
 @Serializable
@@ -119,4 +123,13 @@ data class Artifact(
     val kind: ArtifactKind,
     val summary: String,
     val sections: List<ArtifactSection> = emptyList(),
+    /** 文件类型。HTML、SVG 与常见图片在预览页走各自的渲染器。 */
+    val mimeType: String? = null,
+    val fileName: String? = null,
+    /** 由哪个智能体生成，供受限沙箱读取。 */
+    val agentId: String? = null,
+    /** 智能体沙箱内相对路径，不接受任意本地路径。 */
+    val filePath: String? = null,
+    /** 图片服务返回远程图片时使用，仅允许 HTTPS。 */
+    val sourceUrl: String? = null,
 )

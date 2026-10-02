@@ -27,6 +27,16 @@ class AppFilePort : FilePort {
         return files.map { it.removePrefix("$prefix").let { p -> FileEntry(p, LocalStores.current.size(it) ?: 0L, false) } }
     }
     override fun read(agentId: String, path: String): String? = cleanPath(path)?.let { LocalStores.current.readText("${agentRoot(agentId)}/$it") }
+    override fun readBytes(agentId: String, path: String): ByteArray? =
+        cleanPath(path)?.let { LocalStores.current.readBytes("${agentRoot(agentId)}/$it") }
+
+    override fun writeBytes(agentId: String, path: String, content: ByteArray): FileOperationResult {
+        val p = cleanPath(path) ?: return FileOperationResult(false, "路径不安全或为空")
+        if (!LocalStores.available) return FileOperationResult(false, "本地文件存储未安装")
+        LocalStores.current.writeBytes("${agentRoot(agentId)}/$p", content)
+        return FileOperationResult(true, "已写入 $p")
+    }
+
     override fun write(agentId: String, path: String, content: String): FileOperationResult {
         val p = cleanPath(path) ?: return FileOperationResult(false, "路径不安全或为空")
         if (!LocalStores.available) return FileOperationResult(false, "本地文件存储未安装")

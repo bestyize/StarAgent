@@ -1,5 +1,7 @@
 package com.starringbox.staragent.core.tools.builtin
 
+import com.starringbox.staragent.core.model.Artifact
+import com.starringbox.staragent.core.model.ArtifactKind
 import com.starringbox.staragent.core.model.ToolDefinition
 import com.starringbox.staragent.core.model.ToolResult
 import com.starringbox.staragent.core.tools.Tool
@@ -18,6 +20,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlin.random.Random
 
 private fun schema(vararg required: String, properties: JsonObjectBuilder.() -> Unit) = buildJsonObject {
     put("type", "object")
@@ -76,6 +81,141 @@ object DeleteFileTool : Tool {
         return ToolResult("", result.message, !result.ok)
     }
 }
+
+/**
+ * 把一次回复沉淀成可预览的本地文件。文件始终写入当前智能体的沙箱，
+ * 路径由系统生成，不接受模型提供的目录。
+ */
+object CreateArtifactTool : Tool {
+    override val definition = ToolDefinition(
+        "create_artifact",
+        "用户要求交付日报、报告、计划、清单、图片或文件时调用。日报和报告优先生成 HTML；可生成 HTML、SVG、Markdown、文本、JSON、CSV，以及 PNG/JPEG/WebP（content 使用 base64 或 data URL）。没有图片生成端点时，可把插画或示意图交付为 SVG；也可用 HTTPS source_url 引用已有图像。生成的文件会保存并在回复中显示可点击预览卡片。",
+        schema("title", "format", properties = {
+            putJsonObject("title") { put("type", "string"); put("description", "产物标题") }
+            putJsonObject("summary") { put("type", "string"); put("description", "一行摘要") }
+            putJsonObject("kind") {
+                put("type", "string")
+                put("enum", buildJsonArray { add("digest"); add("report"); add("checklist"); add("draft"); add("plan"); add("image"); add("file") })
+            }
+            putJsonObject("format") {
+                put("type", "string")
+                put("enum", buildJsonArray { add("html"); add("svg"); add("markdown"); add("text"); add("json"); add("csv"); add("png"); add("jpeg"); add("webp"); add("image_url") })
+            }
+            putJsonObject("file_name") { put("type", "string"); put("description", "可选文件名，不含目录") }
+            putJsonObject("content") { put("type", "string"); put("description", "文件正文；PNG/JPEG/WebP 填裸 base64 或 data URL") }
+            putJsonObject("source_url") { put("type", "string"); put("description", "image_url 格式使用，仅接受 HTTPS") }
+        }),
+    )
+
+    override val requiresConfirmation: Boolean = false
+
+    @OptIn(ExperimentalEncodingApi::class)
+    override suspend fun execute(args: JsonObject, host: ToolHost): ToolResult {
+        val title = args.str("title")?.trim()?.take(160).orEmpty()
+        if (title.isBlank()) return ToolResult("", "title 不能为空", true)
+        val format = args.str("format")?.trim()?.lowercase().orEmpty()
+        val extension = when (format) {
+            "html" -> "html"
+            "svg" -> "svg"
+            "markdown" -> "md"
+            "text" -> "txt"
+            "json" -> "json"
+            "csv" -> "csv"
+            "png" -> "png"
+            "jpeg" -> "jpg"
+            "webp" -> "webp"
+            "image_url" -> ""
+            else -> return ToolResult("", "不支持的产物格式：$format", true)
+        }
+
+        val requestedName = args.str("file_name")?.trim().orEmpty()
+        if (requestedName.isNotEmpty() &&
+            (!requestedName.matches(Regex("[A-Za-z0-9._-]{1,100}")) || requestedName == "." || requestedName == "..")
+        ) {
+            return ToolResult("", "file_name 只能包含英文字母、数字、点、下划线和短横线", true)
+        }
+        val id = "artifact-" + Random.nextLong().toString().replace("-", "")
+        val defaultKind = when {
+            format == "image_url" || format in setOf("svg", "png", "jpeg", "webp") -> ArtifactKind.Image
+            format == "html" -> ArtifactKind.Report
+            else -> ArtifactKind.File
+        }
+        val kind = when (args.str("kind")?.lowercase()) {
+            null, "" -> defaultKind
+            "digest" -> ArtifactKind.Digest
+            "report" -> ArtifactKind.Report
+            "checklist" -> ArtifactKind.Checklist
+            "draft" -> ArtifactKind.Draft
+            "plan" -> ArtifactKind.Plan
+            "image" -> ArtifactKind.Image
+            "file" -> ArtifactKind.File
+            else -> return ToolResult("", "kind 不受支持", true)
+        }
+        val summary = args.str("summary")?.trim()?.take(240).orEmpty()
+        var filePath: String? = null
+        var fileName: String? = null
+        var sourceUrl: String? = null
+        val mimeType = when (format) {
+            "html" -> "text/html"
+            "svg" -> "image/svg+xml"
+            "markdown" -> "text/markdown"
+            "text" -> "text/plain"
+            "json" -> "application/json"
+            "csv" -> "text/csv"
+            "png" -> "image/png"
+            "jpeg" -> "image/jpeg"
+            "webp" -> "image/webp"
+            "image_url" -> "image/*"
+            else -> error("unreachable")
+        }
+
+        if (format == "image_url") {
+            sourceUrl = args.str("source_url")?.trim()?.takeIf { url ->
+                url.length > 8 && url.startsWith("https://") && url.none { it.isWhitespace() || it == '"' || it == '<' || it == '>' || it == '\\' }
+            } ?: return ToolResult("", "image_url 必须提供安全的 HTTPS source_url", true)
+        } else {
+            val content = args.str("content") ?: return ToolResult("", "缺少 content", true)
+            val binary = format in setOf("png", "jpeg", "webp")
+            if (content.length > if (binary) 8_000_000 else 1_500_000) {
+                return ToolResult("", "文件内容太大，请拆分或缩小后再生成", true)
+            }
+            fileName = when {
+                requestedName.isBlank() -> "output.$extension"
+                requestedName.substringAfterLast('.', missingDelimiterValue = "").equals(extension, ignoreCase = true) -> requestedName
+                else -> "$requestedName.$extension"
+            }
+            filePath = "artifacts/$id/$fileName"
+            val write = if (binary) {
+                val payload = content.substringAfter("base64,", content).trim()
+                val bytes = runCatching { Base64.Default.decode(payload) }.getOrElse {
+                    return ToolResult("", "图片 content 必须是有效的 base64 或 data URL", true)
+                }
+                host.files.writeBytes(host.agentId, filePath, bytes)
+            } else {
+                host.files.write(host.agentId, filePath, content)
+            }
+            if (!write.ok) return ToolResult("", write.message, true)
+        }
+
+        val artifact = Artifact(
+            id = id,
+            title = title,
+            kind = kind,
+            summary = summary,
+            mimeType = mimeType,
+            fileName = fileName,
+            agentId = host.agentId,
+            filePath = filePath,
+            sourceUrl = sourceUrl,
+        )
+        return ToolResult(
+            callId = "",
+            content = "已生成「$title」${fileName?.let { "（$it）" }.orEmpty()}。预览链接：artifact://$id",
+            artifact = artifact,
+        )
+    }
+}
+
 object InstallSkillTool : Tool {
     override val definition = ToolDefinition("install_skill", "从当前智能体文件沙箱中的 SKILL.md 安装一个本地 Skill。不会联网下载代码。", schema("path", properties = {
         putJsonObject("path") { put("type", "string"); put("description", "SKILL.md 的相对路径") }

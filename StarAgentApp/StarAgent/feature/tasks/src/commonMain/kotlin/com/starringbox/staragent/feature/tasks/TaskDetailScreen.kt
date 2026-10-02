@@ -41,6 +41,7 @@ import com.starringbox.staragent.core.designsystem.component.StarTopBar
 import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.navigation.Navigator
+import com.starringbox.staragent.core.designsystem.navigation.Route
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.model.Recurrence
 import com.starringbox.staragent.core.model.TaskPriority
@@ -163,6 +164,33 @@ fun TaskDetailScreen(navigator: Navigator, taskId: String?) {
                 }
             }
 
+            existing?.let { savedTask ->
+                savedTask.lastRunResult?.let { result ->
+                    Spacer(Modifier.height(16.dp))
+                    SectionLabel("最近一次结果")
+                    StarCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text(
+                                text = result,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = StarPalette.Text,
+                            )
+                            savedTask.lastArtifactId?.let { artifactId ->
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    text = "打开生成文件预览",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = StarPalette.Indigo,
+                                    modifier = Modifier.clickable {
+                                        navigator.push(Route.ArtifactPreview(artifactId))
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             Spacer(Modifier.height(20.dp))
             SectionLabel("由谁执行")
             if (state.agents.isEmpty()) {
@@ -278,93 +306,3 @@ fun TaskDetailScreen(navigator: Navigator, taskId: String?) {
 
             Spacer(Modifier.height(28.dp))
         }
-    }
-}
-
-@Composable
-private fun InfoRow(glyph: StarIconGlyph, label: String, value: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        StarIcon(icon = glyph, iconSize = 15.dp, tint = StarPalette.TextFaint, strokeWidth = 2f)
-        Spacer(Modifier.width(9.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = StarPalette.TextMuted,
-            modifier = Modifier.width(48.dp),
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            color = StarPalette.Text,
-        )
-    }
-}
-
-/** 智能体选择。用 id 而不是名字做判定——两个智能体重名也不会选错。 */
-@Composable
-private fun AgentChipRow(names: List<Pair<String, String>>, selectedId: String, onSelect: (String) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
-    ) {
-        names.forEach { (id, name) ->
-            val isSelected = id == selectedId
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(9.dp))
-                    .background(if (isSelected) StarPalette.Indigo else StarPalette.SurfaceAlt)
-                    .clickable { onSelect(id) }
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
-            ) {
-                Text(
-                    text = name,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (isSelected) Color.White else StarPalette.TextMuted,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ChipRow(options: List<String>, selected: String?, onSelect: (String) -> Unit) {
-    // 横向可滚：提醒的选项比较多，窄屏上硬挤会把标签压成竖排
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
-    ) {
-        options.forEach { option ->
-            val isSelected = selected == option
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(9.dp))
-                    .background(if (isSelected) StarPalette.Indigo else StarPalette.SurfaceAlt)
-                    .clickable { onSelect(option) }
-                    .padding(horizontal = 11.dp, vertical = 7.dp),
-            ) {
-                Text(
-                    text = option,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (isSelected) Color.White else StarPalette.TextMuted,
-                )
-            }
-        }
-    }
-}
-
-/** 优先级配色，任务列表卡片也要用，所以是 internal 而不是 private。 */
-internal fun priorityColor(priority: TaskPriority): Color = when (priority) {
-    TaskPriority.High -> StarPalette.Danger
-    TaskPriority.Medium -> StarPalette.Warning
-    TaskPriority.Low -> StarPalette.Success
-}
