@@ -17,6 +17,8 @@ package com.starringbox.staragent.core.model
 enum class SpeechProtocol {
     /** OpenAI 那套：`/audio/transcriptions` 是 multipart，`/audio/speech` 是 JSON 回来一段音频。 */
     OpenAi,
+    /** 小米语音使用 chat/completions 音频 JSON，与 audio 路径接口不同。 */
+    MiMo,
 
     /**
      * 火山方舟（豆包语音，新版控制台）：**一把 `X-Api-Key`**。

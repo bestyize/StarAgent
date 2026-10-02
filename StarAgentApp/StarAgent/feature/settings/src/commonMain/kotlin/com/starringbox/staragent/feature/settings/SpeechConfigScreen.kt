@@ -16,10 +16,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.starringbox.staragent.core.platform.voice.SpeechOutcome
 import com.starringbox.staragent.core.data.AppState
 import com.starringbox.staragent.core.data.LocalAppState
 import com.starringbox.staragent.core.designsystem.component.StarCard
@@ -37,20 +41,9 @@ import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.model.SpeechProvider
 import com.starringbox.staragent.core.platform.voice.Voice
 import com.starringbox.staragent.core.platform.voice.VoiceSource
+import kotlinx.coroutines.launch
 
-/**
- * 语音配置。从「我的 → 语音」进来，和「模型接入」平级但**完全独立**。
- *
- * 这里只有**一条**配置：选一家服务商 + 填这家的 Key +（可选）选识别模型。
- * 不做服务商列表、不做多家切换、不做自定义端点——那套是「模型接入」的形状，
- * 而两者管的是两件不相干的事。
- *
- * **为什么和对话的服务商分开**：原先语音是"借用"对话那份配置的（同一个 `ModelProvider`、
- * 同一把 Key、同一个模型清单）。后果是这一页上每家的"待配置"其实说的是
- * **对话那把 Key 配没配**，点"去配置"跳到的也是对话的详情页，
- * 用户根本看不出这两件事已经被绑在一起了。拆开的代价是要填两遍 Key，
- * 这个代价是明知的，换的是两个页面各自自洽。
- */
+/** 语音配置：独立选择识别来源、朗读来源和各自需要的服务商。 */
 @Composable
 fun SpeechConfigScreen(navigator: Navigator) {
     val state = LocalAppState.current
@@ -58,6 +51,8 @@ fun SpeechConfigScreen(navigator: Navigator) {
     // 「这台设备装了系统识别没有」。用 installed 而不是 ready：
     // 权限还没申请时 ready 就是 false，拿它禁选项等于永远没机会授权。
     val deviceInstalled = Voice.deviceListenInstalled
+    val localAsrSupported = state.localAsrSupported
+    val localAsrInstalled = state.localAsrInstalled
 
     // 「云端识别」那条现在能不能用。
     //
@@ -80,26 +75,20 @@ fun SpeechConfigScreen(navigator: Navigator) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item { SpeechSectionLabel("识别方式") }
-            item { SourcePicker(state, deviceInstalled, modelReady) }
+            item { SourcePicker(state, deviceInstalled, modelReady, localAsrSupported, localAsrInstalled) }
+
+            item { SpeechSectionLabel("离线模型") }
+            item { LocalSpeechCard(state) }
 
             item { SpeechSectionLabel("语音服务商") }
             item {
                 StarCard(modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            state.speechProviders.forEach { provider ->
-                                VendorChip(
-                                    provider = provider,
-                                    selected = active?.id == provider.id,
-                                    onClick = {
-                                        // 选家的同时把方式切到「云端识别」——否则在自动档下
-                                        // 设备那路仍然优先，看起来像是没生效。
-                                        state.selectSpeechProvider(provider.id)
-                                        state.selectVoiceSource(VoiceSource.Model)
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
+                        ProviderGrid(state.speechProviders, active?.id) { provider ->
+                            // 选家的同时把方式切到「云端识别」——否则在自动档下
+                            // 设备那路仍然优先，看起来像是没生效。
+                            state.selectSpeechProvider(provider.id)
+                            state.selectVoiceSource(VoiceSource.Model)
                         }
 
                         Spacer(Modifier.height(10.dp))
@@ -121,9 +110,13 @@ fun SpeechConfigScreen(navigator: Navigator) {
                     item { AsrModelPicker(state, active) }
                 }
 
-                item { SpeechSectionLabel("朗读") }
-                item { ReadingNote(active) }
             }
+
+            item { SpeechSectionLabel("朗读") }
+            item { ReadingSettings(state) }
+
+            item { SpeechSectionLabel("试用语音") }
+            item { SpeechTestCard(state) }
 
             item { Spacer(Modifier.height(20.dp)) }
         }
@@ -131,23 +124,31 @@ fun SpeechConfigScreen(navigator: Navigator) {
 }
 
 /**
- * 「自动 / 系统能力 / 云端识别」三选。
+ * 自动、系统、云端和离线识别来源。
  *
  * 和对话页状态面板里那个三选写同一份 `state.voiceSource`——两处入口、一份状态，
  * 面板是聊天中的快捷切换，这一页是完整配置。
  */
 @Composable
-private fun SourcePicker(state: AppState, deviceInstalled: Boolean, modelReady: Boolean) {
+private fun SourcePicker(
+    state: AppState,
+    deviceInstalled: Boolean,
+    modelReady: Boolean,
+    localSupported: Boolean,
+    localInstalled: Boolean,
+) {
     StarCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(null, VoiceSource.Device, VoiceSource.Model).forEach { source ->
+                listOf(null, VoiceSource.Device, VoiceSource.Model, VoiceSource.Local).forEach { source ->
                     // 走不通的那条不给点。理由不只是"点了没用"——指定这一档是**独占**的，
                     // Voice.pickTranscriber 认准它之后不会再退回另一条，
                     // 所以点一下「云端识别」会把本来能用的语音输入整个关掉，而界面看着毫无变化。
                     val enabled = when (source) {
                         VoiceSource.Device -> deviceInstalled
                         VoiceSource.Model -> modelReady
+                        // 支持此功能的设备允许先选中；下面会提示下载模型。
+                        VoiceSource.Local -> localSupported
                         null -> true
                     }
                     val selected = state.voiceSource == source
@@ -187,7 +188,7 @@ private fun SourcePicker(state: AppState, deviceInstalled: Boolean, modelReady: 
 
             Spacer(Modifier.height(8.dp))
             Text(
-                text = sourceHint(state, deviceInstalled, modelReady),
+                text = sourceHint(state, deviceInstalled, modelReady, localSupported, localInstalled),
                 style = MaterialTheme.typography.bodySmall,
                 color = StarPalette.TextFaint,
             )
@@ -204,7 +205,13 @@ private fun SourcePicker(state: AppState, deviceInstalled: Boolean, modelReady: 
  * 2. **灰着的选项要在用户点它之前就把原因说清楚**。用户是先看到选项变灰、再去找原因的，
  *    等他点中了才解释就晚了；而灰的那条恰恰点不动，这句提示是唯一能说话的地方。
  */
-private fun sourceHint(state: AppState, deviceInstalled: Boolean, modelReady: Boolean): String {
+private fun sourceHint(
+    state: AppState,
+    deviceInstalled: Boolean,
+    modelReady: Boolean,
+    localSupported: Boolean,
+    localInstalled: Boolean,
+): String {
     // 规则 1：选中的那条其实用不了
     when {
         state.voiceSource == VoiceSource.Device && !deviceInstalled ->
@@ -212,15 +219,23 @@ private fun sourceHint(state: AppState, deviceInstalled: Boolean, modelReady: Bo
 
         state.voiceSource == VoiceSource.Model && !modelReady ->
             return "云端识别还用不了：在下面选一家服务商，并把它的 API Key 填上。"
+
+        state.voiceSource == VoiceSource.Local && !localSupported ->
+            return "这台设备暂不支持离线识别。"
+
+        state.voiceSource == VoiceSource.Local && !localInstalled ->
+            return "离线识别模型还没下载，可在下面的离线模型卡片中下载。"
     }
 
     val current = when (state.voiceSource) {
         VoiceSource.Device -> VoiceSource.Device.hint
         VoiceSource.Model -> VoiceSource.Model.hint
-        null -> if (deviceInstalled) {
-            "自动：优先系统能力，它不要 Key 也不花钱；用不了时才走下面选的服务商。"
-        } else {
-            "这台设备没有系统识别（桌面端就没有），所以自动模式实际走的是下面选的服务商。"
+        VoiceSource.Local -> if (localInstalled) VoiceSource.Local.hint else "离线识别需要先下载模型。"
+        null -> when {
+            deviceInstalled -> "自动优先使用系统识别；不可用时再尝试离线识别和云端服务商。"
+            localInstalled -> "自动优先使用已下载的离线识别；不可用时再使用云端服务商。"
+            !localSupported -> "自动使用下面选择的云端服务商进行识别。"
+            else -> "自动会优先使用可用的离线识别；模型未下载时使用云端服务商。"
         }
     }
 
@@ -232,6 +247,30 @@ private fun sourceHint(state: AppState, deviceInstalled: Boolean, modelReady: Bo
     }
 
     return current
+}
+
+/** 服务商多于三家时自动换行，避免横向挤压名称。 */
+@Composable
+private fun ProviderGrid(
+    providers: List<SpeechProvider>,
+    selectedId: String?,
+    onSelect: (SpeechProvider) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        providers.chunked(2).forEach { rowProviders ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                rowProviders.forEach { provider ->
+                    VendorChip(
+                        provider = provider,
+                        selected = selectedId == provider.id,
+                        onClick = { onSelect(provider) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (rowProviders.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
 }
 
 /** 一家语音服务商。选它就是把整条语音配置切到这家。 */
@@ -326,35 +365,215 @@ private fun SaveButton(enabled: Boolean, onClick: () -> Unit) {
 private fun masked(key: String): String =
     if (key.length <= 8) "••••" else key.take(4) + "••••" + key.takeLast(4)
 
-/**
- * 朗读这一节。
- *
- * 朗读**没有自己的档位**——它跟着识别选的那家走：这家能做合成（智谱 GLM、OpenAI）
- * 就用它，不能（Groq 只有识别）就退回设备自带。这句话必须写出来，
- * 否则用户选了 Groq 之后发现朗读换了声音，只会以为坏了。
- */
 @Composable
-private fun ReadingNote(provider: SpeechProvider) {
+private fun ReadingSettings(state: AppState) {
+    val scope = rememberCoroutineScope()
+    val source = state.ttsVoiceSource
+    val inheritedTtsProvider = state.activeTtsProvider()
+    val ttsProvider = inheritedTtsProvider?.takeIf { it.canSynthesize }
+    val voiceDraft = remember(state.ttsVoiceId) { mutableStateOf(state.ttsVoiceId.orEmpty()) }
+    val testMessage = remember { mutableStateOf<String?>(null) }
+    val speakReplies = state.speakReplies
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        StarCard(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp)) {
+                Text("朗读方式", style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(null, VoiceSource.Device, VoiceSource.Model, VoiceSource.Local).forEach { option ->
+                        val enabled = when (option) {
+                            null, VoiceSource.Device -> true
+                            VoiceSource.Model -> state.speechProviders.any { it.canSynthesize }
+                            VoiceSource.Local -> state.localTtsSupported
+                        }
+                        val selected = source == option
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    when {
+                                        selected -> StarPalette.Indigo
+                                        enabled -> StarPalette.SurfaceAlt
+                                        else -> StarPalette.SurfaceSunken
+                                    },
+                                )
+                                .then(if (enabled) Modifier.clickable { state.selectTtsVoiceSource(option) } else Modifier)
+                                .padding(vertical = 10.dp, horizontal = 3.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = if (option == VoiceSource.Model) "云端服务" else option?.label ?: "跟随识别",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = when {
+                                    selected -> Color.White
+                                    enabled -> StarPalette.TextMuted
+                                    else -> StarPalette.TextFaint
+                                },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                val note = when {
+                    source == VoiceSource.Local && !state.localTtsInstalled -> "离线朗读模型尚未下载，可在离线模型卡片中下载。"
+                    source == VoiceSource.Model -> "朗读使用单独选择的云端服务商和 API Key。"
+                    source == VoiceSource.Device -> "使用这台设备提供的朗读声音。"
+                    source == VoiceSource.Local -> "在本机离线朗读。"
+                    else -> "跟随识别方式选择朗读来源。"
+                }
+                Text(note, style = MaterialTheme.typography.bodySmall, color = StarPalette.TextFaint)
+            }
+        }
+
+        if (source == VoiceSource.Model || source == null) {
+            StarCard(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("云端朗读服务商", style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
+                    Spacer(Modifier.height(8.dp))
+                    ProviderGrid(state.speechProviders.filter { it.canSynthesize }, state.ttsProviderId) { provider ->
+                        state.selectTtsProvider(provider.id)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "跟随识别服务商",
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = StarPalette.TextMuted,
+                        )
+                        ActionLabel(
+                            text = if (state.ttsProviderId == null) "已选择" else "使用",
+                            enabled = state.ttsProviderId != null,
+                            onClick = { state.selectTtsProvider(null) },
+                        )
+                    }
+                    if (state.ttsProviderId == null && inheritedTtsProvider?.canSynthesize != true) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "当前识别服务商没有云端朗读，可在上方选择一家。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = StarPalette.TextFaint,
+                        )
+                    }
+                }
+            }
+            ttsProvider?.let { provider ->
+                Column {
+                    SpeechSectionLabel("${provider.name} 的 API Key")
+                    ApiKeyCard(state, provider)
+                }
+            }
+        }
+
+        StarCard(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp)) {
+                Text("音色", style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
+                Spacer(Modifier.height(8.dp))
+                StarTextField(
+                    value = voiceDraft.value,
+                    onValueChange = { voiceDraft.value = it },
+                    placeholder = "默认音色（可留空）",
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "音色名称会按所选朗读方式保存。",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = StarPalette.TextFaint,
+                    )
+                    SaveButton(
+                        enabled = voiceDraft.value != state.ttsVoiceId.orEmpty(),
+                        onClick = { state.selectTtsVoice(voiceDraft.value.trim().ifBlank { null }) },
+                    )
+                }
+            }
+        }
+
+        StarCard(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("朗读回复", style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
+                        Text("收到回复后自动读出来", style = MaterialTheme.typography.bodySmall, color = StarPalette.TextFaint)
+                    }
+                    Switch(checked = speakReplies, onCheckedChange = state::setReadingReplies)
+                }
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("流式播报", style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
+                        Text(
+                            "支持的朗读来源会边生成边朗读；否则等回复完成后再读。失败时文字回复仍会保留。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = StarPalette.TextFaint,
+                        )
+                    }
+                    Switch(checked = state.streamReplies, onCheckedChange = state::setStreamingReplies)
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ActionLabel("试音", enabled = true) {
+                        scope.launch {
+                            testMessage.value = when (val result = state.speak("你好，我是 StarAgent。")) {
+                                is SpeechOutcome.Ok -> "已播放试音。"
+                                is SpeechOutcome.Failed -> result.message
+                            }
+                        }
+                    }
+                    testMessage.value?.let {
+                        Text(it, Modifier.padding(start = 10.dp), style = MaterialTheme.typography.bodySmall, color = StarPalette.TextFaint)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpeechTestCard(state: AppState) {
+    val scope = rememberCoroutineScope()
+    val listening = remember { mutableStateOf(false) }
+    val resultText = remember { mutableStateOf<String?>(null) }
+    DisposableEffect(state) {
+        onDispose {
+            if (listening.value) state.cancelListening()
+            state.stopSpeaking()
+        }
+    }
+
     StarCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
-            Text(
-                text = if (provider.canSynthesize) {
-                    "${provider.name} 也能合成语音，朗读会走这家。"
-                } else {
-                    "${provider.name} 只做识别、不做合成，所以朗读仍用这台设备自带的。"
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = StarPalette.Text,
-            )
-            // 能合成时不必再劝他换一家——那句话只在"朗读没走上云端"时才有信息量。
-            // 同样不列名单：加了服务商就要回来改一句文案，漏改就是"明明有却不告诉用户"
-            if (!provider.canSynthesize) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "换个能合成的服务商就能让朗读也走云端。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = StarPalette.TextFaint,
-                )
+            Text("点击开始录音，再点击结束并查看识别结果。", style = MaterialTheme.typography.bodySmall, color = StarPalette.TextFaint)
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ActionLabel(
+                    text = if (listening.value) "结束识别" else "开始识别",
+                    enabled = true,
+                ) {
+                    scope.launch {
+                        if (!listening.value) {
+                            resultText.value = null
+                            when (val result = state.startListening()) {
+                                is SpeechOutcome.Ok -> listening.value = true
+                                is SpeechOutcome.Failed -> resultText.value = result.message
+                            }
+                        } else {
+                            when (val result = state.stopListening()) {
+                                is SpeechOutcome.Ok -> resultText.value = result.value.ifBlank { "没有识别到内容。" }
+                                is SpeechOutcome.Failed -> resultText.value = result.message
+                            }
+                            listening.value = false
+                        }
+                    }
+                }
+                resultText.value?.let {
+                    Text(it, Modifier.padding(start = 10.dp).weight(1f), style = MaterialTheme.typography.bodySmall, color = StarPalette.TextMuted)
+                }
             }
         }
     }

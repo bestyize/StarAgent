@@ -39,6 +39,7 @@ StarAgent/
 │   ├── platform/            平台能力层：本地存储 / 选图保存 / 语音
 │   │                        （内部分包，三端实现各在自己的源集里）
 │   ├── llm/                 模型接入：协议实现 + 流式解析 + 工具 wire 渲染（不依赖 Compose）
+│   ├── speech-local/        SenseVoice / Piper / Silero 离线语音与模型管理
 │   ├── tools/               工具执行层：契约、注册表、内置工具（只依赖 core:model）
 │   ├── data/                应用状态、模型服务配置、对话流、Agent 循环
 │   └── bootstrap/           装配层：启动时把各端的平台能力一次装起来

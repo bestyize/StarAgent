@@ -1,6 +1,7 @@
 package com.starringbox.staragent.core.bootstrap
 
 import android.content.Context
+import com.starringbox.staragent.core.speech.local.LocalSpeechContext
 import androidx.activity.result.ActivityResultCaller
 import com.starringbox.staragent.core.data.AndroidAppContext
 import com.starringbox.staragent.core.platform.device.AndroidAccessibilityController
@@ -37,6 +38,7 @@ import com.starringbox.staragent.core.platform.voice.install
 fun PlatformInstall.install(context: Context, caller: ActivityResultCaller) {
     // 1. 最先：让 core:data 拿得到 Context
     AndroidAppContext.install(context)
+    LocalSpeechContext.install(context)
     installAndroidBrowser(context)
     AndroidAccessibilityController.installContext(context)
 

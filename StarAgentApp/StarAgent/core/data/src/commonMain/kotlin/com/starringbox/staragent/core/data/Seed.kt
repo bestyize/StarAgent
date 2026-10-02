@@ -244,6 +244,15 @@ internal object Seed {
             // 配成 1.0 的 …_moon_bigtts 会被服务端以"音色与资源不匹配"拒掉
             ttsVoice = "zh_female_vv_uranus_bigtts",
         ),
+        SpeechProvider(
+            id = "mimo",
+            name = "小米 MiMo",
+            baseUrl = "https://api.xiaomimimo.com/v1",
+            protocol = SpeechProtocol.MiMo,
+            asrModel = "mimo-v2.5-asr",
+            ttsModel = "mimo-v2.5-tts",
+            ttsVoice = "mimo-default",
+        ),
     )
 
     /** 首次启动的演示内容：智能体、任务、记忆、技能、渠道与示例对话。 */

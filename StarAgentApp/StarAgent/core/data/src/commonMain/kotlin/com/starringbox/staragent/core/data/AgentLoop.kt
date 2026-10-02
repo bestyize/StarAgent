@@ -57,9 +57,10 @@ internal class AgentLoop(
         history: MutableList<LlmTurn>,
         host: ToolHost,
         registry: ToolRegistry,
-        onText: (String) -> Unit,
+        onText: suspend (String) -> Unit,
         onToolStart: (ToolCall) -> Unit,
         onToolEnd: (ToolCall, ToolResult) -> Unit,
+        onRoundStarted: suspend () -> Unit = {},
     ): LoopOutcome {
         try {
             var iteration = 0
@@ -74,6 +75,7 @@ internal class AgentLoop(
                 }
 
                 val buffer = StringBuilder()
+                onRoundStarted()
                 var calls: List<ToolCall> = emptyList()
                 var failure: String? = null
 

@@ -15,6 +15,7 @@ enum class VoiceSource(val label: String, val hint: String) {
      * 而两者现在已经是完全独立的两份配置——同一个词指两件事，是上一版最容易让人困惑的地方。
      */
     Model("云端识别", "走你在「我的 → 语音」里配的服务商，识别更准，按量计费"),
+    Local("离线模型", "先下载 SenseVoice / Piper 模型，使用时无需联网"),
 }
 
 /**

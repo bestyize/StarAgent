@@ -33,6 +33,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(project(":core:platform"))
+            implementation(project(":core:speech-local"))
         }
         androidMain.dependencies {
             // 只有 Android 用得到：AndroidAppContext 要把 Context 交给 core:data，

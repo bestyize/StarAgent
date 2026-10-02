@@ -46,6 +46,9 @@ kotlin {
     }
 
     sourceSets {
+        iosMain.dependencies {
+            implementation(project(":core:bootstrap"))
+        }
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.compose.uiTooling)

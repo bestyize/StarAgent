@@ -36,6 +36,7 @@ import androidx.activity.result.ActivityResultCaller
 fun DeviceVoice.install(context: Context, caller: ActivityResultCaller) {
     Recorders.install(AndroidVoiceRecorder(context, caller))
     Players.install(AndroidVoicePlayer(context))
+    PcmPlayers.install(AndroidPcmPlayer())
     Voice.installDevice(
         transcriber = AndroidSystemTranscriber(context, caller),
         synthesizer = AndroidSystemSynthesizer(context),

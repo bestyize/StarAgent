@@ -411,11 +411,12 @@ private fun SheetBody(agent: Agent, onPickModel: (String) -> Unit) {
     val deviceInstalled = Voice.deviceListenInstalled
     val modelReady = Voice.modelListenReady
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        val choices = listOf(null, VoiceSource.Device, VoiceSource.Model)
+        val choices = listOf(null, VoiceSource.Device, VoiceSource.Model, VoiceSource.Local)
         choices.forEach { source ->
             val enabled = when (source) {
                 VoiceSource.Device -> deviceInstalled
                 VoiceSource.Model -> modelReady
+                VoiceSource.Local -> state.localAsrSupported
                 null -> true
             }
             val selected = state.voiceSource == source

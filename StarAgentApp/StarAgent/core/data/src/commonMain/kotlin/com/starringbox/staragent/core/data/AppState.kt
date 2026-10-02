@@ -1,5 +1,20 @@
 package com.starringbox.staragent.core.data
 
+import com.starringbox.staragent.core.speech.local.LocalTranscriber
+import com.starringbox.staragent.core.speech.local.LocalSynthesizer
+import com.starringbox.staragent.core.speech.local.asr.client.SenseVoiceAsr
+import com.starringbox.staragent.core.speech.local.tts.client.PiperTts
+import com.starringbox.staragent.core.speech.local.asr.vad.filterSpeechWav
+import com.starringbox.staragent.core.platform.voice.VoiceClip
+import com.starringbox.staragent.core.platform.voice.Wav
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.job
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.starringbox.staragent.core.data.speech.ReplySpeechSession
+import com.starringbox.staragent.core.platform.voice.PcmPlayers
+
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -125,8 +140,8 @@ class AppState(
     /**
      * 用哪家语音服务商。null = 还没选（[activeSpeechProvider] 会退回第一家）。
      *
-     * **识别和朗读共用这一条配置**：选了谁、填了谁的 Key，识别就走它；
-     * 它要是有合成模型，朗读也走它，没有就退回设备自带。
+     * 识别使用此配置；朗读没有单独选服务商时才继承它。
+     * 凭据按服务商存储，识别和朗读可引用不同服务商的凭据。
      */
     var speechProviderId by mutableStateOf<String?>(null)
         private set
@@ -134,6 +149,37 @@ class AppState(
     /** 识别用哪个模型。null = 用那家的预设。存的是模型名本身，不是下标。 */
     var asrModelId by mutableStateOf<String?>(null)
         private set
+
+    var ttsVoiceSource by mutableStateOf<VoiceSource?>(null)
+        private set
+    var ttsProviderId by mutableStateOf<String?>(null)
+        private set
+    var ttsVoiceId by mutableStateOf<String?>(null)
+        private set
+    val localAsrSupported: Boolean get() = SenseVoiceAsr.supported()
+    val localTtsSupported: Boolean get() = PiperTts.supported()
+    var localAsrInstalled by mutableStateOf(SenseVoiceAsr.installed())
+        private set
+    var localTtsInstalled by mutableStateOf(false)
+        private set
+    var localModelBusy by mutableStateOf(false)
+        private set
+    var localModelProgress by mutableStateOf("")
+        private set
+    var localModelError by mutableStateOf<String?>(null)
+        private set
+    private var localModelJob: Job? = null
+    private var replySpeechSession: ReplySpeechSession? = null
+    private var speechGeneration = 0L
+    var speechError by mutableStateOf<String?>(null)
+        private set
+    var streamReplies by mutableStateOf(true)
+        private set
+    fun setStreamingReplies(enabled: Boolean) {
+        stopSpeaking()
+        streamReplies = enabled
+        SettingsStore.put("streamReplies", enabled.toString())
+    }
 
     /**
      * 语音侧的全部候选。常量——每次启动由 [Seed.speechProviders] 重建，之后不变。
@@ -219,7 +265,11 @@ class AppState(
         // 语音的模型后端在这里装：它要用"用户当前配置的服务商"，
         // 所以只有数据层装得了。设备能力那一路由各端入口装（Android 有，桌面没有）。
         Voice.installModel(
-            transcriber = ModelTranscriber { asrEndpoint() },
+            transcriber = ModelTranscriber(filter = { clip ->
+                withContext(Dispatchers.Default) {
+                    filterSpeechWav(clip.bytes)?.let { VoiceClip(it, clip.mimeType, Wav.durationMillis(it)) }
+                }
+            }) { asrEndpoint() },
             synthesizer = ModelSynthesizer { ttsEndpoint() },
         )
 
@@ -227,6 +277,11 @@ class AppState(
         // [Voice] 刻意不自己存它——上一版两边各存一份、而这边忘了同步，
         // 结果这个选择在真机上一直是失效的。现在这边是唯一的真相。
         Voice.installPreference { voiceSource }
+        PiperTts.prepareRuntime()
+        localTtsInstalled = PiperTts.installed()
+        Voice.installLocal(LocalTranscriber(), LocalSynthesizer())
+        Voice.installSpeakingPreference { ttsVoiceSource }
+        Voice.installStopHandler { speechGeneration++; replySpeechSession?.stop() }
 
         // 兜底默认模型取第一家的第一个；没有服务商时留空，交给 SettingsStore 里用户自己的选择
         providers.firstOrNull()?.let { defaultModelId = modelKey(it.id, 0) }
@@ -500,6 +555,62 @@ class AppState(
         speechProviderId?.let { id -> speechProviders.firstOrNull { it.id == id } }
             ?: speechProviders.firstOrNull()
 
+    fun activeTtsProvider(): SpeechProvider? =
+        ttsProviderId?.let { id -> speechProviders.firstOrNull { it.id == id } }
+            ?: activeSpeechProvider()
+
+    fun selectTtsVoiceSource(source: VoiceSource?) {
+        stopSpeaking()
+        ttsVoiceSource = source
+        SettingsStore.put("ttsVoiceSource", source?.name.orEmpty())
+    }
+
+    fun selectTtsProvider(id: String?) {
+        stopSpeaking()
+        ttsProviderId = id
+        ttsVoiceId = null
+        SettingsStore.put("ttsProvider", id.orEmpty())
+        SettingsStore.put("ttsVoice", "")
+    }
+
+    fun selectTtsVoice(voice: String?) {
+        stopSpeaking()
+        ttsVoiceId = voice?.trim()?.takeIf { it.isNotBlank() }
+        SettingsStore.put("ttsVoice", ttsVoiceId.orEmpty())
+    }
+
+    suspend fun installLocalAsr() = manageLocalModel { progress -> SenseVoiceAsr.install(progress) }
+    suspend fun installLocalTts() = manageLocalModel { progress -> PiperTts.install(progress) }
+    suspend fun removeLocalAsr() = manageLocalModel { _ -> cancelListening(); SenseVoiceAsr.remove() }
+    suspend fun removeLocalTts() = manageLocalModel { _ -> stopSpeaking(); PiperTts.remove() }
+    fun cancelLocalModelDownload() { localModelJob?.cancel() }
+
+    private suspend fun manageLocalModel(operation: suspend ((Long, Long) -> Unit) -> Unit) = coroutineScope {
+        if (localModelBusy) return@coroutineScope
+        localModelBusy = true
+        localModelError = null
+        localModelProgress = "准备中"
+        localModelJob = coroutineContext.job
+        try {
+            operation { done, total ->
+                localModelProgress = if (total > 0) "${(done * 100 / total).coerceIn(0, 100)}%" else "准备中"
+            }
+            localModelProgress = "完成"
+        } catch (cancelled: CancellationException) {
+            localModelProgress = "已取消"
+            throw cancelled
+        } catch (failure: Exception) {
+            localModelError = failure.message ?: "模型操作失败"
+        } catch (failure: Throwable) {
+            localModelError = "离线运行库加载失败，请检查安装包"
+        } finally {
+            localAsrInstalled = SenseVoiceAsr.installed()
+            localTtsInstalled = PiperTts.installed()
+            localModelJob = null
+            localModelBusy = false
+        }
+    }
+
     /** 这家配了 Key 没有。 */
     fun speechKeyOf(providerId: String): String = speechKeys[providerId].orEmpty()
 
@@ -557,7 +668,7 @@ class AppState(
      * `ModelSynthesizer.ready` 于是为 false，[Voice] 会把朗读退回设备自带。
      */
     fun ttsEndpoint(): SpeechEndpoint? {
-        val provider = activeSpeechProvider() ?: return null
+        val provider = activeTtsProvider() ?: return null
         val model = provider.ttsModel ?: return null
         val key = speechKeyOf(provider.id)
         if (key.isBlank()) return null
@@ -566,7 +677,7 @@ class AppState(
             apiKey = key,
             protocol = provider.protocol,
             ttsModel = model,
-            ttsVoice = provider.ttsVoice,
+            ttsVoice = ttsVoiceId ?: provider.ttsVoice,
         )
     }
 
@@ -605,6 +716,7 @@ class AppState(
      * Key **不清**——它是按家分开存的，各留各的，切回去不用重填。
      */
     fun selectSpeechProvider(id: String?) {
+        if (ttsProviderId == null) selectTtsVoice(null)
         speechProviderId = id
         SettingsStore.put(KEY_SPEECH_PROVIDER, id.orEmpty())
         selectAsrModel(null)
@@ -627,6 +739,8 @@ class AppState(
             val provider = activeSpeechProvider()
             val configured = provider != null && speechConfigured(provider.id)
             return when {
+                voiceSource == VoiceSource.Local && localAsrInstalled -> "离线 · SenseVoice"
+                voiceSource == VoiceSource.Local -> "离线 · 请先下载识别模型"
                 voiceSource == VoiceSource.Device && device -> "系统能力"
                 voiceSource == VoiceSource.Device -> "系统能力 · 这台设备不支持"
                 // 「云端识别」是用户点名要的，没配好就得直说是哪一步没做
@@ -634,6 +748,7 @@ class AppState(
                 voiceSource == VoiceSource.Model && provider == null -> "云端识别 · 还没选服务商"
                 voiceSource == VoiceSource.Model -> "云端识别 · 还没填 Key"
                 device -> "自动 · 优先系统能力"
+                localAsrInstalled -> "自动 · 离线 SenseVoice"
                 configured -> "自动 · ${provider!!.name}"
                 else -> "还没有可用的识别"
             }
@@ -796,7 +911,46 @@ class AppState(
 
     // ── 对话 ────────────────────────────────────
 
-    suspend fun send(agentId: String, text: String, images: List<MediaAsset> = emptyList()) {
+    suspend fun send(agentId: String, text: String, images: List<MediaAsset> = emptyList(), readAloud: Boolean = false) {
+        if (isBusy(agentId)) return
+        withReplySpeech(agentId, readAloud) { speech -> sendImpl(agentId, text, images, speech) }
+    }
+
+    private suspend fun withReplySpeech(key: String, readAloud: Boolean, work: suspend (ReplySpeechSession?) -> Unit) = coroutineScope {
+        if (readAloud) speechError = null
+        if (!readAloud || !speakReplies || !canSpeak) { work(null); return@coroutineScope }
+        stopSpeaking()
+        val generation = speechGeneration
+        val before = messagesOf(key).size
+        val session = if (streamReplies && Voice.canStreamSpeak) ReplySpeechSession(
+            scope = this,
+            synthesize = { sentence, emit -> Voice.streamSpeak(sentence, emit) },
+            play = { PcmPlayers.enqueue(it) },
+            drain = { PcmPlayers.drain() },
+            stopPlayback = { PcmPlayers.stop() },
+            onFailure = { if (generation == speechGeneration) speechError = it },
+        ) else null
+        replySpeechSession = session
+        try {
+            work(session)
+            if (session != null) session.finish()
+            else if (generation == speechGeneration && !isListening) {
+                val reply = messagesOf(key).drop(before).lastOrNull { it.author == Author.Agent && it.body is MessageBody.Text }
+                val text = (reply?.body as? MessageBody.Text)?.text.orEmpty()
+                if (text.isNotBlank()) {
+                    val result = speak(text)
+                    if (result is SpeechOutcome.Failed) speechError = result.message
+                }
+            }
+        } finally {
+            if (replySpeechSession === session) {
+                session?.stop()
+                replySpeechSession = null
+            }
+        }
+    }
+
+    private suspend fun sendImpl(agentId: String, text: String, images: List<MediaAsset>, speech: ReplySpeechSession?) {
         val trimmed = text.trim()
         // 只发图片、不写字，是常见用法，不能拦掉
         if ((trimmed.isEmpty() && images.isEmpty()) || isBusy(agentId)) return
@@ -891,7 +1045,9 @@ class AppState(
                 onText = { chunk ->
                     buffer.append(chunk)
                     conversation[index] = placeholder.copy(body = MessageBody.Text(buffer.toString()))
+                    speech?.append(chunk)
                 },
+                onRoundStarted = { speech?.boundary() },
                 onToolStart = { call ->
                     stepCalls += call
                     val steps = executionStepsFor(stepCalls, stepResults)
@@ -1126,7 +1282,13 @@ class AppState(
      * 讨论是**串行**的：一个成员收完流才轮到下一个，所以后面发言的人天然看得到前面刚说的话，
      * 讨论就是这样串起来的。一条消息的真实成本 = 成员数 × 轮数 次模型调用。
      */
-    suspend fun sendToGroup(groupId: String, text: String, images: List<MediaAsset> = emptyList()) {
+    suspend fun sendToGroup(groupId: String, text: String, images: List<MediaAsset> = emptyList(), readAloud: Boolean = false) {
+        val key = GroupTalk.key(groupId)
+        if (isBusy(key)) return
+        withReplySpeech(key, readAloud) { speech -> sendToGroupImpl(groupId, text, images, speech) }
+    }
+
+    private suspend fun sendToGroupImpl(groupId: String, text: String, images: List<MediaAsset>, speech: ReplySpeechSession?) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() && images.isEmpty()) return
 
@@ -1173,7 +1335,7 @@ class AppState(
                 currentCoroutineContext().ensureActive()
                 for (member in speakers) {
                     currentCoroutineContext().ensureActive()
-                    speakOnce(key, group, member, round, members, addressed = member.id in addressed)
+                    speakOnce(key, group, member, round, members, addressed = member.id in addressed, speech = speech)
                 }
             }
         } finally {
@@ -1191,6 +1353,7 @@ class AppState(
         round: Int,
         roster: List<Agent>,
         addressed: Boolean = false,
+        speech: ReplySpeechSession? = null,
     ) {
         val conversation = messagesOf(key)
         val endpoint = endpointFor(
@@ -1270,7 +1433,9 @@ class AppState(
                 onText = { chunk ->
                     buffer.append(chunk)
                     conversation[index] = placeholder.copy(body = MessageBody.Text(buffer.toString()))
+                    speech?.append(chunk)
                 },
+                onRoundStarted = { speech?.boundary() },
                 onToolStart = { call ->
                     stepCalls += call
                     val steps = executionStepsFor(stepCalls, stepResults)
@@ -2017,6 +2182,7 @@ class AppState(
             ?.let { saved -> VoiceSource.entries.firstOrNull { it.name == saved } }
             ?.let { selectVoiceSource(it) }
         speakReplies = SettingsStore.get(KEY_SPEAK_REPLIES) == "true"
+        streamReplies = SettingsStore.get("streamReplies") != "false"
 
         // 语音服务商与模型。这两个只是"偏好"，指向的东西不在了也不校验——
         // activeSpeechProvider() / asrEndpoint() 每次都会重新核对一遍，那里退回第一家。
@@ -2026,6 +2192,9 @@ class AppState(
         // 读出来落到 activeSpeechProvider() 上会自然退回第一家——不需要为它写迁移。
         speechProviderId = SettingsStore.get(KEY_SPEECH_PROVIDER)?.takeIf { it.isNotBlank() }
         asrModelId = SettingsStore.get(KEY_ASR_MODEL)?.takeIf { it.isNotBlank() }
+        ttsVoiceSource = SettingsStore.get("ttsVoiceSource")?.let { saved -> VoiceSource.entries.firstOrNull { it.name == saved } }
+        ttsProviderId = SettingsStore.get("ttsProvider")?.takeIf { it.isNotBlank() }
+        ttsVoiceId = SettingsStore.get("ttsVoice")?.takeIf { it.isNotBlank() }
 
         // 每一家的 Key 都要读回来。漏读一家的后果是"每次冷启都要重填"，
         // 而这件事不写测试根本发现不了——id 和模型名都还原得好好的，看着一切正常。

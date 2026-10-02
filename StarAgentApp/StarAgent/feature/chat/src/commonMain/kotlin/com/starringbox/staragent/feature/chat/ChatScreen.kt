@@ -115,20 +115,9 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
     }
 
 
-    // 念出最后一条回复。只有开了朗读、且现在念得了的时候才做，其余情况静默跳过——
-    // 念不出来不该打断对话。卡片类消息不念：它们不是"话"。
-    val readReplyAloud: suspend () -> Unit = {
-        if (state.speakReplies && state.canSpeak) {
-            val reply = messages.lastOrNull { it.author == Author.Agent }
-                ?.let { (it.body as? MessageBody.Text)?.text }
-                ?.takeIf { it.isNotBlank() }
-            if (reply != null) {
-                val spoken = state.speak(reply)
-                if (spoken is SpeechOutcome.Failed) {
-                    notice = DockNotice(spoken.message, isError = true)
-                }
-            }
-        }
+    // 播报跟随数据层的回复会话，页面只展示失败，避免完成后重复念一遍。
+    val readReplyAloud: () -> Unit = {
+        state.speechError?.let { notice = DockNotice(it, isError = true) }
     }
 
     // 离开这一页就别再念了。朗读是跟着这条会话走的，人都走了还在响很突兀；
@@ -143,7 +132,7 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
         scope = scope,
         onHeard = { text ->
             turn = scope.launch {
-                state.send(agentId, text, emptyList())
+                state.send(agentId, text, emptyList(), readAloud = true)
                 readReplyAloud()
             }
         },
@@ -232,7 +221,7 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
                     val outgoing = attachments
                     attachments = emptyList()
                     turn = scope.launch {
-                        state.send(agentId, text, outgoing)
+                        state.send(agentId, text, outgoing, readAloud = true)
                         readReplyAloud()
                     }
                 },

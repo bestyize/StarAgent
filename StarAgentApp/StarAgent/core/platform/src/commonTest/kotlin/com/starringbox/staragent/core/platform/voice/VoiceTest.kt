@@ -23,6 +23,10 @@ class VoiceTest {
         Voice.installDevice(null, null)
         Voice.installModel(null, null)
         Voice.installPreference(null)
+        Voice.installSpeakingPreference(null)
+        Voice.installLocal()
+        Voice.installStopHandler(null)
+        PcmPlayers.install(null)
     }
 
     // ── WAV 封装 ────────────────────────────────

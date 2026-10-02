@@ -2,8 +2,11 @@ package com.starringbox.staragent.core.llm
 
 import com.starringbox.staragent.core.model.SpeechProtocol
 import com.starringbox.staragent.core.platform.voice.Players
+import com.starringbox.staragent.core.platform.voice.PcmAudioChunk
+import com.starringbox.staragent.core.platform.voice.PcmPlayers
 import com.starringbox.staragent.core.platform.voice.Recorders
 import com.starringbox.staragent.core.platform.voice.SpeechOutcome
+import com.starringbox.staragent.core.platform.voice.StreamingSynthesizer
 import com.starringbox.staragent.core.platform.voice.Synthesizer
 import com.starringbox.staragent.core.platform.voice.Transcriber
 import com.starringbox.staragent.core.platform.voice.VoiceClip
@@ -21,6 +24,14 @@ import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -52,27 +63,74 @@ data class SpeechEndpoint(
  * 和设备自带识别最大的不同：**录音是我们的，识别在服务商那边**。
  * 所以这里会用到 [Recorders]——而设备后端自己录音，不碰它。
  */
-class ModelTranscriber(private val endpoint: () -> SpeechEndpoint?) : Transcriber {
+class ModelTranscriber(
+    private val filter: suspend (VoiceClip) -> VoiceClip? = { it },
+    private val transcribeRequest: (suspend (SpeechEndpoint, String, VoiceClip) -> SpeechOutcome<String>)? = null,
+    private val endpoint: () -> SpeechEndpoint?,
+) : Transcriber {
+
+    private val requestGate = Mutex()
+    private var requestJob: Job? = null
+    private var startedWith: SpeechEndpoint? = null
 
     override val ready: Boolean
         get() = endpoint()?.asrModel != null && Recorders.available
 
-    override suspend fun start(): Boolean = Recorders.start()
-
-    override suspend fun finish(): SpeechOutcome<String> {
-        val clip = Recorders.stop() ?: return SpeechOutcome.Failed("没有录到声音")
-
-        // 本地先拦一道：超时长、太小、格式不对，在这里说清楚比发出去换一个 400 强
-        VoiceRules.rejection(clip)?.let { return SpeechOutcome.Failed(it.message) }
-
-        val speech = endpoint()
-        val model = speech?.asrModel
-            ?: return SpeechOutcome.Failed("没有配置支持语音识别的服务商")
-
-        return transcribe(speech, model, clip)
+    override suspend fun start(): Boolean {
+        val speech = endpoint()?.takeIf { it.asrModel != null } ?: return false
+        startedWith = null
+        return try {
+            if (!Recorders.start()) false
+            else {
+                currentCoroutineContext().ensureActive()
+                startedWith = speech
+                true
+            }
+        } catch (cancellation: CancellationException) {
+            Recorders.cancel()
+            throw cancellation
+        }
     }
 
-    override fun cancel() = Recorders.cancel()
+    override suspend fun finish(): SpeechOutcome<String> = coroutineScope {
+        val job = currentCoroutineContext()[Job]!!
+        requestGate.withLock {
+            requestJob?.cancel()
+            requestJob = job
+        }
+        try {
+            val speech = startedWith.also { startedWith = null } ?: endpoint()
+            val clip = Recorders.stop() ?: return@coroutineScope SpeechOutcome.Failed("没有录到声音")
+            VoiceRules.rejection(clip)?.let { return@coroutineScope SpeechOutcome.Failed(it.message) }
+
+            val filtered = filter(clip) ?: return@coroutineScope SpeechOutcome.Failed("没听到说话，再说一次")
+            VoiceRules.rejection(filtered)?.let { return@coroutineScope SpeechOutcome.Failed(it.message) }
+
+            val model = speech?.asrModel
+                ?: return@coroutineScope SpeechOutcome.Failed("没有配置支持语音识别的服务商")
+            currentCoroutineContext().ensureActive()
+            val result = transcribeRequest?.invoke(speech, model, filtered) ?: transcribe(speech, model, filtered)
+            if (result is SpeechOutcome.Ok && !result.value.hasSpokenContent()) {
+                SpeechOutcome.Failed("没有听清，再说一次")
+            } else result
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (http: LlmHttpException) {
+            SpeechOutcome.Failed(http.userMessage)
+        } catch (t: Throwable) {
+            SpeechOutcome.Failed(describeConnectionFailure(t))
+        } finally {
+            withContext(NonCancellable) {
+                requestGate.withLock { if (requestJob === job) requestJob = null }
+            }
+        }
+    }
+
+    override fun cancel() {
+        startedWith = null
+        requestJob?.cancel()
+        Recorders.cancel()
+    }
 
     /**
      * 发出去。**两条协议在这里分岔**，但错误处理留在外面这一层——
@@ -85,6 +143,11 @@ class ModelTranscriber(private val endpoint: () -> SpeechEndpoint?) : Transcribe
     ): SpeechOutcome<String> = try {
         when (speech.protocol) {
             SpeechProtocol.OpenAi -> transcribeOpenAi(speech, model, clip)
+            SpeechProtocol.MiMo -> SpeechOutcome.Ok(
+                transcribeWithMiMo(speech, model, clip.bytes).trim().also {
+                    if (!it.hasSpokenContent()) throw LlmHttpException("没听到说话，再说一次")
+                }
+            )
             SpeechProtocol.VolcArk -> transcribeVolcArk(speech, model, clip)
         }
     } catch (cancellation: CancellationException) {
@@ -268,44 +331,102 @@ internal fun speechPayload(model: String, text: String, voice: String?): String 
  * 合成出来是一段字节，**播放要交给 [Players]**——服务商只给音频文件，
  * 出声是设备的事。
  */
-class ModelSynthesizer(private val endpoint: () -> SpeechEndpoint?) : Synthesizer {
+class ModelSynthesizer(
+    private val synthesizeRequest: (suspend (SpeechEndpoint, String, String) -> ByteArray)? = null,
+    private val streamRequest: (suspend (SpeechEndpoint, String, suspend (PcmAudioChunk) -> Unit) -> Unit)? = null,
+    private val endpoint: () -> SpeechEndpoint?,
+) : StreamingSynthesizer {
+
+    private val requestGate = Mutex()
+    private var requestJob: Job? = null
 
     override val ready: Boolean
         get() = endpoint()?.ttsModel != null && Players.available
 
+    override val streamReady: Boolean
+        get() = endpoint()?.let { it.protocol == SpeechProtocol.MiMo && it.ttsModel == MIMO_STREAM_TTS_MODEL } == true
+
     override suspend fun speak(text: String): SpeechOutcome<Unit> {
         val trimmed = text.trim()
-        // 没什么可念的算成功，不要报错——空回复不是错误
         if (trimmed.isBlank()) return SpeechOutcome.Ok(Unit)
-
         val speech = endpoint()
-        val model = speech?.ttsModel
-            ?: return SpeechOutcome.Failed("没有配置支持语音合成的服务商")
+        val model = speech?.ttsModel ?: return SpeechOutcome.Failed("没有配置支持语音合成的服务商")
 
-        return try {
-            val bytes = synthesize(speech, model, trimmed)
-            if (bytes.isEmpty()) {
-                SpeechOutcome.Failed("合成出来是空的")
-            } else {
+        return exclusiveRequest {
+            try {
+                val bytes = synthesizeRequest?.let { it(speech, model, trimmed) }
+                    ?: synthesize(speech, model, trimmed)
+                currentCoroutineContext().ensureActive()
+                if (bytes.isEmpty()) return@exclusiveRequest SpeechOutcome.Failed("合成出来是空的")
+
                 val clip = VoiceClip(bytes, Wav.MIME_TYPE, Wav.durationMillis(bytes))
-                if (Players.play(clip)) {
-                    SpeechOutcome.Ok(Unit)
-                } else {
-                    SpeechOutcome.Failed("音频没能播放出来")
-                }
+                val played = Players.play(clip)
+                currentCoroutineContext().ensureActive()
+                if (played) SpeechOutcome.Ok(Unit) else SpeechOutcome.Failed("音频没能播放出来")
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (http: LlmHttpException) {
+                SpeechOutcome.Failed(http.userMessage)
+            } catch (t: Throwable) {
+                SpeechOutcome.Failed(describeConnectionFailure(t))
             }
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (http: LlmHttpException) {
-            SpeechOutcome.Failed(http.userMessage)
-        } catch (t: Throwable) {
-            SpeechOutcome.Failed(describeConnectionFailure(t))
         }
     }
 
-    override fun stop() = Players.stop()
+    override suspend fun stream(text: String, onAudio: suspend (PcmAudioChunk) -> Unit): SpeechOutcome<Unit> {
+        val trimmed = text.trim()
+        if (trimmed.isBlank()) return SpeechOutcome.Ok(Unit)
+        val speech = endpoint()
+        if (speech?.protocol != SpeechProtocol.MiMo || speech.ttsModel != MIMO_STREAM_TTS_MODEL) {
+            return SpeechOutcome.Failed("当前语音服务商不支持流式合成")
+        }
 
-    /** 同 [ModelTranscriber.transcribe]：两条协议在这里分岔，失败仍由外面那一层统一翻译。 */
+        return exclusiveRequest {
+            try {
+                var audioBytes = 0L
+                val consume: suspend (PcmAudioChunk) -> Unit = { chunk ->
+                    currentCoroutineContext().ensureActive()
+                    audioBytes += chunk.pcm16.size
+                    onAudio(chunk)
+                }
+                val injected = streamRequest
+                if (injected != null) injected(speech, trimmed, consume)
+                else streamWithMiMo(speech, trimmed, consume)
+                currentCoroutineContext().ensureActive()
+                if (audioBytes == 0L) SpeechOutcome.Failed("合成出来是空的") else SpeechOutcome.Ok(Unit)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (http: LlmHttpException) {
+                SpeechOutcome.Failed(http.userMessage)
+            } catch (t: Throwable) {
+                SpeechOutcome.Failed(describeConnectionFailure(t))
+            }
+        }
+    }
+
+    override fun stop() {
+        requestJob?.cancel()
+        Players.stop()
+        PcmPlayers.stop()
+    }
+
+    private suspend fun <T> exclusiveRequest(block: suspend () -> T): T = coroutineScope {
+        val job = currentCoroutineContext()[Job]!!
+        requestGate.withLock {
+            requestJob?.cancel()
+            requestJob = job
+        }
+        try {
+            job.ensureActive()
+            block()
+        } finally {
+            withContext(NonCancellable) {
+                requestGate.withLock { if (requestJob === job) requestJob = null }
+            }
+        }
+    }
+
+    /** OpenAI and VolcArk retain their existing one-shot request paths. */
     private suspend fun synthesize(speech: SpeechEndpoint, model: String, text: String): ByteArray =
         when (speech.protocol) {
             SpeechProtocol.OpenAi -> {
@@ -317,8 +438,7 @@ class ModelSynthesizer(private val endpoint: () -> SpeechEndpoint?) : Synthesize
                 ensureSuccess(response)
                 response.bodyAsBytes()
             }
-
-            // 火山的资源 ID 就是这里的 model，正好和另外几家同位置
+            SpeechProtocol.MiMo -> synthesizeWithMiMo(speech, model, text)
             SpeechProtocol.VolcArk -> synthesizeWithVolcArk(
                 baseUrl = speech.baseUrl,
                 apiKey = speech.apiKey,
@@ -327,4 +447,10 @@ class ModelSynthesizer(private val endpoint: () -> SpeechEndpoint?) : Synthesize
                 text = text,
             )
         }
+
+    private companion object {
+        const val MIMO_STREAM_TTS_MODEL = "mimo-v2.5-tts"
+    }
 }
+
+private fun String.hasSpokenContent(): Boolean = any { it.isLetterOrDigit() }

@@ -129,6 +129,7 @@ internal fun rememberVoiceHold(
     // 就走不到 onRelease 了，不能指望它来关。
     DisposableEffect(Unit) {
         onDispose {
+            runtime.startJob?.cancel()
             runtime.startJob = null
             runtime.live = false
             state.cancelListening()

@@ -40,7 +40,8 @@ class SpeechConfigTest {
      */
     private val sandbox = SettingsSandbox(
         listOf(
-            "speechProvider", "asrModel", "voiceSource",
+            "speechProvider", "asrModel", "voiceSource", "ttsVoiceSource", "ttsProvider", "ttsVoice",
+            "speechKey:mimo",
             "speechKey:groq", "speechKey:zhipu", "speechKey:openai", "speechKey:volc-ark",
             "apikey:groq", "apikey:zhipu", "apikey:openai", "apikey:ark-plan",
             "models:groq", "models:zhipu", "models:openai", "models:ark-plan",
@@ -61,6 +62,8 @@ class SpeechConfigTest {
         Voice.installDevice(null, null)
         Voice.installModel(null, null)
         Voice.installPreference(null)
+        Voice.installSpeakingPreference(null)
+        Voice.installLocal()
     }
 
     /** 对话那边配好一家（走的是它自己那套键）。 */
@@ -85,7 +88,7 @@ class SpeechConfigTest {
         val state = AppState()
 
         assertEquals(
-            listOf("zhipu", "groq", "openai", "volc-ark"),
+            listOf("zhipu", "groq", "openai", "volc-ark", "mimo"),
             state.speechProviders.map { it.id },
             "顺序是显式的：没选过时取第一家。新加一家要加在**末尾**，别动这个兜底",
         )
@@ -107,7 +110,7 @@ class SpeechConfigTest {
     fun everyOtherPresetIsOpenAiShaped() {
         val state = AppState()
 
-        state.speechProviders.filter { it.id != "volc-ark" }.forEach { provider ->
+        state.speechProviders.filter { it.id !in setOf("volc-ark", "mimo") }.forEach { provider ->
             assertEquals(
                 SpeechProtocol.OpenAi,
                 provider.protocol,

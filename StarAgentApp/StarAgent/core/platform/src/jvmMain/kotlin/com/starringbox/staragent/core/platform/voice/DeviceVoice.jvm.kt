@@ -17,4 +17,5 @@ package com.starringbox.staragent.core.platform.voice
 fun DeviceVoice.install() {
     Recorders.install(DesktopVoiceRecorder())
     Players.install(DesktopVoicePlayer())
+    PcmPlayers.install(DesktopPcmPlayer())
 }
