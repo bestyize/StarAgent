@@ -357,9 +357,10 @@ Agent 可以通过内置的 `request_permission` 工具按功能申请权限：
 
 - `microphone`、`notifications`：显示 Android 运行时权限弹窗；
 - `accessibility`：直接打开 Android 无障碍设置，用户手动启用「星环智能 Agent」后，返回时自动复查；
-- `exact_alarm`：打开当前应用的精确闹钟权限页，返回时自动复查。
+- `exact_alarm`：打开当前应用的精确闹钟权限页，返回时自动复查；
+- `overlay`：打开「显示在其他应用上层」设置，返回时自动复查。
 
-工具只接受上述固定能力名，不接受任意系统权限字符串。Android 系统负责最终授权；无障碍和精确闹钟不会由应用自动开启。桌面端和 iOS 当前返回平台不支持。
+工具只接受上述固定能力名，不接受任意系统权限字符串。Android 系统负责最终授权；无障碍、精确闹钟和悬浮窗都需要用户在系统界面确认。桌面端和 iOS 当前返回平台不支持。
 
 ## Android device_use
 
@@ -368,6 +369,6 @@ Android 端新增了受控设备工具：
 - `device_inspect`：读取当前前台窗口的可访问控件树，返回短期有效的 `screen_id` / `element_id`
 - `device_use`：经用户确认后执行 `click`、`type`、`swipe`、`back`、`launch_app`
 
-首次使用前，需要用户在 Android 系统设置中手动启用「星环智能 Agent」无障碍服务。句柄只保留 15 秒，并且会校验 screen、前台包名和控件路径，页面变化后必须重新 `device_inspect`。密码字段不会返回文本内容。
+首次使用前，需要用户在 Android 系统设置中手动启用「星环智能 Agent」无障碍服务。跨 App 操作会启动用户可见的前台操作服务；若已授予悬浮窗权限，控制球只在目标 App 前台时显示，可返回星环或结束手机操作。未授予时，前台服务通知作为备用返回入口，实际展示方式遵循 Android 的通知权限规则。AgentLoop 结束、取消或用户停止手机操作后，服务会收尾。句柄只保留 15 秒，并且会校验 screen、前台包名和控件路径，页面变化后必须重新 `device_inspect`。密码字段不会返回文本内容。
 
 Desktop 和 iOS 当前通过统一 `DevicePort` 返回明确的未安装/不支持状态；后续分别接入 macOS Accessibility、Windows UI Automation，以及 iOS 自有页面/App Intents 能力。

@@ -213,7 +213,7 @@ object DeviceInspectTool : Tool {
 }
 
 object DeviceUseTool : Tool {
-    override val definition = ToolDefinition("device_use", "在用户已授权的设备上执行一个受控操作。支持 click、type、swipe、back、launch_app；危险操作必须经过用户确认。", schema("operation", properties = {
+    override val definition = ToolDefinition("device_use", "在用户已授权的设备上执行一个受控操作。支持 click、type、swipe、back、launch_app；危险操作必须经过用户确认。跨 App 操作前先检查悬浮窗权限，未开启时通过 request_permission(capability=overlay) 引导用户设置；用户不授予时仍可使用持续通知作为控制入口。Android 会在打开目标 App 前启动用户可见的后台操作会话。", schema("operation", properties = {
         putJsonObject("operation") {
             put("type", "string")
             put("enum", buildJsonArray { add("click"); add("type"); add("swipe"); add("back"); add("launch_app") })

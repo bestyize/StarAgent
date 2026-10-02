@@ -34,7 +34,7 @@ private fun JsonObject.string(name: String): String? =
 object RequestPermissionTool : Tool {
     override val definition = ToolDefinition(
         "request_permission",
-        "为当前明确要执行的功能检查并申请最小 Android 权限。capability 可选 microphone、notifications、accessibility、exact_alarm。运行时权限会显示系统弹窗；accessibility 和 exact_alarm 会打开对应系统设置页，必须由用户亲自确认。只在用户当前确实要使用该功能时调用，不要在后台任务中申请。",
+        "为当前明确要执行的功能检查并申请最小 Android 权限。capability 可选 microphone、notifications、accessibility、exact_alarm、overlay。运行时权限会显示系统弹窗；accessibility、exact_alarm 和 overlay 会打开对应系统设置页，必须由用户亲自确认。只在用户当前确实要使用该功能时调用，不要在后台任务中申请。",
         permissionToolSchema {
             putJsonObject("capability") {
                 put("type", "string")
@@ -43,6 +43,7 @@ object RequestPermissionTool : Tool {
                     add("notifications")
                     add("accessibility")
                     add("exact_alarm")
+                    add("overlay")
                 })
                 put("description", "要申请的 StarAgent 功能权限")
             }
@@ -58,6 +59,7 @@ object RequestPermissionTool : Tool {
             "notifications" -> PermissionCapability.Notifications
             "accessibility" -> PermissionCapability.Accessibility
             "exact_alarm" -> PermissionCapability.ExactAlarm
+            "overlay" -> PermissionCapability.Overlay
             else -> return ToolResult("", "capability 缺失或不受支持。", true)
         }
 
