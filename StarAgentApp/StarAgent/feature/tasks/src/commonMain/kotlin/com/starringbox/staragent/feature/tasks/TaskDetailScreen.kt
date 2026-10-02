@@ -306,6 +306,8 @@ fun TaskDetailScreen(navigator: Navigator, taskId: String?) {
 
             Spacer(Modifier.height(28.dp))
         }
+    }
+}
 
 @Composable
 private fun InfoRow(glyph: StarIconGlyph, label: String, value: String) {

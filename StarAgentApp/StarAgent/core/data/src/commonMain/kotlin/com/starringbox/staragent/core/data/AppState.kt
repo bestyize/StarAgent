@@ -400,19 +400,17 @@ class AppState(
             .mapNotNull { (it.body as? MessageBody.Delivered)?.artifact }
             .firstOrNull { it.id == id }
 
-    fun readArtifactText(artifact: Artifact): String? =
-        if (artifact.agentId != null && artifact.filePath != null) {
-            AppFilePort().read(artifact.agentId, artifact.filePath)
-        } else {
-            null
-        }
+    fun readArtifactText(artifact: Artifact): String? {
+        val agentId = artifact.agentId ?: return null
+        val filePath = artifact.filePath ?: return null
+        return AppFilePort().read(agentId, filePath)
+    }
 
-    fun readArtifactBytes(artifact: Artifact): ByteArray? =
-        if (artifact.agentId != null && artifact.filePath != null) {
-            AppFilePort().readBytes(artifact.agentId, artifact.filePath)
-        } else {
-            null
-        }
+    fun readArtifactBytes(artifact: Artifact): ByteArray? {
+        val agentId = artifact.agentId ?: return null
+        val filePath = artifact.filePath ?: return null
+        return AppFilePort().readBytes(agentId, filePath)
+    }
 
     /** 删掉对话里的某一条消息。 */
     fun removeMessage(agentId: String, messageId: String) {
