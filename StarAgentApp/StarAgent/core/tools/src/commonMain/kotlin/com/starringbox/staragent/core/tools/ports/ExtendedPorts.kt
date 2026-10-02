@@ -137,10 +137,20 @@ interface DevicePort {
     suspend fun swipe(fromX: Float, fromY: Float, toX: Float, toY: Float, durationMillis: Long): DeviceActionResult
     suspend fun pressBack(): DeviceActionResult
     suspend fun launchApp(packageOrBundleId: String): DeviceActionResult
+    suspend fun listApps(query: String? = null): DeviceAppsResult =
+        DeviceAppsResult(false, emptyList(), "当前平台不支持查看已安装应用")
 
     /** Called by AgentLoop when the full turn ends, including cancellation. */
     fun finishOperationSession() = Unit
 }
+
+data class InstalledApp(val name: String, val packageName: String)
+
+data class DeviceAppsResult(
+    val ok: Boolean,
+    val apps: List<InstalledApp> = emptyList(),
+    val error: String? = null,
+)
 
 enum class DeviceScope { ActiveWindow, FullTree }
 
@@ -176,4 +186,5 @@ object NoopDevicePort : DevicePort {
     override suspend fun swipe(fromX: Float, fromY: Float, toX: Float, toY: Float, durationMillis: Long) = DeviceActionResult(false, "当前平台未安装设备控制能力")
     override suspend fun pressBack() = DeviceActionResult(false, "当前平台未安装设备控制能力")
     override suspend fun launchApp(packageOrBundleId: String) = DeviceActionResult(false, "当前平台未安装设备控制能力")
+    override suspend fun listApps(query: String?) = DeviceAppsResult(false, emptyList(), "当前平台未安装设备控制能力")
 }

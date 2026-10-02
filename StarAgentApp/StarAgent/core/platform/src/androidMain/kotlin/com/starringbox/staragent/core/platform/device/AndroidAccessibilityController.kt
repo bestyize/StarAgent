@@ -2,17 +2,21 @@ package com.starringbox.staragent.core.platform.device
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Path
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.accessibility.AccessibilityNodeInfo
 import com.starringbox.staragent.core.tools.ports.DeviceActionResult
+import com.starringbox.staragent.core.tools.ports.DeviceAppsResult
 import com.starringbox.staragent.core.tools.ports.DeviceElement
 import com.starringbox.staragent.core.tools.ports.DevicePort
 import com.starringbox.staragent.core.tools.ports.DeviceScope
 import com.starringbox.staragent.core.tools.ports.DeviceScreenResult
+import com.starringbox.staragent.core.tools.ports.InstalledApp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -33,10 +37,15 @@ object AndroidAccessibilityController : DevicePort {
     private data class Target(val screenId: String, val packageName: String?, val path: List<Int>, val expiresAt: Long)
 
     private var service: AccessibilityService? = null
+    private var appContext: Context? = null
     private val sequence = AtomicLong(0)
     private val operationStopped = AtomicBoolean(false)
     private val operationSessionStarted = AtomicBoolean(false)
     private val targets = mutableMapOf<String, Target>()
+
+    fun installContext(context: Context) {
+        appContext = context.applicationContext
+    }
 
     fun attach(value: AccessibilityService) {
         service = value
@@ -140,32 +149,139 @@ object AndroidAccessibilityController : DevicePort {
         else DeviceActionResult(false, "系统拒绝返回操作")
     }
 
+    override suspend fun listApps(query: String?): DeviceAppsResult = withContext(Dispatchers.Default) {
+        val ctx = service ?: appContext ?: return@withContext DeviceAppsResult(false, emptyList(), "无法获取应用上下文")
+        val pm = ctx.packageManager
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val resolveList = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.queryIntentActivities(mainIntent, PackageManager.ResolveInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.queryIntentActivities(mainIntent, 0)
+        }
+        val apps = resolveList.mapNotNull { resolveInfo ->
+            val pkg = resolveInfo.activityInfo?.packageName ?: return@mapNotNull null
+            val label = resolveInfo.loadLabel(pm).toString().trim()
+            InstalledApp(name = label, packageName = pkg)
+        }.distinctBy { it.packageName }.sortedBy { it.name }
+
+        val filtered = if (!query.isNullOrBlank()) {
+            val q = query.trim()
+            apps.filter { it.name.contains(q, ignoreCase = true) || it.packageName.contains(q, ignoreCase = true) }
+        } else {
+            apps
+        }
+
+        DeviceAppsResult(true, filtered)
+    }
+
+    private data class AppMatch(val packageName: String, val label: String)
+
+    private fun resolveApp(context: Context, query: String): AppMatch? {
+        val trimmed = query.trim()
+        val pm = context.packageManager
+
+        // 1. 如果本身是一个有效的包名直接能拿 launch intent
+        val directIntent = pm.getLaunchIntentForPackage(trimmed)
+        if (directIntent != null) {
+            val label = runCatching {
+                val appInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    pm.getApplicationInfo(trimmed, PackageManager.ApplicationInfoFlags.of(0))
+                } else {
+                    @Suppress("DEPRECATION")
+                    pm.getApplicationInfo(trimmed, 0)
+                }
+                appInfo.loadLabel(pm).toString()
+            }.getOrDefault(trimmed)
+            return AppMatch(trimmed, label)
+        }
+
+        // 2. 遍历桌面启动项进行中文名/拼音/别名匹配
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val resolveList = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.queryIntentActivities(mainIntent, PackageManager.ResolveInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.queryIntentActivities(mainIntent, 0)
+        }
+
+        val allApps = resolveList.mapNotNull { resolveInfo ->
+            val pkg = resolveInfo.activityInfo?.packageName ?: return@mapNotNull null
+            val label = resolveInfo.loadLabel(pm).toString().trim()
+            AppMatch(pkg, label)
+        }
+
+        // 2.1 精确匹配显示名称（忽略大小写）
+        allApps.firstOrNull { it.label.equals(trimmed, ignoreCase = true) }?.let { return it }
+
+        // 2.2 精确匹配包名
+        allApps.firstOrNull { it.packageName.equals(trimmed, ignoreCase = true) }?.let { return it }
+
+        // 2.3 常用别名映射
+        val alias = when (trimmed.lowercase()) {
+            "b站", "bilibili" -> "哔哩哔哩"
+            "网易云" -> "网易云音乐"
+            "高德" -> "高德地图"
+            "百度" -> "百度地图"
+            "qq音乐" -> "QQ音乐"
+            else -> null
+        }
+        if (alias != null) {
+            allApps.firstOrNull { it.label.contains(alias, ignoreCase = true) }?.let { return it }
+        }
+
+        // 2.4 子串模糊匹配
+        allApps.firstOrNull { it.label.contains(trimmed, ignoreCase = true) || trimmed.contains(it.label, ignoreCase = true) }?.let { return it }
+
+        return null
+    }
+
     override suspend fun launchApp(packageOrBundleId: String): DeviceActionResult = withContext(Dispatchers.Main.immediate) {
         if (operationStopped.get()) return@withContext DeviceActionResult(false, "用户已结束本轮手机操作")
-        val current = service ?: return@withContext DeviceActionResult(false, "无障碍服务未连接")
-        val intent = current.packageManager.getLaunchIntentForPackage(packageOrBundleId)
-            ?: return@withContext DeviceActionResult(false, "找不到可启动的应用：$packageOrBundleId")
-        val externalTarget = packageOrBundleId != current.packageName
+        val ctx = service ?: appContext ?: return@withContext DeviceActionResult(false, "无法获取应用上下文")
+
+        val match = resolveApp(ctx, packageOrBundleId)
+        val targetPackage = match?.packageName ?: packageOrBundleId
+        val targetLabel = match?.label ?: packageOrBundleId
+
+        val intent = ctx.packageManager.getLaunchIntentForPackage(targetPackage)
+            ?: return@withContext DeviceActionResult(false, "找不到应用「$packageOrBundleId」（匹配包名：$targetPackage）。请确认是否已安装或使用 list_apps 查询已安装应用。")
+
+        val externalTarget = targetPackage != ctx.packageName
         if (externalTarget) {
-            val started = AndroidDeviceOperationService.start(current, packageOrBundleId)
-            if (!started) {
-                return@withContext DeviceActionResult(false, "无法启动后台操作会话。请先回到星环前台，再重试这次手机操作。")
+            val started = AndroidDeviceOperationService.start(ctx, targetPackage)
+            if (started) {
+                operationSessionStarted.set(true)
             }
-            operationSessionStarted.set(true)
         }
+
         runCatching {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            current.startActivity(intent)
+            ctx.startActivity(intent)
         }.fold(
             onSuccess = {
-                val controlHint = if (externalTarget && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(current)) {
-                    "悬浮窗权限未开启，可使用持续通知返回星环。"
-                } else if (externalTarget) {
-                    "操作期间会显示星环悬浮控制球。"
+                val hasOverlay = Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(ctx)
+                val hasAccessibility = service != null
+                val controlHint = when {
+                    externalTarget && hasOverlay -> "操作期间会显示星环悬浮控制球。"
+                    externalTarget -> "悬浮窗权限未开启，可使用持续通知返回星环。"
+                    else -> ""
+                }
+                val accessibilityHint = if (externalTarget && !hasAccessibility) {
+                    "（提示：无障碍服务未开启，目前仅完成应用启动；如需智能体后续自动点击屏幕，请前往系统设置开启星环无障碍服务）"
                 } else {
                     ""
                 }
-                DeviceActionResult(true, listOf("已启动应用：$packageOrBundleId", controlHint).filter { it.isNotBlank() }.joinToString(" "))
+                DeviceActionResult(
+                    true,
+                    listOf("已启动应用：$targetLabel ($targetPackage)", controlHint, accessibilityHint)
+                        .filter { it.isNotBlank() }
+                        .joinToString(" ")
+                )
             },
             onFailure = { DeviceActionResult(false, "启动应用失败：${it.message ?: "未知错误"}") },
         )

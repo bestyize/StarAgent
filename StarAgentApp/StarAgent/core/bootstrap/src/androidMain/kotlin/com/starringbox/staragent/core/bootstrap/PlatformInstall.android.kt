@@ -3,6 +3,7 @@ package com.starringbox.staragent.core.bootstrap
 import android.content.Context
 import androidx.activity.result.ActivityResultCaller
 import com.starringbox.staragent.core.data.AndroidAppContext
+import com.starringbox.staragent.core.platform.device.AndroidAccessibilityController
 import com.starringbox.staragent.core.platform.installAndroidBrowser
 import com.starringbox.staragent.core.platform.media.AndroidMediaPicker
 import com.starringbox.staragent.core.platform.media.AndroidMediaSaver
@@ -37,6 +38,7 @@ fun PlatformInstall.install(context: Context, caller: ActivityResultCaller) {
     // 1. 最先：让 core:data 拿得到 Context
     AndroidAppContext.install(context)
     installAndroidBrowser(context)
+    AndroidAccessibilityController.installContext(context)
 
     // 2. 本地存储、选图、保存
     LocalStores.install(AndroidLocalStore(context))

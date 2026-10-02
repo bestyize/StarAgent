@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- 允许查询设备上已安装的所有应用，支持按应用名称或包名启动任何 App -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
     <!--
       探测系统识别与朗读靠的是 queryIntentServices，而从 Android 11 起应用默认
@@ -22,6 +24,10 @@
         </intent>
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
 

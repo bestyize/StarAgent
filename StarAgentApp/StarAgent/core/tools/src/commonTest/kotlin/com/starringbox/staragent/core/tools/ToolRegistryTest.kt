@@ -56,18 +56,20 @@ class ToolRegistryTest {
 
     @Test
     fun builtinToolsContainExtendedToolsAndWithoutTaskCreationExcludesCreateTask() {
-        assertEquals(27, BuiltinTools.all.definitions().size)
+        assertEquals(28, BuiltinTools.all.definitions().size)
         assertNotNull(BuiltinTools.all.find("create_task"))
         assertNotNull(BuiltinTools.all.find("create_artifact"))
         assertNotNull(BuiltinTools.all.find("web_fetch"))
         assertNotNull(BuiltinTools.all.find("request_user_input"))
         assertNotNull(BuiltinTools.all.find("request_permission"))
+        assertNotNull(BuiltinTools.all.find("list_apps"))
 
-        assertEquals(26, BuiltinTools.withoutTaskCreation.definitions().size)
+        assertEquals(27, BuiltinTools.withoutTaskCreation.definitions().size)
         assertNull(BuiltinTools.withoutTaskCreation.find("create_task"))
         assertNotNull(BuiltinTools.withoutTaskCreation.find("create_artifact"))
         assertNotNull(BuiltinTools.withoutTaskCreation.find("list_tasks"))
         assertNotNull(BuiltinTools.withoutTaskCreation.find("request_user_input"))
         assertNotNull(BuiltinTools.withoutTaskCreation.find("request_permission"))
+        assertNotNull(BuiltinTools.withoutTaskCreation.find("list_apps"))
     }
 }

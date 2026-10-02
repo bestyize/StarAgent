@@ -130,6 +130,33 @@ class FakeUserInputPort(var answerToReturn: String = "好的") : UserInputPort {
     }
 }
 
+class FakeDevicePort : com.starringbox.staragent.core.tools.ports.DevicePort {
+    val launchedApps = mutableListOf<String>()
+    var listResult = com.starringbox.staragent.core.tools.ports.DeviceAppsResult(
+        true,
+        listOf(
+            com.starringbox.staragent.core.tools.ports.InstalledApp("微信", "com.tencent.mm"),
+            com.starringbox.staragent.core.tools.ports.InstalledApp("网易云音乐", "com.netease.cloudmusic"),
+        )
+    )
+
+    override suspend fun inspect(scope: com.starringbox.staragent.core.tools.ports.DeviceScope) =
+        com.starringbox.staragent.core.tools.ports.DeviceScreenResult(true)
+    override suspend fun click(screenId: String, elementId: String) =
+        com.starringbox.staragent.core.tools.ports.DeviceActionResult(true, "clicked")
+    override suspend fun type(screenId: String, elementId: String?, text: String) =
+        com.starringbox.staragent.core.tools.ports.DeviceActionResult(true, "typed")
+    override suspend fun swipe(fromX: Float, fromY: Float, toX: Float, toY: Float, durationMillis: Long) =
+        com.starringbox.staragent.core.tools.ports.DeviceActionResult(true, "swiped")
+    override suspend fun pressBack() =
+        com.starringbox.staragent.core.tools.ports.DeviceActionResult(true, "backed")
+    override suspend fun launchApp(packageOrBundleId: String): com.starringbox.staragent.core.tools.ports.DeviceActionResult {
+        launchedApps += packageOrBundleId
+        return com.starringbox.staragent.core.tools.ports.DeviceActionResult(true, "已启动：$packageOrBundleId")
+    }
+    override suspend fun listApps(query: String?): com.starringbox.staragent.core.tools.ports.DeviceAppsResult = listResult
+}
+
 /** 造一个 host。默认端口都是空的假实现，测哪个换哪个。 */
 fun testHost(
     memory: MemoryPort = FakeMemoryPort(),
@@ -137,6 +164,7 @@ fun testHost(
     web: WebPort = FakeWebPort(),
     userInput: UserInputPort = FakeUserInputPort(),
     permissions: PermissionPort = NoopPermissionPort,
+    device: com.starringbox.staragent.core.tools.ports.DevicePort = FakeDevicePort(),
     executionPolicy: ExecutionPolicy = ExecutionPolicy.Auto,
     agentId: String = "a-xing",
     files: FilePort = NoopFilePort,
@@ -147,6 +175,7 @@ fun testHost(
     userInput = userInput,
     files = files,
     permissions = permissions,
+    device = device,
     executionPolicy = executionPolicy,
     agentId = agentId,
     conversationKey = "agent:a-xing",

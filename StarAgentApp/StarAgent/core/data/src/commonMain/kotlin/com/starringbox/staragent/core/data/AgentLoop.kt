@@ -155,7 +155,8 @@ internal class AgentLoop(
         return try {
             // 🔴 执行权限门控：如果当前策略是「按需（OnDemand）」且工具属于关键/有副作用操作（如建/改/取消任务），
             // 系统先原地向用户弹出提问卡片等待确认。用户允许后才真正执行；若用户拒绝或超时，操作直接取消。
-            if (host.executionPolicy == ExecutionPolicy.OnDemand && tool.requiresConfirmation) {
+            val isReadOnlyDeviceOp = call.name == "device_use" && (args["operation"] as? JsonPrimitive)?.content == "list_apps"
+            if (host.executionPolicy == ExecutionPolicy.OnDemand && tool.requiresConfirmation && !isReadOnlyDeviceOp) {
                 val operationDesc = describeOperationForConfirmation(call, args)
                 val userChoice = withTimeoutOrNull(confirmationTimeoutMillis) {
                     host.userInput.requestInput(
@@ -229,6 +230,18 @@ internal class AgentLoop(
             "cancel_task" -> {
                 val id = (args["id"] as? JsonPrimitive)?.content
                 if (id != null) "取消托管任务 $id" else "取消托管任务"
+            }
+            "device_use" -> {
+                val op = (args["operation"] as? JsonPrimitive)?.content
+                val target = (args["package_name"] as? JsonPrimitive)?.content ?: (args["app_name"] as? JsonPrimitive)?.content
+                when (op) {
+                    "launch_app" -> if (target != null) "启动手机应用「$target」" else "启动手机应用"
+                    "click" -> "点击手机屏幕"
+                    "type" -> "在手机屏幕输入文字"
+                    "swipe" -> "在手机屏幕滑动"
+                    "back" -> "在手机上执行返回"
+                    else -> "执行手机操作"
+                }
             }
             else -> readableLabelFor(call)
         }

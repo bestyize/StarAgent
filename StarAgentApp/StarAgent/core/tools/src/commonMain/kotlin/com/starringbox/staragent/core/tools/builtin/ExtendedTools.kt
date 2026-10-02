@@ -353,10 +353,15 @@ object DeviceInspectTool : Tool {
 }
 
 object DeviceUseTool : Tool {
-    override val definition = ToolDefinition("device_use", "在用户已授权的设备上执行一个受控操作。支持 click、type、swipe、back、launch_app；危险操作必须经过用户确认。跨 App 操作前先检查悬浮窗权限，未开启时通过 request_permission(capability=overlay) 引导用户设置；用户不授予时仍可使用持续通知作为控制入口。Android 会在打开目标 App 前启动用户可见的后台操作会话。", schema("operation", properties = {
+    override val definition = ToolDefinition("device_use", "在用户已授权的设备上执行一个受控操作。支持 launch_app (启动应用，支持中文名如「网易云音乐」或包名)、list_apps (列出已安装应用)、click (点击)、type (输入)、swipe (滑动)、back (返回)。跨 App 操作前先检查悬浮窗权限；未开启无障碍时仅完成应用启动。", schema("operation", properties = {
         putJsonObject("operation") {
             put("type", "string")
-            put("enum", buildJsonArray { add("click"); add("type"); add("swipe"); add("back"); add("launch_app") })
+            put("description", "操作类型：launch_app、list_apps、click、type、swipe、back")
+            put("enum", buildJsonArray { add("launch_app"); add("list_apps"); add("click"); add("type"); add("swipe"); add("back") })
+        }
+        putJsonObject("package_name") {
+            put("type", "string")
+            put("description", "要启动的应用名称或包名（如「微信」、「网易云音乐」或「com.tencent.mm」），用于 launch_app")
         }
         putJsonObject("screen_id") { put("type", "string") }
         putJsonObject("element_id") { put("type", "string") }
@@ -366,13 +371,38 @@ object DeviceUseTool : Tool {
         putJsonObject("to_x") { put("type", "number") }
         putJsonObject("to_y") { put("type", "number") }
         putJsonObject("duration_ms") { put("type", "integer") }
-        putJsonObject("package_name") { put("type", "string") }
     }))
     override val requiresConfirmation = true
 
     override suspend fun execute(args: JsonObject, host: ToolHost): ToolResult {
         val operation = args.str("operation") ?: return ToolResult("", "缺少 operation", true)
         val result = when (operation) {
+            "launch_app" -> {
+                val target = args.str("package_name") ?: args.str("app_name")
+                    ?: return ToolResult("", "launch_app 需要 package_name 或 app_name", true)
+                val res = host.device.launchApp(target)
+                return ToolResult("", res.message, !res.ok)
+            }
+            "list_apps" -> {
+                val query = args.str("package_name") ?: args.str("query") ?: args.str("name")
+                val res = host.device.listApps(query)
+                if (!res.ok) return ToolResult("", res.error ?: "无法获取已安装应用", true)
+                val apps = res.apps
+                val text = if (apps.isEmpty()) {
+                    if (query != null) "手机上未找到名称或包名包含「$query」的应用。" else "手机上未找到已安装的可启动应用。"
+                } else {
+                    buildString {
+                        append("手机上已安装的应用程序（共 ${apps.size} 个）：\n")
+                        apps.take(40).forEach { app ->
+                            append("- ${app.name} (${app.packageName})\n")
+                        }
+                        if (apps.size > 40) {
+                            append("...其余 ${apps.size - 40} 个应用已省略，可通过 query 关键词过滤。\n")
+                        }
+                    }
+                }
+                return ToolResult("", text)
+            }
             "click" -> {
                 val screen = args.str("screen_id") ?: return ToolResult("", "click 需要 screen_id", true)
                 val element = args.str("element_id") ?: return ToolResult("", "click 需要 element_id", true)
@@ -380,14 +410,14 @@ object DeviceUseTool : Tool {
             }
             "type" -> {
                 val screen = args.str("screen_id") ?: return ToolResult("", "type 需要 screen_id", true)
-                host.device.type(screen, args.str("element_id"), args.str("text") ?: "")
+                val element = args.str("element_id")
+                host.device.type(screen, element, args.str("text") ?: "")
             }
             "swipe" -> host.device.swipe(
                 number(args, "from_x"), number(args, "from_y"), number(args, "to_x"), number(args, "to_y"),
                 (((args["duration_ms"] as? JsonPrimitive)?.intOrNull ?: 400).coerceIn(80, 2_000)).toLong(),
             )
             "back" -> host.device.pressBack()
-            "launch_app" -> host.device.launchApp(args.str("package_name") ?: return ToolResult("", "launch_app 需要 package_name", true))
             else -> return ToolResult("", "不支持的 device_use operation：$operation", true)
         }
         return ToolResult("", result.message, !result.ok)
@@ -395,6 +425,43 @@ object DeviceUseTool : Tool {
 
     private fun number(args: JsonObject, name: String): Float =
         (args[name] as? JsonPrimitive)?.doubleOrNull?.toFloat() ?: 0f
+}
+
+/**
+ * 查询手机已安装应用列表。
+ */
+object ListAppsTool : Tool {
+    override val definition = ToolDefinition(
+        "list_apps",
+        "查询手机上已安装的应用程序列表（包含中文显示名称与包名）。支持传入 query 关键词进行模糊过滤（如「音乐」、「微信」）。在想要启动某个 App 但不知道具体应用名或包名时调用。",
+        schema(properties = {
+            putJsonObject("query") {
+                put("type", "string")
+                put("description", "应用名称或包名的搜索关键词，可选，留空则返回所有已安装应用")
+            }
+        })
+    )
+
+    override suspend fun execute(args: JsonObject, host: ToolHost): ToolResult {
+        val query = args.str("query") ?: args.str("name")
+        val res = host.device.listApps(query)
+        if (!res.ok) return ToolResult("", res.error ?: "无法获取已安装应用", true)
+        val apps = res.apps
+        val text = if (apps.isEmpty()) {
+            if (query != null) "手机上未找到名称或包名包含「$query」的应用。" else "手机上未找到已安装的可启动应用。"
+        } else {
+            buildString {
+                append("手机上已安装的应用程序（共 ${apps.size} 个）：\n")
+                apps.take(40).forEach { app ->
+                    append("- ${app.name} (${app.packageName})\n")
+                }
+                if (apps.size > 40) {
+                    append("...其余 ${apps.size - 40} 个应用已省略，可通过 query 关键词过滤。\n")
+                }
+            }
+        }
+        return ToolResult("", text)
+    }
 }
 
 object BrowserOpenTool : Tool {
