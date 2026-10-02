@@ -61,65 +61,69 @@ internal class AgentLoop(
         onToolStart: (ToolCall) -> Unit,
         onToolEnd: (ToolCall, ToolResult) -> Unit,
     ): LoopOutcome {
-        var iteration = 0
+        try {
+            var iteration = 0
 
-        while (true) {
-            iteration++
-            if (iteration > maxIterations) {
-                // 明确告诉用户，不要静默截断——他得知道为什么停在这
-                return LoopOutcome.Stopped(
-                    "这个任务需要的步骤有点多，我先停在这里。你可以把要求说得更具体一些。"
+            while (true) {
+                iteration++
+                if (iteration > maxIterations) {
+                    // 明确告诉用户，不要静默截断——他得知道为什么停在这
+                    return LoopOutcome.Stopped(
+                        "这个任务需要的步骤有点多，我先停在这里。你可以把要求说得更具体一些。"
+                    )
+                }
+
+                val buffer = StringBuilder()
+                var calls: List<ToolCall> = emptyList()
+                var failure: String? = null
+
+                stream(endpoint, history.toList()).collect { event ->
+                    when (event) {
+                        is ChatStreamEvent.Delta -> {
+                            buffer.append(event.text)
+                            onText(event.text)
+                        }
+                        is ChatStreamEvent.ToolCallsReady -> calls = event.calls
+                        is ChatStreamEvent.Failed -> failure = event.message
+                        ChatStreamEvent.Completed -> Unit
+                    }
+                }
+
+                failure?.let { return LoopOutcome.Failed(it) }
+
+                val spoken = buffer.toString()
+
+                if (calls.isEmpty()) {
+                    // 终止条件：模型不再要工具了。这一轮没有工具调用，不必写回历史——
+                    // 回喂只发生在"还要继续"的那几轮里，收尾的这轮写进去也没人再看。
+                    return LoopOutcome.Done(spoken)
+                }
+
+                // assistant 这一轮要按原样写回历史：两家回喂时都要求把带工具调用的
+                // assistant 轮带上，否则模型看到自己"没说过"那些调用，会重复请求。
+                history += LlmTurn(
+                    role = LlmRole.Assistant,
+                    text = spoken,
+                    toolCalls = calls,
+                )
+
+                val results = calls.map { call ->
+                    onToolStart(call)
+                    val result = execute(call, host, registry)
+                    onToolEnd(call, result)
+                    result
+                }
+
+                // 工具结果作为一轮回喂。两家的**放置位置不同**由 core:llm 内部处理，
+                // 这里只是把结果挂到 turn 上。
+                history += LlmTurn(
+                    role = LlmRole.User,
+                    text = "",
+                    toolResults = results,
                 )
             }
-
-            val buffer = StringBuilder()
-            var calls: List<ToolCall> = emptyList()
-            var failure: String? = null
-
-            stream(endpoint, history.toList()).collect { event ->
-                when (event) {
-                    is ChatStreamEvent.Delta -> {
-                        buffer.append(event.text)
-                        onText(event.text)
-                    }
-                    is ChatStreamEvent.ToolCallsReady -> calls = event.calls
-                    is ChatStreamEvent.Failed -> failure = event.message
-                    ChatStreamEvent.Completed -> Unit
-                }
-            }
-
-            failure?.let { return LoopOutcome.Failed(it) }
-
-            val spoken = buffer.toString()
-
-            if (calls.isEmpty()) {
-                // 终止条件：模型不再要工具了。这一轮没有工具调用，不必写回历史——
-                // 回喂只发生在"还要继续"的那几轮里，收尾的这轮写进去也没人再看。
-                return LoopOutcome.Done(spoken)
-            }
-
-            // assistant 这一轮要按原样写回历史：两家回喂时都要求把带工具调用的
-            // assistant 轮带上，否则模型看到自己"没说过"那些调用，会重复请求。
-            history += LlmTurn(
-                role = LlmRole.Assistant,
-                text = spoken,
-                toolCalls = calls,
-            )
-
-            val results = calls.map { call ->
-                onToolStart(call)
-                val result = execute(call, host, registry)
-                onToolEnd(call, result)
-                result
-            }
-
-            // 工具结果作为一轮回喂。两家的**放置位置不同**由 core:llm 内部处理，
-            // 这里只是把结果挂到 turn 上。
-            history += LlmTurn(
-                role = LlmRole.User,
-                text = "",
-                toolResults = results,
-            )
+        } finally {
+            host.device.finishOperationSession()
         }
     }
 

@@ -13,6 +13,8 @@ import com.starringbox.staragent.core.model.ToolResult
 import com.starringbox.staragent.core.tools.Tool
 import com.starringbox.staragent.core.tools.ToolHost
 import com.starringbox.staragent.core.tools.ToolRegistry
+import com.starringbox.staragent.core.tools.ports.DevicePort
+import com.starringbox.staragent.core.tools.ports.NoopDevicePort
 import com.starringbox.staragent.core.tools.ports.FetchResult
 import com.starringbox.staragent.core.tools.ports.MemoryPort
 import com.starringbox.staragent.core.tools.ports.NoopMemoryPort
@@ -90,6 +92,25 @@ class AgentLoopTest {
 
         assertEquals(LoopOutcome.Done("你好"), outcome)
         assertEquals(listOf("你好"), chunks)
+    }
+
+    @Test
+    fun finishesDeviceOperationSessionWhenTurnCompletes() = runTest {
+        val device = SessionTrackingDevicePort()
+        val loop = AgentLoop(scriptedStream(listOf(textOf("已完成"))))
+
+        val outcome = loop.run(
+            endpoint = endpoint,
+            history = mutableListOf(),
+            host = testHost(device),
+            registry = ToolRegistry.of(stubTool("t")),
+            onText = {},
+            onToolStart = {},
+            onToolEnd = { _, _ -> },
+        )
+
+        assertEquals(LoopOutcome.Done("已完成"), outcome)
+        assertEquals(1, device.finishedSessions)
     }
 
     @Test
@@ -415,11 +436,12 @@ class AgentLoopTest {
         )
 
         val results = mutableListOf<ToolResult>()
+        val device = SessionTrackingDevicePort()
         val job = launch {
             loop.run(
                 endpoint = endpoint,
                 history = mutableListOf(),
-                host = testHost(),
+                host = testHost(device),
                 registry = ToolRegistry.of(hangingTool),
                 onText = {},
                 onToolStart = {},
@@ -431,6 +453,7 @@ class AgentLoopTest {
         job.cancelAndJoin()
 
         assertTrue(job.isCancelled, "取消要真的让这条协程结束")
+        assertEquals(1, device.finishedSessions, "取消也必须收起前台操作会话")
         assertEquals(
             emptyList(),
             results,
@@ -479,10 +502,19 @@ class AgentLoopTest {
  * 就地写一份而不是复用 `core:tools` commonTest 里的 `FakePorts`：
  * 跨模块的 test 源集互相看不见，那是测试实现，不是模块契约。
  */
-private fun testHost() = ToolHost(
+private class SessionTrackingDevicePort : DevicePort by NoopDevicePort {
+    var finishedSessions = 0
+
+    override fun finishOperationSession() {
+        finishedSessions++
+    }
+}
+
+private fun testHost(device: DevicePort = NoopDevicePort) = ToolHost(
     memory = NoopMemoryPort,
     tasks = NoopTaskPort,
     web = NoopWebPort,
+    device = device,
     agentId = "a-xing",
     conversationKey = "agent:a-xing",
 )

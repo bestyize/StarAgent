@@ -70,6 +70,13 @@ private class AndroidPermissionPort(
             PermissionCapability.ExactAlarm ->
                 if (canScheduleExactAlarms()) PermissionStatus.Granted
                 else PermissionStatus.RequiresSettings
+
+            PermissionCapability.Overlay ->
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(appContext)) {
+                    PermissionStatus.Granted
+                } else {
+                    PermissionStatus.RequiresSettings
+                }
         }
 
     override suspend fun request(capability: PermissionCapability): PermissionRequestResult =
@@ -114,6 +121,13 @@ private class AndroidPermissionPort(
                                 .setData(Uri.parse("package:" + appContext.packageName)),
                         )
                     }
+
+                PermissionCapability.Overlay ->
+                    openSettings(
+                        capability = capability,
+                        intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+                            .setData(Uri.parse("package:" + appContext.packageName)),
+                    )
             }
         }
 
@@ -248,6 +262,7 @@ private class AndroidPermissionPort(
             PermissionCapability.Notifications -> "通知"
             PermissionCapability.Accessibility -> "设备操作（无障碍服务）"
             PermissionCapability.ExactAlarm -> "精确闹钟"
+            PermissionCapability.Overlay -> "悬浮窗（显示在其他应用上层）"
         }
 
     private fun settingsReturnMessage(capability: PermissionCapability): String =
@@ -256,6 +271,8 @@ private class AndroidPermissionPort(
                 "已打开系统无障碍设置。请找到「星环智能 Agent」并手动启用；这是 Android 要求用户本人确认的权限。返回后我已检查，当前仍未开启。"
             PermissionCapability.ExactAlarm ->
                 "已打开精确闹钟设置。请允许星环智能 Agent 设置精确闹钟，返回后我已检查，当前仍未开启。"
+            PermissionCapability.Overlay ->
+                "已打开「显示在其他应用上层」设置。请允许星环智能 Agent 显示操作悬浮球；返回后我已检查，当前仍未开启。"
             else -> label(capability) + "权限尚未开启。"
         }
 }

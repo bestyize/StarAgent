@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.Intent
 import android.graphics.Path
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.accessibility.AccessibilityNodeInfo
@@ -15,6 +16,7 @@ import com.starringbox.staragent.core.tools.ports.DeviceScreenResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 
@@ -32,6 +34,8 @@ object AndroidAccessibilityController : DevicePort {
 
     private var service: AccessibilityService? = null
     private val sequence = AtomicLong(0)
+    private val operationStopped = AtomicBoolean(false)
+    private val operationSessionStarted = AtomicBoolean(false)
     private val targets = mutableMapOf<String, Target>()
 
     fun attach(value: AccessibilityService) {
@@ -45,7 +49,19 @@ object AndroidAccessibilityController : DevicePort {
 
     fun isConnected(): Boolean = service != null
 
+    /** The floating control can stop further phone actions while the Agent finishes its turn. */
+    fun requestStopFromUser() {
+        operationStopped.set(true)
+    }
+
+    override fun finishOperationSession() {
+        if (!operationSessionStarted.getAndSet(false)) return
+        operationStopped.set(false)
+        AndroidDeviceOperationService.finishSession()
+    }
+
     override suspend fun inspect(scope: DeviceScope): DeviceScreenResult = withContext(Dispatchers.Main.immediate) {
+        if (operationStopped.get()) return@withContext DeviceScreenResult(false, error = "用户已结束本轮手机操作")
         val current = service ?: return@withContext DeviceScreenResult(false, error = "无障碍服务未连接，请先在系统设置中启用 StarAgent")
         if (!current.serviceInfo.canRetrieveWindowContent) {
             return@withContext DeviceScreenResult(false, error = "无障碍服务没有读取窗口内容权限")
@@ -61,6 +77,7 @@ object AndroidAccessibilityController : DevicePort {
     }
 
     override suspend fun click(screenId: String, elementId: String): DeviceActionResult = withContext(Dispatchers.Main.immediate) {
+        if (operationStopped.get()) return@withContext DeviceActionResult(false, "用户已结束本轮手机操作")
         val node = resolve(screenId, elementId) ?: return@withContext DeviceActionResult(false, "控件句柄已失效，请重新 inspect")
         if (!node.isEnabled) return@withContext DeviceActionResult(false, "控件当前不可用")
         if (!node.isClickable) return@withContext DeviceActionResult(false, "控件不可点击")
@@ -69,6 +86,7 @@ object AndroidAccessibilityController : DevicePort {
     }
 
     override suspend fun type(screenId: String, elementId: String?, text: String): DeviceActionResult = withContext(Dispatchers.Main.immediate) {
+        if (operationStopped.get()) return@withContext DeviceActionResult(false, "用户已结束本轮手机操作")
         val node = if (elementId == null) {
             service?.rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
         } else {
@@ -89,6 +107,7 @@ object AndroidAccessibilityController : DevicePort {
         toY: Float,
         durationMillis: Long,
     ): DeviceActionResult {
+        if (operationStopped.get()) return DeviceActionResult(false, "用户已结束本轮手机操作")
         val current = service ?: return DeviceActionResult(false, "无障碍服务未连接")
         val path = Path().apply {
             moveTo(fromX, fromY)
@@ -115,20 +134,39 @@ object AndroidAccessibilityController : DevicePort {
     }
 
     override suspend fun pressBack(): DeviceActionResult = withContext(Dispatchers.Main.immediate) {
+        if (operationStopped.get()) return@withContext DeviceActionResult(false, "用户已结束本轮手机操作")
         val current = service ?: return@withContext DeviceActionResult(false, "无障碍服务未连接")
         if (current.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)) DeviceActionResult(true, "已返回")
         else DeviceActionResult(false, "系统拒绝返回操作")
     }
 
     override suspend fun launchApp(packageOrBundleId: String): DeviceActionResult = withContext(Dispatchers.Main.immediate) {
+        if (operationStopped.get()) return@withContext DeviceActionResult(false, "用户已结束本轮手机操作")
         val current = service ?: return@withContext DeviceActionResult(false, "无障碍服务未连接")
         val intent = current.packageManager.getLaunchIntentForPackage(packageOrBundleId)
             ?: return@withContext DeviceActionResult(false, "找不到可启动的应用：$packageOrBundleId")
+        val externalTarget = packageOrBundleId != current.packageName
+        if (externalTarget) {
+            val started = AndroidDeviceOperationService.start(current, packageOrBundleId)
+            if (!started) {
+                return@withContext DeviceActionResult(false, "无法启动后台操作会话。请先回到星环前台，再重试这次手机操作。")
+            }
+            operationSessionStarted.set(true)
+        }
         runCatching {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             current.startActivity(intent)
         }.fold(
-            onSuccess = { DeviceActionResult(true, "已启动应用：$packageOrBundleId") },
+            onSuccess = {
+                val controlHint = if (externalTarget && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(current)) {
+                    "悬浮窗权限未开启，可使用持续通知返回星环。"
+                } else if (externalTarget) {
+                    "操作期间会显示星环悬浮控制球。"
+                } else {
+                    ""
+                }
+                DeviceActionResult(true, listOf("已启动应用：$packageOrBundleId", controlHint).filter { it.isNotBlank() }.joinToString(" "))
+            },
             onFailure = { DeviceActionResult(false, "启动应用失败：${it.message ?: "未知错误"}") },
         )
     }

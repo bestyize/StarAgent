@@ -7,9 +7,15 @@ class AndroidAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         AndroidAccessibilityController.attach(this)
+        AndroidDeviceOperationService.onForegroundPackageChanged(
+            rootInActiveWindow?.packageName?.toString(),
+        )
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        AndroidDeviceOperationService.onForegroundPackageChanged(event.packageName?.toString())
+    }
 
     override fun onInterrupt() = Unit
 

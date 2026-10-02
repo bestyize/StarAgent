@@ -101,6 +101,7 @@ enum class PermissionCapability {
     Notifications,
     Accessibility,
     ExactAlarm,
+    Overlay,
 }
 
 enum class PermissionStatus {
@@ -137,6 +138,8 @@ interface DevicePort {
     suspend fun pressBack(): DeviceActionResult
     suspend fun launchApp(packageOrBundleId: String): DeviceActionResult
 
+    /** Called by AgentLoop when the full turn ends, including cancellation. */
+    fun finishOperationSession() = Unit
 }
 
 enum class DeviceScope { ActiveWindow, FullTree }

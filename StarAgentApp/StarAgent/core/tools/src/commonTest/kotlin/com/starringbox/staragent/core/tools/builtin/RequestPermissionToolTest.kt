@@ -58,6 +58,19 @@ class RequestPermissionToolTest {
     }
 
     @Test
+    fun routesOverlayCapabilityToPlatformPort() = runTest {
+        val permissions = FakePermissionPort()
+        val result = RequestPermissionTool.execute(
+            buildJsonObject { put("capability", "overlay") },
+            testHost(permissions = permissions),
+        )
+
+        assertEquals(PermissionCapability.Overlay, permissions.requested)
+        assertEquals("权限已开启。", result.content)
+        assertFalse(result.isError)
+    }
+
+    @Test
     fun rejectsArbitraryPermissionNames() = runTest {
         val permissions = FakePermissionPort()
         val result = RequestPermissionTool.execute(
