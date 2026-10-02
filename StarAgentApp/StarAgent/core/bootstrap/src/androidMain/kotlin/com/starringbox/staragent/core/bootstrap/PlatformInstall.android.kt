@@ -10,6 +10,7 @@ import com.starringbox.staragent.core.platform.media.MediaPickers
 import com.starringbox.staragent.core.platform.media.MediaSavers
 import com.starringbox.staragent.core.platform.notify.AndroidNotifier
 import com.starringbox.staragent.core.platform.notify.Notifiers
+import com.starringbox.staragent.core.platform.permissions.installAndroidPermissions
 import com.starringbox.staragent.core.platform.schedule.AndroidTaskScheduler
 import com.starringbox.staragent.core.platform.schedule.TaskSchedulers
 import com.starringbox.staragent.core.platform.storage.AndroidLocalStore
@@ -44,6 +45,7 @@ fun PlatformInstall.install(context: Context, caller: ActivityResultCaller) {
 
     // 3. 语音：录音、播放、系统识别、系统合成（细节和约束见 DeviceVoice 的注释）
     DeviceVoice.install(context, caller)
+    installAndroidPermissions(context, caller)
 
     // 4. 系统级调度与通知
     TaskSchedulers.install(AndroidTaskScheduler(context))
