@@ -18,11 +18,10 @@ import kotlinx.serialization.json.putJsonObject
 
 private fun permissionToolSchema(
     properties: JsonObjectBuilder.() -> Unit,
-    vararg required: String,
 ) = buildJsonObject {
     put("type", "object")
     put("properties", buildJsonObject(properties))
-    putJsonArray("required") { required.forEach(::add) }
+    putJsonArray("required") { add("capability") }
 }
 
 private fun JsonObject.string(name: String): String? =
@@ -36,8 +35,7 @@ object RequestPermissionTool : Tool {
     override val definition = ToolDefinition(
         "request_permission",
         "为当前明确要执行的功能检查并申请最小 Android 权限。capability 可选 microphone、notifications、accessibility、exact_alarm。运行时权限会显示系统弹窗；accessibility 和 exact_alarm 会打开对应系统设置页，必须由用户亲自确认。只在用户当前确实要使用该功能时调用，不要在后台任务中申请。",
-        permissionToolSchema(
-            properties = {
+        permissionToolSchema {
                 putJsonObject("capability") {
                     put("type", "string")
                     put("enum", buildJsonArray {
@@ -49,8 +47,6 @@ object RequestPermissionTool : Tool {
                     put("description", "要申请的 StarAgent 功能权限")
                 }
             },
-            required = arrayOf("capability"),
-        ),
     )
 
     // 此工具只发起受 Android 管理的权限界面；最终授权始终由用户完成。
