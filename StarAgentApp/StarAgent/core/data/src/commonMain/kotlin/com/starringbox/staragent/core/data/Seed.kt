@@ -81,11 +81,21 @@ internal object Seed {
                 ),
                 ModelProvider(
                     id = "mimo",
-                    name = "小米 MiMo",
+                    name = "小米 Mimo API",
                     protocol = LlmProtocol.OpenAi,
                     openAiBaseUrl = "https://api.xiaomimimo.com/v1",
                     anthropicBaseUrl = "https://api.xiaomimimo.com/anthropic",
-                    models = listOf("xiaomi/mimo-v2.5", "xiaomi/mimo-v2.5-pro"),
+                    models = listOf("mimo-v2.6-pro", "mimo-v2.6-flash", "mimo-v2.5-pro", "mimo-v2.5"),
+                ),
+                ModelProvider(
+                    id = "mimo-token-plan",
+                    name = "小米 Mimo Token Plan",
+                    protocol = LlmProtocol.OpenAi,
+                    // Token Plan 走专属 Base URL（国内为 token-plan-cn.xiaomimimo.com/v1），
+                    // 消耗购买的 Token Plan 套餐额度，需填入对应的专属 API Key
+                    openAiBaseUrl = "https://token-plan-cn.xiaomimimo.com/v1",
+                    anthropicBaseUrl = "https://token-plan-cn.xiaomimimo.com/anthropic",
+                    models = listOf("mimo-v2.6-pro", "mimo-v2.6-flash", "mimo-v2.5-pro", "mimo-v2.5"),
                 ),
                 ModelProvider(
                     id = "ark-coding",

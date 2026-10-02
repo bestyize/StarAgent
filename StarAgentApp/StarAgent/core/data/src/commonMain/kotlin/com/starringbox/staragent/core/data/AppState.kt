@@ -2141,7 +2141,7 @@ class AppState(
          * **每次改动 Seed 里的预置模型，就把这个数字 +1**——
          * 否则老用户本机缓存的那份清单会一直盖住新预设。
          */
-        const val SEED_VERSION = 3
+        const val SEED_VERSION = 4
     }
 }
 
