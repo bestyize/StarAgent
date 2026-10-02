@@ -44,4 +44,6 @@ data class ToolResult(
     val isError: Boolean = false,
     val externalContext: Boolean = false,
     val logText: String? = null,
+    /** 可选的结构化交付物，AgentLoop 会继续把 content 回喂给模型。 */
+    val artifact: Artifact? = null,
 )

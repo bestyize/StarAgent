@@ -71,11 +71,27 @@ import kotlinx.coroutines.delay
  * 应用外壳：注入主题与状态，承载导航宿主与底部导航。
  * 三端（Android / iOS / Desktop）共用这一个入口。
  */
+/** Android 通知点击后送进共享导航的单次事件。 */
+data class AppNavigationEvent(val sequence: Long, val route: Route)
+
 @Composable
-fun App() {
+fun App(notificationEvent: AppNavigationEvent? = null) {
     StarAgentTheme {
         val state = remember { AppState() }
         val navigator = remember { Navigator(Route.Agents) }
+        LaunchedEffect(notificationEvent?.sequence) {
+            val route = notificationEvent?.route ?: return@LaunchedEffect
+            when (route) {
+                is Route.TaskDetail -> {
+                    navigator.switchTab(Route.Tasks)
+                    navigator.push(route)
+                }
+                else -> {
+                    navigator.switchTab(Route.Agents)
+                    navigator.push(route)
+                }
+            }
+        }
 
         CompositionLocalProvider(LocalAppState provides state) {
             // 系统返回键接进导航栈：还有上一页就返回，到底了才交回系统（退出）。
@@ -183,6 +199,7 @@ private fun RouteHost(navigator: Navigator) {
             is Route.GroupEditor -> GroupEditorScreen(navigator, route.groupId)
             Route.Tasks -> TaskCenterScreen(navigator)
             is Route.TaskDetail -> TaskDetailScreen(navigator, route.taskId)
+            is Route.ArtifactPreview -> ArtifactPreviewScreen(navigator, route.artifactId)
             Route.Me -> MeScreen(navigator)
             is Route.AgentEditor -> AgentEditorScreen(navigator, route.agentId)
             Route.ModelConfig -> ModelConfigScreen(navigator)

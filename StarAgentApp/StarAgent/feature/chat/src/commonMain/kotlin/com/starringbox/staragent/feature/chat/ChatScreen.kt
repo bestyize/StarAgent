@@ -175,6 +175,7 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
                             viewingMessage = message
                             viewingIndex = index
                         },
+                        onOpenArtifact = { id -> navigator.push(Route.ArtifactPreview(id)) },
                     )
                 }
                 if (waitingFirstToken) {
@@ -339,6 +340,7 @@ private fun MessageRow(
     onAnswerQuestion: (String, String) -> Unit,
     onLongPress: () -> Unit,
     onImageClick: (Int) -> Unit,
+    onOpenArtifact: (String) -> Unit,
 ) {
     Box(
         Modifier
@@ -352,6 +354,7 @@ private fun MessageRow(
             onConfirmDraft = onConfirmDraft,
             onImageClick = onImageClick,
             onAnswerQuestion = onAnswerQuestion,
+            onOpenArtifact = onOpenArtifact,
         )
     }
 }
@@ -372,6 +375,7 @@ internal fun MessageBodyView(
     onImageClick: (Int) -> Unit,
     onAnswerQuestion: (String, String) -> Unit = { _, _ -> },
     speakerName: String? = null,
+    onOpenArtifact: (String) -> Unit = {},
 ) {
     when (author) {
         Author.User -> when (body) {
@@ -384,12 +388,12 @@ internal fun MessageBodyView(
             // 目前模型只回文本；图片消息都是用户发的
             is MessageBody.Image -> Unit
             // 流式回复刚开头、还没有内容时先不画空气泡，交给下方的「···」占位。
-            is MessageBody.Text -> if (body.text.isNotBlank()) AgentTextBubble(body.text)
+            is MessageBody.Text -> if (body.text.isNotBlank()) AgentTextBubble(body.text, onOpenArtifact)
             is MessageBody.Notice -> NoticeCard(body.text, body.isError)
             is MessageBody.Execution -> ExecutionCard(body.steps)
             is MessageBody.Draft -> DraftCard(body.draft, onConfirm = { onConfirmDraft(body.draft) })
             is MessageBody.Created -> CreatedCard(body.task)
-            is MessageBody.Delivered -> ArtifactCard(body.artifact)
+            is MessageBody.Delivered -> ArtifactCard(body.artifact) { onOpenArtifact(body.artifact.id) }
             is MessageBody.MemoryNote -> MemoryNoteCard(body.text)
             is MessageBody.Skipped -> SkippedRow(speakerName.orEmpty(), body.reason)
             is MessageBody.Question -> QuestionCard(
@@ -413,6 +417,7 @@ internal fun GroupMessageRow(
     speaker: Agent?,
     onLongPress: () -> Unit,
     onImageClick: (Int) -> Unit,
+    onOpenArtifact: (String) -> Unit,
 ) {
     Box(
         Modifier
@@ -431,6 +436,7 @@ internal fun GroupMessageRow(
                 onConfirmDraft = {},
                 onImageClick = onImageClick,
                 speakerName = speaker?.name,
+                onOpenArtifact = onOpenArtifact,
             )
         }
     }

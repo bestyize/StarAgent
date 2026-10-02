@@ -160,6 +160,7 @@ fun GroupChatScreen(navigator: Navigator, groupId: String) {
                             viewingMessage = message
                             viewingIndex = imageIndex
                         },
+                        onOpenArtifact = { id -> navigator.push(Route.ArtifactPreview(id)) },
                     )
                 }
                 if (waitingFirstToken) {

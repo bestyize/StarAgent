@@ -8,6 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +36,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import com.starringbox.staragent.core.designsystem.component.IconTile
 import com.starringbox.staragent.core.designsystem.component.StarCard
@@ -115,8 +122,37 @@ internal fun UserImageBubble(
     }
 }
 
+private const val LinkAnnotationTag = "staragent-link"
+
+private fun linkifiedText(source: String): AnnotatedString {
+    val pattern = Regex("""\[([^\]]+)]\((https?://[^)\s]+|artifact://[A-Za-z0-9._-]+)\)|https?://[^\s<>]+|artifact://[A-Za-z0-9._-]+""")
+    val matches = pattern.findAll(source).toList()
+    return AnnotatedString.Builder().apply {
+        var cursor = 0
+        for (match in matches) {
+            append(source.substring(cursor, match.range.first))
+            val rawTarget = match.groups[2]?.value ?: match.value
+            val label = match.groups[1]?.value ?: rawTarget.trimEnd('.', ',', ';', '!', '?', '。', '，', '；', '！', '？')
+            val target = rawTarget.trimEnd('.', ',', ';', '!', '?', '。', '，', '；', '！', '？')
+            val start = length
+            pushStyle(SpanStyle(color = StarPalette.Indigo, textDecoration = TextDecoration.Underline))
+            append(label)
+            pop()
+            addStringAnnotation(LinkAnnotationTag, target, start, length)
+            if (match.groups[1] == null && rawTarget.length > label.length) {
+                append(rawTarget.substring(label.length))
+            }
+            cursor = match.range.last + 1
+        }
+        append(source.substring(cursor))
+    }.toAnnotatedString()
+}
+
 @Composable
-internal fun AgentTextBubble(text: String) {
+internal fun AgentTextBubble(text: String, onOpenArtifact: (String) -> Unit = {}) {
+    val uriHandler = LocalUriHandler.current
+    val richText = remember(text) { linkifiedText(text) }
+    val layout = remember { mutableStateOf<TextLayoutResult?>(null) }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
         Box(
             modifier = Modifier
@@ -126,7 +162,24 @@ internal fun AgentTextBubble(text: String) {
                 .padding(horizontal = 14.dp, vertical = 10.dp),
         ) {
             SelectionContainer {
-                Text(text, style = MaterialTheme.typography.bodyLarge, color = StarPalette.Text)
+                Text(
+                    text = richText,
+                    onTextLayout = { layout.value = it },
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = StarPalette.Text,
+                    modifier = Modifier.pointerInput(richText) {
+                        detectTapGestures { position ->
+                            val offset = layout.value?.getOffsetForPosition(position) ?: return@detectTapGestures
+                            val target = richText.getStringAnnotations(LinkAnnotationTag, offset, offset)
+                                .firstOrNull()?.item ?: return@detectTapGestures
+                            if (target.startsWith("artifact://")) {
+                                onOpenArtifact(target.removePrefix("artifact://"))
+                            } else {
+                                runCatching { uriHandler.openUri(target) }
+                            }
+                        }
+                    },
+                )
             }
         }
     }
@@ -297,7 +350,7 @@ internal fun CreatedCard(task: AgentTask) {
  * 聊天流里的文字会"流走"，产物可以沉淀下来被反复使用。
  */
 @Composable
-internal fun ArtifactCard(artifact: Artifact) {
+internal fun ArtifactCard(artifact: Artifact, onPreview: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
 
     StarCard(modifier = Modifier.widthIn(max = 336.dp)) {
@@ -322,6 +375,13 @@ internal fun ArtifactCard(artifact: Artifact) {
                         style = MaterialTheme.typography.bodySmall,
                         color = StarPalette.TextMuted,
                     )
+                    artifact.fileName?.let { fileName ->
+                        Text(
+                            text = fileName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = StarPalette.TextFaint,
+                        )
+                    }
                 }
                 StarTag(artifact.kind.label)
             }
@@ -354,9 +414,8 @@ internal fun ArtifactCard(artifact: Artifact) {
             )
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                CardAction("预览", onPreview)
                 CardAction(if (expanded) "收起" else "展开") { expanded = !expanded }
-                CardAction("导出") { }
-                CardAction("分享") { }
             }
         }
     }
