@@ -145,7 +145,7 @@ private class AndroidPermissionPort(
         var launchFailure: Throwable? = null
         val granted = try {
             withContext(Dispatchers.Main.immediate) {
-                suspendCancellableCoroutine { continuation ->
+                suspendCancellableCoroutine<Boolean> { continuation ->
                     pendingRuntimeRequest = continuation
                     continuation.invokeOnCancellation {
                         if (pendingRuntimeRequest === continuation) pendingRuntimeRequest = null
@@ -189,7 +189,7 @@ private class AndroidPermissionPort(
         var launchFailure: Throwable? = null
         try {
             withContext(Dispatchers.Main.immediate) {
-                suspendCancellableCoroutine { continuation ->
+                suspendCancellableCoroutine<Unit> { continuation ->
                     pendingSettingsRequest = continuation
                     continuation.invokeOnCancellation {
                         if (pendingSettingsRequest === continuation) pendingSettingsRequest = null
