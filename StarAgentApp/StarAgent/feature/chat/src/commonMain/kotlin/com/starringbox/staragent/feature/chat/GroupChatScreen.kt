@@ -339,3 +339,18 @@ private fun RoundDivider(round: Int) {
 
 /** 输入坞上方那条成本提示——一条消息会触发多少次模型调用，先说清楚。 */
 @Composable
+private fun CostStrip(text: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(StarPalette.SurfaceAlt)
+            .padding(horizontal = 20.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = StarPalette.TextMuted,
+        )
+    }
+}
