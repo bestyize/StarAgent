@@ -1,0 +1,39 @@
+name: Build Linux DEB
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Linux package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: StarAgentApp/StarAgent
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build DEB
+        run: ./gradlew --no-daemon :desktopApp:packageDeb
+
+      - name: Upload DEB
+        uses: actions/upload-artifact@v7
+        with:
+          name: staragent-linux-deb
+          path: StarAgentApp/StarAgent/desktopApp/build/compose/binaries/main/deb/*.deb
+          if-no-files-found: error
+          retention-days: 14
