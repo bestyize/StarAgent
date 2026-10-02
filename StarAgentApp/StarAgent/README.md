@@ -351,6 +351,16 @@ Android/iOS 不会启动本地 MCP 进程，相关调用会返回平台不支持
 ```
 
 
+## Android permission tool
+
+Agent 可以通过内置的 `request_permission` 工具按功能申请权限：
+
+- `microphone`、`notifications`：显示 Android 运行时权限弹窗；
+- `accessibility`：直接打开 Android 无障碍设置，用户手动启用「星环智能 Agent」后，返回时自动复查；
+- `exact_alarm`：打开当前应用的精确闹钟权限页，返回时自动复查。
+
+工具只接受上述固定能力名，不接受任意系统权限字符串。Android 系统负责最终授权；无障碍和精确闹钟不会由应用自动开启。桌面端和 iOS 当前返回平台不支持。
+
 ## Android device_use
 
 Android 端新增了受控设备工具：
