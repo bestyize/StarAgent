@@ -278,9 +278,12 @@ Android 本地构建需要 `local.properties` 中的 `sdk.dir` 指向本机 SDK�
 除记忆、任务、网页读取和用户提问外，当前工具注册表还包含：
 
 - `list_files` / `read_file` / `write_file` / `delete_file`：智能体专属文件沙箱
+- `create_artifact`：生成 HTML、SVG、Markdown、文本、JSON、CSV 与常见图片文件，并写入该智能体的沙箱
 - `run_command`：受平台限制的命令执行（Desktop 可用，Android/iOS 默认禁用）
 - `web_search`：DuckDuckGo HTML 搜索适配
 - `list_skills` / `set_skill_enabled` / `install_skill` / `remove_skill`：查看、安装、启停和卸载本地 Skill
+
+HTML 和图片产物会在聊天里显示可点击的预览卡片；Android 使用内置 HTML 预览，普通文本与 Markdown 显示在文件预览页。定时任务点击通知后，若本次生成了文件则直接打开该产物，否则进入任务详情查看最近结果。
 
 文件写入、删除、命令执行和 Skill 状态变更会在“按需确认”策略下先请求用户确认。动态下载 Skill、MCP、浏览器控制和任意第三方 App 读屏/点击仍需后续阶段接入。
 

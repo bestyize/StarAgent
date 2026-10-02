@@ -5,6 +5,9 @@ interface FilePort {
     fun list(agentId: String, path: String): List<FileEntry>
     fun read(agentId: String, path: String): String?
     fun write(agentId: String, path: String, content: String): FileOperationResult
+    fun readBytes(agentId: String, path: String): ByteArray? = null
+    fun writeBytes(agentId: String, path: String, content: ByteArray): FileOperationResult =
+        FileOperationResult(false, "当前文件端口不支持二进制文件")
     fun delete(agentId: String, path: String): FileOperationResult
 }
 
@@ -133,6 +136,7 @@ interface DevicePort {
     suspend fun swipe(fromX: Float, fromY: Float, toX: Float, toY: Float, durationMillis: Long): DeviceActionResult
     suspend fun pressBack(): DeviceActionResult
     suspend fun launchApp(packageOrBundleId: String): DeviceActionResult
+
 }
 
 enum class DeviceScope { ActiveWindow, FullTree }

@@ -41,6 +41,7 @@ import com.starringbox.staragent.core.designsystem.component.StarTopBar
 import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.navigation.Navigator
+import com.starringbox.staragent.core.designsystem.navigation.Route
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.model.Recurrence
 import com.starringbox.staragent.core.model.TaskPriority
@@ -163,6 +164,33 @@ fun TaskDetailScreen(navigator: Navigator, taskId: String?) {
                 }
             }
 
+            existing?.let { savedTask ->
+                savedTask.lastRunResult?.let { result ->
+                    Spacer(Modifier.height(16.dp))
+                    SectionLabel("最近一次结果")
+                    StarCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text(
+                                text = result,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = StarPalette.Text,
+                            )
+                            savedTask.lastArtifactId?.let { artifactId ->
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    text = "打开生成文件预览",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = StarPalette.Indigo,
+                                    modifier = Modifier.clickable {
+                                        navigator.push(Route.ArtifactPreview(artifactId))
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             Spacer(Modifier.height(20.dp))
             SectionLabel("由谁执行")
             if (state.agents.isEmpty()) {
@@ -278,8 +306,6 @@ fun TaskDetailScreen(navigator: Navigator, taskId: String?) {
 
             Spacer(Modifier.height(28.dp))
         }
-    }
-}
 
 @Composable
 private fun InfoRow(glyph: StarIconGlyph, label: String, value: String) {
