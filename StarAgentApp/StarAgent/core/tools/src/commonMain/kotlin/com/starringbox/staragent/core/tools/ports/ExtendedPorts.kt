@@ -102,6 +102,7 @@ enum class PermissionCapability {
     Accessibility,
     ExactAlarm,
     Overlay,
+    BatteryOptimization,
 }
 
 enum class PermissionStatus {

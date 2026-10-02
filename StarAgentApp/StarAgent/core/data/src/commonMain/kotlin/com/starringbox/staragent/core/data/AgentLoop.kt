@@ -256,10 +256,10 @@ internal class AgentLoop(
         /**
          * 步数上限。
          *
-         * 8 是个折中：够"查资料 → 读正文 → 记住 → 回答"这种多步任务，
+         * 30 是一个充裕的折中：给跨应用手机操作、深层查资料等复杂多步任务留足操作空间（4 次点击+读屏就会消耗近 10 步），
          * 又不至于在模型死循环时烧掉太多 token。
          */
-        const val DEFAULT_MAX_ITERATIONS = 8
+        const val DEFAULT_MAX_ITERATIONS = 30
 
         /** 按需确认等待用户操作的默认超时：5 分钟（300 秒）。 */
         const val DEFAULT_CONFIRMATION_TIMEOUT_MILLIS = 300_000L

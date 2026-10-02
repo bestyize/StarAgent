@@ -88,7 +88,7 @@ class SpeechConfigTest {
         val state = AppState()
 
         assertEquals(
-            listOf("zhipu", "groq", "openai", "volc-ark", "mimo"),
+            listOf("zhipu", "groq", "openai", "volc-ark", "mimo", "mimo-token-plan"),
             state.speechProviders.map { it.id },
             "顺序是显式的：没选过时取第一家。新加一家要加在**末尾**，别动这个兜底",
         )
@@ -110,7 +110,7 @@ class SpeechConfigTest {
     fun everyOtherPresetIsOpenAiShaped() {
         val state = AppState()
 
-        state.speechProviders.filter { it.id !in setOf("volc-ark", "mimo") }.forEach { provider ->
+        state.speechProviders.filter { it.id !in setOf("volc-ark", "mimo", "mimo-token-plan") }.forEach { provider ->
             assertEquals(
                 SpeechProtocol.OpenAi,
                 provider.protocol,

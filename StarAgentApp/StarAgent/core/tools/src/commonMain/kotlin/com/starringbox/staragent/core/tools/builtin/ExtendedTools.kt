@@ -332,7 +332,13 @@ object DeviceInspectTool : Tool {
             else -> DeviceScope.ActiveWindow
         }
         val result = host.device.inspect(scope)
-        if (!result.ok) return ToolResult("", result.error ?: "无法读取设备界面", true)
+        if (!result.ok) {
+            val err = result.error ?: "无法读取设备界面"
+            val hint = if (err.contains("无障碍")) {
+                "\n提示：请先调用 request_permission(capability='accessibility') 协助用户前往系统设置开启无障碍权限；用户授权返回后即可继续读取界面。"
+            } else ""
+            return ToolResult("", err + hint, true)
+        }
         val text = buildString {
             append("screen_id=").append(result.screenId).append("\n")
             append("package=").append(result.packageName ?: "unknown").append("\n")
@@ -420,7 +426,13 @@ object DeviceUseTool : Tool {
             "back" -> host.device.pressBack()
             else -> return ToolResult("", "不支持的 device_use operation：$operation", true)
         }
-        return ToolResult("", result.message, !result.ok)
+        val failure = !result.ok
+        val msg = if (failure && result.message.contains("无障碍")) {
+            result.message + "\n提示：请调用 request_permission(capability='accessibility') 协助用户前往系统设置开启无障碍权限；用户授权返回后即可继续执行手机操作。"
+        } else {
+            result.message
+        }
+        return ToolResult("", msg, failure)
     }
 
     private fun number(args: JsonObject, name: String): Float =

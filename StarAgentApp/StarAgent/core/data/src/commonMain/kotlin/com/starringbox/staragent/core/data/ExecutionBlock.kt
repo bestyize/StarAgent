@@ -38,5 +38,6 @@ internal fun readableLabelFor(call: ToolCall): String = when (call.name) {
     "list_apps" -> "查看已安装应用"
     "device_inspect" -> "查看手机当前界面"
     "device_use" -> "操作手机应用"
+    "request_permission" -> "申请系统权限"
     else -> call.name
 }

@@ -71,6 +71,41 @@ class RequestPermissionToolTest {
     }
 
     @Test
+    fun routesBatteryOptimizationCapabilityToPlatformPort() = runTest {
+        val permissions = FakePermissionPort()
+        val result = RequestPermissionTool.execute(
+            buildJsonObject { put("capability", "battery_optimization") },
+            testHost(permissions = permissions),
+        )
+
+        assertEquals(PermissionCapability.BatteryOptimization, permissions.requested)
+        assertEquals("权限已开启。", result.content)
+        assertFalse(result.isError)
+    }
+
+    @Test
+    fun userDecliningSettingsPromptCancelsOperation() = runTest {
+        val permissions = FakePermissionPort()
+        val fakeUserInput = object : com.starringbox.staragent.core.tools.ports.UserInputPort {
+            override suspend fun requestInput(
+                agentId: String,
+                question: String,
+                options: List<String>,
+                placeholder: String?,
+            ): String = "暂不开启"
+        }
+
+        val result = RequestPermissionTool.execute(
+            buildJsonObject { put("capability", "accessibility") },
+            testHost(permissions = permissions, userInput = fakeUserInput),
+        )
+
+        assertTrue(permissions.requested == null)
+        assertTrue(result.content.contains("暂不同意开启"))
+        assertTrue(result.isError)
+    }
+
+    @Test
     fun rejectsArbitraryPermissionNames() = runTest {
         val permissions = FakePermissionPort()
         val result = RequestPermissionTool.execute(

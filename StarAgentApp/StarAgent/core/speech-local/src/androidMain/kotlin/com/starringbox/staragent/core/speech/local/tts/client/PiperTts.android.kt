@@ -31,8 +31,8 @@ import kotlinx.coroutines.withContext
 
 /** Pinned sherpa-onnx Piper Chinese (Chaowen) INT8 export; files stay outside the APK. */
 actual object PiperTts {
-    private const val REVISION = "19375e11252db7afffa04181e114adab3db4219b"
-    private const val BASE = "https://huggingface.co/csukuangfj2/vits-piper-zh_CN-chaowen-medium-int8/resolve/$REVISION/"
+    private const val REVISION = "3cf3257822795b71abbd071612823da7ac332ab5"
+    private const val BASE = "https://modelscope.cn/api/v1/models/liaowenbin/vits-piper-zh_CN-chaowen-medium-int8/repo?Revision=$REVISION"
     private const val MODEL = "zh_CN-chaowen-medium.onnx"
     private const val TOKENS = "tokens.txt"
     private const val LEXICON = "lexicon.txt"
@@ -195,7 +195,7 @@ actual object PiperTts {
     ) {
         if (valid(target, spec.size, spec.sha256)) { progress(offset + spec.size, total); return }
         val temp = File(target.parentFile, "${target.name}.part")
-        val connection = URL(BASE + spec.name).openConnection() as HttpURLConnection
+        val connection = URL("$BASE&FilePath=${spec.name}").openConnection() as HttpURLConnection
         val disconnectWatcher = CoroutineScope(currentCoroutineContext()).launch(
             context = Dispatchers.IO,
             start = CoroutineStart.UNDISPATCHED,

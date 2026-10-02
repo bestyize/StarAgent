@@ -8,6 +8,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.result.ActivityResultCaller
 import androidx.activity.result.contract.ActivityResultContracts
@@ -77,6 +79,18 @@ private class AndroidPermissionPort(
                 } else {
                     PermissionStatus.RequiresSettings
                 }
+
+            PermissionCapability.BatteryOptimization ->
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                    PermissionStatus.Granted
+                } else {
+                    val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                    if (powerManager?.isIgnoringBatteryOptimizations(appContext.packageName) == true) {
+                        PermissionStatus.Granted
+                    } else {
+                        PermissionStatus.RequiresSettings
+                    }
+                }
         }
 
     override suspend fun request(capability: PermissionCapability): PermissionRequestResult =
@@ -99,17 +113,35 @@ private class AndroidPermissionPort(
                     if (Build.VERSION.SDK_INT < 33) {
                         PermissionRequestResult(PermissionStatus.Granted, "当前 Android 版本不需要单独申请通知权限。")
                     } else {
-                        requestRuntimePermission(
+                        val runtimeRes = requestRuntimePermission(
                             capability,
                             Manifest.permission.POST_NOTIFICATIONS,
                         )
+                        if (runtimeRes.status == PermissionStatus.Granted) {
+                            runtimeRes
+                        } else {
+                            openSettings(
+                                capability = capability,
+                                intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                    .putExtra(Settings.EXTRA_APP_PACKAGE, appContext.packageName),
+                            )
+                        }
                     }
 
-                PermissionCapability.Accessibility ->
+                PermissionCapability.Accessibility -> {
+                    val targetComponent = ComponentName(appContext, AndroidAccessibilityService::class.java).flattenToString()
+                    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                        putExtra(":settings:fragment_args_key", targetComponent)
+                        val bundle = Bundle().apply {
+                            putString(":settings:fragment_args_key", targetComponent)
+                        }
+                        putExtra(":settings:show_fragment_args", bundle)
+                    }
                     openSettings(
                         capability = capability,
-                        intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
+                        intent = intent,
                     )
+                }
 
                 PermissionCapability.ExactAlarm ->
                     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
@@ -128,6 +160,17 @@ private class AndroidPermissionPort(
                         intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
                             .setData(Uri.parse("package:" + appContext.packageName)),
                     )
+
+                PermissionCapability.BatteryOptimization ->
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                        PermissionRequestResult(PermissionStatus.Granted, "当前系统版本不需要单独设置忽略电池优化。")
+                    } else {
+                        openSettings(
+                            capability = capability,
+                            intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                                .setData(Uri.parse("package:" + appContext.packageName)),
+                        )
+                    }
             }
         }
 
@@ -263,16 +306,19 @@ private class AndroidPermissionPort(
             PermissionCapability.Accessibility -> "设备操作（无障碍服务）"
             PermissionCapability.ExactAlarm -> "精确闹钟"
             PermissionCapability.Overlay -> "悬浮窗（显示在其他应用上层）"
+            PermissionCapability.BatteryOptimization -> "忽略电池优化（后台运行）"
         }
 
     private fun settingsReturnMessage(capability: PermissionCapability): String =
         when (capability) {
             PermissionCapability.Accessibility ->
-                "已打开系统无障碍设置。请找到「星环智能 Agent」并手动启用；这是 Android 要求用户本人确认的权限。返回后我已检查，当前仍未开启。"
+                "已打开系统无障碍设置。进入后请点击「已下载的应用/服务」→ 找到「星环智能 Agent」手动启用；返回后我已检查，当前仍未开启。"
             PermissionCapability.ExactAlarm ->
                 "已打开精确闹钟设置。请允许星环智能 Agent 设置精确闹钟，返回后我已检查，当前仍未开启。"
             PermissionCapability.Overlay ->
                 "已打开「显示在其他应用上层」设置。请允许星环智能 Agent 显示操作悬浮球；返回后我已检查，当前仍未开启。"
+            PermissionCapability.BatteryOptimization ->
+                "已请求忽略电池优化。返回后我已检查，当前尚未加入白名单。"
             else -> label(capability) + "权限尚未开启。"
         }
 }

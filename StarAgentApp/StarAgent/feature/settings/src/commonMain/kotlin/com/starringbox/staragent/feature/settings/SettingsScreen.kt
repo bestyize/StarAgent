@@ -16,7 +16,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,7 +41,11 @@ import com.starringbox.staragent.core.designsystem.navigation.Navigator
 import com.starringbox.staragent.core.designsystem.navigation.Route
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.model.ExecutionPolicy
+import com.starringbox.staragent.core.platform.permissions.PermissionRequests
 import com.starringbox.staragent.core.platform.storage.LocalStores
+import com.starringbox.staragent.core.tools.ports.PermissionCapability
+import com.starringbox.staragent.core.tools.ports.PermissionStatus
+import kotlinx.coroutines.launch
 
 /**
  * 设置页。从「我的」右上角的齿轮进来，右上角再进**文件浏览器**。
@@ -51,6 +59,8 @@ import com.starringbox.staragent.core.platform.storage.LocalStores
 fun SettingsScreen(navigator: Navigator) {
     val state = LocalAppState.current
     val hasStorage = LocalStores.available
+    val coroutineScope = rememberCoroutineScope()
+    var refreshTrigger by remember { mutableStateOf(0) }
 
     // 统计一次目录要走一遍树，别每次重组都来一遍。几个数量变了才重算——
     // 那是这页上唯一会变的东西（存档刚被改写）。
@@ -125,6 +135,97 @@ fun SettingsScreen(navigator: Navigator) {
                                 }
                             } else null,
                             onClick = { state.selectExecutionPolicy(ExecutionPolicy.OnDemand) },
+                        )
+                    }
+                }
+            }
+
+            item { SectionLabel("系统功能权限") }
+            item {
+                StarCard(modifier = Modifier.fillMaxWidth()) {
+                    Column {
+                        SystemPermissionRow(
+                            title = "自动化操作（无障碍服务）",
+                            descGranted = "已开启 · 支持智能体在屏幕上点击、输入与阅读界面",
+                            descRequiresSettings = "未开启 · 点击一键前往系统设置启用",
+                            capability = PermissionCapability.Accessibility,
+                            refreshTrigger = refreshTrigger,
+                            onRequest = {
+                                coroutineScope.launch {
+                                    PermissionRequests.request(PermissionCapability.Accessibility)
+                                    refreshTrigger++
+                                }
+                            },
+                        )
+                        StarDivider(inset = 56.dp)
+                        SystemPermissionRow(
+                            title = "跨应用悬浮控制球",
+                            descGranted = "已开启 · 跨应用操作时展示进度胶囊与随时暂停",
+                            descRequiresSettings = "未开启 · 点击前往允许在其他应用上层显示",
+                            capability = PermissionCapability.Overlay,
+                            refreshTrigger = refreshTrigger,
+                            onRequest = {
+                                coroutineScope.launch {
+                                    PermissionRequests.request(PermissionCapability.Overlay)
+                                    refreshTrigger++
+                                }
+                            },
+                        )
+                        StarDivider(inset = 56.dp)
+                        SystemPermissionRow(
+                            title = "任务与操作通知",
+                            descGranted = "已开启 · 可在通知栏查看手机操作状态与任务提醒",
+                            descRequiresSettings = "未开启 · 点击授权通知权限",
+                            capability = PermissionCapability.Notifications,
+                            refreshTrigger = refreshTrigger,
+                            onRequest = {
+                                coroutineScope.launch {
+                                    PermissionRequests.request(PermissionCapability.Notifications)
+                                    refreshTrigger++
+                                }
+                            },
+                        )
+                        StarDivider(inset = 56.dp)
+                        SystemPermissionRow(
+                            title = "定时任务准时唤醒",
+                            descGranted = "已开启 · 支持精确闹钟唤醒执行计划任务",
+                            descRequiresSettings = "未开启 · 点击前往允许设置精确闹钟",
+                            capability = PermissionCapability.ExactAlarm,
+                            refreshTrigger = refreshTrigger,
+                            onRequest = {
+                                coroutineScope.launch {
+                                    PermissionRequests.request(PermissionCapability.ExactAlarm)
+                                    refreshTrigger++
+                                }
+                            },
+                        )
+                        StarDivider(inset = 56.dp)
+                        SystemPermissionRow(
+                            title = "后台保活（忽略电池优化）",
+                            descGranted = "已加入白名单 · 防止后台被系统休眠清理",
+                            descRequiresSettings = "未加入 · 点击弹出系统授权加入白名单",
+                            capability = PermissionCapability.BatteryOptimization,
+                            refreshTrigger = refreshTrigger,
+                            onRequest = {
+                                coroutineScope.launch {
+                                    PermissionRequests.request(PermissionCapability.BatteryOptimization)
+                                    refreshTrigger++
+                                }
+                            },
+                        )
+                        StarDivider(inset = 56.dp)
+                        SystemPermissionRow(
+                            title = "语音对话（麦克风）",
+                            descGranted = "已授权 · 支持语音输入与识别",
+                            descRequiresSettings = "未授权 · 点击调起麦克风权限申请",
+                            capability = PermissionCapability.Microphone,
+                            refreshTrigger = refreshTrigger,
+                            onRequest = {
+                                coroutineScope.launch {
+                                    PermissionRequests.request(PermissionCapability.Microphone)
+                                    refreshTrigger++
+                                }
+                            },
                         )
                     }
                 }
@@ -262,3 +363,74 @@ internal fun formatBytes(bytes: Long): String = when {
     bytes < 1024 * 1024 -> "${bytes / 1024} KB"
     else -> "${bytes / (1024 * 1024)}.${(bytes % (1024 * 1024)) * 10 / (1024 * 1024)} MB"
 }
+
+@Composable
+private fun SystemPermissionRow(
+    title: String,
+    descGranted: String,
+    descRequiresSettings: String,
+    capability: PermissionCapability,
+    refreshTrigger: Int,
+    onRequest: () -> Unit,
+) {
+    val status = remember(refreshTrigger, capability) {
+        PermissionRequests.status(capability)
+    }
+    val granted = status == PermissionStatus.Granted
+    val unsupported = status == PermissionStatus.Unsupported
+
+    if (unsupported) return
+
+    SettingsRow(
+        glyph = when (capability) {
+            PermissionCapability.Accessibility -> StarIconGlyph.Task
+            PermissionCapability.Overlay -> StarIconGlyph.Sparkle
+            PermissionCapability.Notifications -> StarIconGlyph.Chat
+            PermissionCapability.ExactAlarm -> StarIconGlyph.Repeat
+            PermissionCapability.BatteryOptimization -> StarIconGlyph.Bolt
+            PermissionCapability.Microphone -> StarIconGlyph.Mic
+        },
+        title = title,
+        subtitle = if (granted) descGranted else descRequiresSettings,
+        containerColor = if (granted) Color(0xFFF0FDF4) else StarPalette.SurfaceAlt,
+        tint = if (granted) Color(0xFF16A34A) else StarPalette.TextFaint,
+        trailing = {
+            if (granted) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    StarIcon(
+                        icon = StarIconGlyph.Check,
+                        iconSize = 15.dp,
+                        tint = Color(0xFF16A34A),
+                        strokeWidth = 2.2f,
+                    )
+                    Text(
+                        text = "已就绪",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF16A34A),
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFFE0E3FF))
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "去开启",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = StarPalette.Indigo,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        },
+        onClick = if (!granted) onRequest else null,
+    )
+}
+

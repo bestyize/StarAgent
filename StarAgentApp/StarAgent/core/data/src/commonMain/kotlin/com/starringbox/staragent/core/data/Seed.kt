@@ -246,8 +246,17 @@ internal object Seed {
         ),
         SpeechProvider(
             id = "mimo",
-            name = "小米 MiMo",
+            name = "小米 Mimo API",
             baseUrl = "https://api.xiaomimimo.com/v1",
+            protocol = SpeechProtocol.MiMo,
+            asrModel = "mimo-v2.5-asr",
+            ttsModel = "mimo-v2.5-tts",
+            ttsVoice = "mimo-default",
+        ),
+        SpeechProvider(
+            id = "mimo-token-plan",
+            name = "小米 Mimo Token Plan",
+            baseUrl = "https://token-plan-cn.xiaomimimo.com/v1",
             protocol = SpeechProtocol.MiMo,
             asrModel = "mimo-v2.5-asr",
             ttsModel = "mimo-v2.5-tts",
