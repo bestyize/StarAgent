@@ -46,6 +46,6 @@ class IndependentSpeechConfigTest {
         state.setSpeechKey("mimo", "test-speech")
         assertNull(state.ttsVoiceId)
         assertEquals(com.starringbox.staragent.core.model.SpeechProtocol.MiMo, state.asrEndpoint()?.protocol)
-        assertEquals("mimo-default", state.ttsEndpoint()?.ttsVoice)
+        assertEquals("mimo_default", state.ttsEndpoint()?.ttsVoice)
     }
 }

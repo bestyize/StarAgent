@@ -157,6 +157,7 @@ class MiMoSpeechTest {
         val audio = payload["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray[0].jsonObject["input_audio"]!!.jsonObject
 
         assertEquals("data:audio/wav;base64,AAECAw==", audio["data"]!!.jsonPrimitive.content)
+        assertEquals("wav", audio["format"]!!.jsonPrimitive.content)
         assertEquals("auto", payload["asr_options"]!!.jsonObject["language"]!!.jsonPrimitive.content)
         assertEquals("mimo-v2.5-asr", payload["model"]!!.jsonPrimitive.content)
     }

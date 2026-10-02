@@ -28,7 +28,7 @@ import kotlinx.serialization.json.putJsonObject
 
 private const val MIMO_DEFAULT_BASE_URL = "https://api.xiaomimimo.com/v1"
 private const val MIMO_DEFAULT_TTS_MODEL = "mimo-v2.5-tts"
-private const val MIMO_DEFAULT_VOICE = "mimo-default"
+private const val MIMO_DEFAULT_VOICE = "mimo_default"
 private const val MIMO_SAMPLE_RATE = 24_000
 internal const val MIMO_MAX_PCM_CHUNK_BYTES = 12_000 // 250 ms, mono PCM16LE.
 
@@ -41,6 +41,7 @@ internal suspend fun transcribeWithMiMo(
     val payload = mimoAsrPayload(model, wav)
     val response = client.preparePost(mimoUrl(endpoint, "/chat/completions")) {
         header("api-key", endpoint.apiKey.trim())
+        header(HttpHeaders.Authorization, "Bearer ${endpoint.apiKey.trim()}")
         contentType(ContentType.Application.Json)
         setBody(payload)
     }.execute { response ->
@@ -58,6 +59,7 @@ internal suspend fun synthesizeWithMiMo(
 ): ByteArray {
     val response = client.preparePost(mimoUrl(endpoint, "/chat/completions")) {
         header("api-key", endpoint.apiKey.trim())
+        header(HttpHeaders.Authorization, "Bearer ${endpoint.apiKey.trim()}")
         contentType(ContentType.Application.Json)
         setBody(mimoTtsPayload(model, text, streaming = false, voice = endpoint.ttsVoice))
     }.execute { response ->
@@ -77,6 +79,7 @@ internal suspend fun streamWithMiMo(
     val model = endpoint.ttsModel?.takeIf { it.isNotBlank() } ?: MIMO_DEFAULT_TTS_MODEL
     client.preparePost(mimoUrl(endpoint, "/chat/completions")) {
         header("api-key", endpoint.apiKey.trim())
+        header(HttpHeaders.Authorization, "Bearer ${endpoint.apiKey.trim()}")
         contentType(ContentType.Application.Json)
         setBody(mimoTtsPayload(model, text, streaming = true, voice = endpoint.ttsVoice))
     }.execute { response ->
@@ -109,10 +112,13 @@ internal suspend fun streamWithMiMo(
 
 internal fun mimoUrl(endpoint: SpeechEndpoint, path: String): String {
     val configured = endpoint.baseUrl.trim().trimEnd('/')
-    val root = configured.ifBlank { MIMO_DEFAULT_BASE_URL }
+    var root = configured.ifBlank { MIMO_DEFAULT_BASE_URL }
         .removeSuffix("/chat/completions")
         .removeSuffix("/audio/speech")
         .removeSuffix("/audio/transcriptions")
+    if (root.contains("xiaomimimo.com") && !root.endsWith("/v1")) {
+        root = "$root/v1"
+    }
     return root + path
 }
 
@@ -126,6 +132,7 @@ internal fun mimoAsrPayload(model: String, wav: ByteArray): String = buildJsonOb
                     put("type", "input_audio")
                     put("input_audio", buildJsonObject {
                         put("data", "data:audio/wav;base64,${wav.encodeBase64()}")
+                        put("format", "wav")
                     })
                 })
             })
@@ -141,15 +148,25 @@ internal fun mimoTtsPayload(
     streaming: Boolean,
     voice: String? = null,
 ): String = buildJsonObject {
+    val selectedVoice = when (voice?.trim()) {
+        null, "", "mimo-default", "mimo_default" -> MIMO_DEFAULT_VOICE
+        else -> voice.trim()
+    }
     put("model", model)
     put("stream", streaming)
     putJsonArray("messages") {
-        add(buildJsonObject { put("role", "user"); put("content", "") })
-        add(buildJsonObject { put("role", "assistant"); put("content", text) })
+        add(buildJsonObject {
+            put("role", "user")
+            put("content", "以自然清晰的语气朗读")
+        })
+        add(buildJsonObject {
+            put("role", "assistant")
+            put("content", text)
+        })
     }
     putJsonObject("audio") {
         put("format", if (streaming) "pcm16" else "wav")
-        put("voice", voice?.takeIf { it.isNotBlank() } ?: MIMO_DEFAULT_VOICE)
+        put("voice", selectedVoice)
     }
 }.toString()
 

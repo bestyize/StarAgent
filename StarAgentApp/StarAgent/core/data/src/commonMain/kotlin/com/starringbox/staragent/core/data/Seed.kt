@@ -224,8 +224,8 @@ internal object Seed {
             id = "openai",
             name = "OpenAI",
             baseUrl = "https://api.openai.com/v1",
-            asrModel = "gpt-4o-transcribe",
-            ttsModel = "gpt-4o-mini-tts",
+            asrModel = "whisper-1",
+            ttsModel = "tts-1",
             ttsVoice = "alloy",
         ),
         SpeechProvider(
@@ -251,7 +251,7 @@ internal object Seed {
             protocol = SpeechProtocol.MiMo,
             asrModel = "mimo-v2.5-asr",
             ttsModel = "mimo-v2.5-tts",
-            ttsVoice = "mimo-default",
+            ttsVoice = "mimo_default",
         ),
         SpeechProvider(
             id = "mimo-token-plan",
@@ -260,7 +260,7 @@ internal object Seed {
             protocol = SpeechProtocol.MiMo,
             asrModel = "mimo-v2.5-asr",
             ttsModel = "mimo-v2.5-tts",
-            ttsVoice = "mimo-default",
+            ttsVoice = "mimo_default",
         ),
     )
 
