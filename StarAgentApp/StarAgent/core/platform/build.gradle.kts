@@ -44,7 +44,7 @@ kotlin {
         commonMain.dependencies {
             // api：MediaAsset 出现在 pickImage / save 的公开签名里
             api(project(":core:model"))
-            implementation(project(":core:tools"))
+            api(project(":core:tools"))
             implementation(libs.kotlinx.coroutines.core)
         }
         commonTest.dependencies {
