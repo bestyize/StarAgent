@@ -58,8 +58,8 @@ internal class AgentLoop(
         host: ToolHost,
         registry: ToolRegistry,
         onText: suspend (String) -> Unit,
-        onToolStart: (ToolCall) -> Unit,
-        onToolEnd: (ToolCall, ToolResult) -> Unit,
+        onToolStart: suspend (ToolCall) -> Unit,
+        onToolEnd: suspend (ToolCall, ToolResult) -> Unit,
         onRoundStarted: suspend () -> Unit = {},
     ): LoopOutcome {
         try {

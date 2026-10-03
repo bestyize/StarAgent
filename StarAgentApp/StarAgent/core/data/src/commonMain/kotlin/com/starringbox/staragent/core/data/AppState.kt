@@ -226,6 +226,30 @@ class AppState(
     private val persister: StatePersister? =
         if (LocalStores.available) StatePersister(LocalStores.current) else null
 
+    private val turnRunner = TurnRunner(AgentLoop(stream = stream))
+
+    private fun createToolHost(
+        agentId: String,
+        conversationKey: String,
+        isSuppressed: () -> Boolean,
+    ): ToolHost = ToolHost(
+        memory = AppMemoryPort(this, isSuppressed),
+        tasks = AppTaskPort(this),
+        web = webPort,
+        userInput = userInputPort,
+        files = AppFilePort(),
+        commands = platformCommandPort(),
+        search = AppSearchPort(),
+        skills = AppSkillPort(this, isSuppressed),
+        browser = AppBrowserPort(webPort),
+        mcp = platformMcpManager(),
+        device = platformDevicePort(),
+        permissions = PermissionRequests,
+        executionPolicy = executionPolicy,
+        agentId = agentId,
+        conversationKey = conversationKey,
+    )
+
     /**
      * 上次启动有几个文件没能用（坏掉的已经挪到 `backups/broken/`）。
      *
@@ -1050,140 +1074,59 @@ class AppState(
             body = MessageBody.Text(""),
             timeLabel = "刚刚",
         )
-        conversation.add(placeholder)
-        var index = conversation.lastIndex
-
-        // 执行卡片是**一张会变的卡**，不是一步一个气泡：记下它在对话里的位置，
-        // 之后每有进展就重写那一条——和上面流式占位符是同一个手法。
-        val stepCalls = mutableListOf<ToolCall>()
-        val stepResults = mutableListOf<ToolResult>()
-        val generatedArtifacts = mutableListOf<Artifact>()
-        var executionIndex = -1
-
-        // 这一轮有没有拿到过外部来源的内容（网页正文等）。
-        //
-        // 它是**本次调用的局部量**，所以天然不会泄漏到下一轮——不需要额外的复位，
-        // 端口那个 lambda 每次读的也是这一份（闭包捕获的是变量，不是快照）。
-        // 别把它挪成字段：一旦共享，一轮的外部抓取会把下一轮的正常记忆一起静默掐掉，
-        // 而且绝不报错，只表现为"它怎么不记得了"。
-        var externalFetchThisTurn = false
+        val slot = TurnConversationSlot(conversation, placeholder, { nextId(it) })
+        slot.attach()
 
         busy[agentId] = true
-        val buffer = StringBuilder()
-        var outcome: LoopOutcome
-
-        try {
-            val loop = AgentLoop(stream = stream)
-            val host = ToolHost(
-                // 记忆的两条路走同一道闸门：文本块那条在下面直接用这个变量，
-                // 工具那条在端口里读它。真值判定统一成"读到过外部内容"（与网页相反）。
-                memory = AppMemoryPort(this) { externalFetchThisTurn },
-                tasks = AppTaskPort(this),
-                web = webPort,
-                userInput = userInputPort,
-                files = AppFilePort(),
-                commands = platformCommandPort(),
-                search = AppSearchPort(),
-                skills = AppSkillPort(this) { externalFetchThisTurn },
-                browser = AppBrowserPort(webPort),
-                mcp = platformMcpManager(),
-                device = platformDevicePort(),
-                permissions = PermissionRequests,
-                executionPolicy = executionPolicy,
-                agentId = agentId,
-                conversationKey = agentId,
-            )
-
-            outcome = loop.run(
+        val turnResult = try {
+            turnRunner.run(
                 endpoint = endpoint,
                 history = withSkillInvocation(historyFor(agentId)),
-                host = host,
                 registry = registryFor(agent),
-                onText = { chunk ->
-                    buffer.append(chunk)
-                    conversation[index] = placeholder.copy(body = MessageBody.Text(buffer.toString()))
-                    speech?.append(chunk)
-                },
-                onRoundStarted = { speech?.boundary() },
-                onToolStart = { call ->
-                    stepCalls += call
-                    val steps = executionStepsFor(stepCalls, stepResults)
-                    if (executionIndex < 0) {
-                        // 第一次调工具时才插卡片，别让纯对话也顶一张空的
-                        // 回复占位已经先插入以承载流式文本；工具卡必须插到它前面，
-                        // 用户看到的顺序才是「工具执行 → 最终回复」。
-                        conversation.add(
-                            index,
-                            ChatMessage(
-                                id = nextId("m"),
-                                author = Author.Agent,
-                                body = MessageBody.Execution(steps),
-                                timeLabel = "刚刚",
-                            )
-                        )
-                        executionIndex = index
-                        index++
-                    } else {
-                        conversation[executionIndex] =
-                            conversation[executionIndex].copy(body = MessageBody.Execution(steps))
-                    }
-                },
-                onToolEnd = { _, result ->
-                    stepResults += result
-                    // 只**累积**（取或），不写成 `= result.externalContext`：一轮里多个结果时
-                    // 后者是"最后一个说了算"，取或才是"只要有一个"。要用的属性只增不减。
-                    if (result.externalContext) externalFetchThisTurn = true
-                    result.artifact?.takeUnless { result.isError }?.let(generatedArtifacts::add)
-                    if (executionIndex >= 0) {
-                        conversation[executionIndex] = conversation[executionIndex].copy(
-                            body = MessageBody.Execution(executionStepsFor(stepCalls, stepResults)),
-                        )
+                createHost = { isSuppressed -> createToolHost(agentId, agentId, isSuppressed) },
+                onEvent = { event ->
+                    when (event) {
+                        is TurnEvent.RoundStarted -> speech?.boundary()
+                        is TurnEvent.TextChunk -> {
+                            slot.onText(event.chunk)
+                            speech?.append(event.chunk)
+                        }
+                        is TurnEvent.StepsChanged -> slot.onSteps(event.steps)
+                        is TurnEvent.ArtifactProduced -> Unit
                     }
                 },
             )
-        } catch (cancelled: CancellationException) {
-            // 用户点了停止：已经收到的部分保留下来，一个字都没有就留个说明。
-            // 已完成写入的文件仍作为产物交付，取消必须原样抛出。
-            if (buffer.isEmpty()) {
-                conversation[index] = placeholder.copy(body = MessageBody.Notice("已停止"))
-            }
-            appendArtifacts(conversation, index + 1, generatedArtifacts)
+        } catch (cancelled: TurnCancelledException) {
+            slot.onCancelled(cancelled) { c, pos, arts -> appendArtifacts(c, pos, arts) }
             persistState()
-            throw cancelled
+            throw cancelled.cause
         } finally {
             busy[agentId] = false
         }
 
-        when (outcome) {
+        when (val outcome = turnResult.outcome) {
             is LoopOutcome.Failed -> {
-                conversation[index] = placeholder.copy(
-                    body = MessageBody.Notice(outcome.message, isError = true),
-                )
-                appendArtifacts(conversation, index + 1, generatedArtifacts)
+                slot.setNotice(outcome.message, isError = true)
+                appendArtifacts(conversation, slot.nextInsertionIndex, turnResult.artifacts)
                 persistState()
                 return
             }
             is LoopOutcome.Stopped -> {
-                // 上限停下：保留已经说出来的部分，再补一条说明。
-                // 两条路都必须就此收尾——空正文时下面那个 raw.isBlank() 会把刚写的
-                // "这个任务需要的步骤有点多"覆盖成「模型没有返回内容」，用户就看不到停下的原因了。
-                if (buffer.isEmpty()) {
-                    conversation[index] = placeholder.copy(body = MessageBody.Notice(outcome.reason))
+                if (turnResult.text.isEmpty()) {
+                    slot.setNotice(outcome.reason)
                 } else {
-                    conversation.add(notice(outcome.reason))
+                    slot.addNoticeAfter(outcome.reason)
                 }
-                appendArtifacts(conversation, index + 1, generatedArtifacts)
+                appendArtifacts(conversation, slot.nextInsertionIndex, turnResult.artifacts)
                 persistState()
                 return
             }
             is LoopOutcome.Done -> Unit
         }
 
-        val raw = outcome.let { if (it is LoopOutcome.Done) it.text else buffer.toString() }
-        if (raw.isBlank() && generatedArtifacts.isEmpty()) {
-            conversation[index] = placeholder.copy(
-                body = MessageBody.Notice("模型没有返回内容", isError = true),
-            )
+        val raw = turnResult.text
+        if (raw.isBlank() && turnResult.artifacts.isEmpty()) {
+            slot.setNotice("模型没有返回内容", isError = true)
             return
         }
 
@@ -1199,14 +1142,14 @@ class AppState(
         //（「以后每周一提醒我复盘」既可以建任务，也值得记住这个习惯）。
         val memory = MemoryBlock.extract(spoken)
         val answer = when {
-            memory == null && spoken.isBlank() && generatedArtifacts.isNotEmpty() ->
+            memory == null && spoken.isBlank() && turnResult.artifacts.isNotEmpty() ->
                 "已生成文件，见下方预览卡片。"
             memory == null -> spoken
             // 只回了一个记忆块、没有正文时补一句，否则气泡会是空的
             memory.remainingText.isBlank() -> "好的，我记下了。"
             else -> memory.remainingText
         }
-        conversation[index] = placeholder.copy(body = MessageBody.Text(answer))
+        slot.setReply(MessageBody.Text(answer))
 
         if (reply is ReplyOutcome.AsTask) {
             conversation.add(
@@ -1230,7 +1173,7 @@ class AppState(
         //
         //（这里堵的是**文本块**那条写记忆的路；模型改用 `remember` 工具写的那条，
         //  由 AppMemoryPort 读同一个标志来堵。两条读同一个来源，才是一道闸门。）
-        if (!externalFetchThisTurn) {
+        if (!turnResult.externalContextObserved) {
             memory?.items?.forEach { item ->
                 addMemory(agent.id, item.category, item.text)
                 conversation.add(
@@ -1244,7 +1187,7 @@ class AppState(
             }
         }
 
-        appendArtifacts(conversation, index + 1, generatedArtifacts)
+        appendArtifacts(conversation, slot.nextInsertionIndex, turnResult.artifacts)
 
         // 一轮回复结束才落盘：流式过程中每个字都写一次磁盘没有必要
         persistState()
@@ -1443,135 +1386,71 @@ class AppState(
             speakerAgentId = member.id,
             roundIndex = round,
         )
-        conversation.add(placeholder)
-        // 工具卡会插到回复占位之前，因此回复索引在首次调工具时会后移一格。
-        var index = conversation.lastIndex
+        val slot = TurnConversationSlot(
+            conversation = conversation,
+            placeholder = placeholder,
+            nextId = { nextId(it) },
+            speakerAgentId = member.id,
+            roundIndex = round,
+        )
+        slot.attach()
 
-        // 每位成员各有**一张自己的执行卡**（index 逐位各记一份）：成员是轮流发言的，
-        // 共用一张的话后一位的工具步骤会写进上一位那张卡里，看起来像一个人干的。
-        val stepCalls = mutableListOf<ToolCall>()
-        val stepResults = mutableListOf<ToolResult>()
-        val generatedArtifacts = mutableListOf<Artifact>()
-        var executionIndex = -1
-
-        // 与单聊、定时执行同一道闸门：这一轮取过外部网页就不写记忆。
-        var externalFetchThisTurn = false
-
-        val buffer = StringBuilder()
-        var outcome: LoopOutcome
-        try {
-            val loop = AgentLoop(stream = stream)
-            val host = ToolHost(
-                memory = AppMemoryPort(this) { externalFetchThisTurn },
-                tasks = AppTaskPort(this),
-                web = webPort,
-                userInput = userInputPort,
-                files = AppFilePort(),
-                commands = platformCommandPort(),
-                search = AppSearchPort(),
-                skills = AppSkillPort(this) { externalFetchThisTurn },
-                browser = AppBrowserPort(webPort),
-                mcp = platformMcpManager(),
-                device = platformDevicePort(),
-                permissions = PermissionRequests,
-                executionPolicy = executionPolicy,
-                // 记忆与任务都是**按智能体**隔离的，所以是成员自己的 id，不是群 id——
-                // 用群 id 的话群里每个人会共享同一份记忆和任务清单，那显然是错的。
-                agentId = member.id,
-                // 会话键仍是群：这些消息本来就落在群里。
-                conversationKey = key,
-            )
-
-            outcome = loop.run(
+        val turnResult = try {
+            turnRunner.run(
                 endpoint = endpoint,
                 history = history.toMutableList(),
-                host = host,
                 registry = registryFor(member),
-                onText = { chunk ->
-                    buffer.append(chunk)
-                    conversation[index] = placeholder.copy(body = MessageBody.Text(buffer.toString()))
-                    speech?.append(chunk)
-                },
-                onRoundStarted = { speech?.boundary() },
-                onToolStart = { call ->
-                    stepCalls += call
-                    val steps = executionStepsFor(stepCalls, stepResults)
-                    if (executionIndex < 0) {
-                        // 工具卡必须位于这位成员的回复占位之前。
-                        conversation.add(
-                            index,
-                            ChatMessage(
-                                id = nextId("m"),
-                                author = Author.Agent,
-                                body = MessageBody.Execution(steps),
-                                timeLabel = "刚刚",
-                                // 卡片也要挂在这位成员名下，群里才看得出是谁在动手
-                                speakerAgentId = member.id,
-                                roundIndex = round,
-                            )
-                        )
-                        executionIndex = index
-                        index++
-                    } else {
-                        conversation[executionIndex] =
-                            conversation[executionIndex].copy(body = MessageBody.Execution(steps))
-                    }
-                },
-                onToolEnd = { _, result ->
-                    stepResults += result
-                    // 只累积（取或）：一轮里多个结果时"最后一个说了算"会把闸门重新打开
-                    if (result.externalContext) externalFetchThisTurn = true
-                    result.artifact?.takeUnless { result.isError }?.let(generatedArtifacts::add)
-                    if (executionIndex >= 0) {
-                        conversation[executionIndex] = conversation[executionIndex].copy(
-                            body = MessageBody.Execution(executionStepsFor(stepCalls, stepResults)),
-                        )
+                createHost = { isSuppressed -> createToolHost(member.id, key, isSuppressed) },
+                onEvent = { event ->
+                    when (event) {
+                        is TurnEvent.RoundStarted -> speech?.boundary()
+                        is TurnEvent.TextChunk -> {
+                            slot.onText(event.chunk)
+                            speech?.append(event.chunk)
+                        }
+                        is TurnEvent.StepsChanged -> slot.onSteps(event.steps)
+                        is TurnEvent.ArtifactProduced -> Unit
                     }
                 },
             )
-        } catch (cancelled: CancellationException) {
-            // 用户点了停止：已完成写入的文件仍作为产物交付，再往上抛以停止整场讨论
-            if (buffer.isEmpty()) {
-                conversation[index] = placeholder.copy(body = MessageBody.Notice("已停止"))
-            }
-            appendArtifacts(conversation, index + 1, generatedArtifacts, member.id, round)
-            throw cancelled
+        } catch (cancelled: TurnCancelledException) {
+            slot.onCancelled(cancelled) { c, pos, arts -> appendArtifacts(c, pos, arts, member.id, round) }
+            throw cancelled.cause
         }
 
-        when (outcome) {
+        when (val outcome = turnResult.outcome) {
             is LoopOutcome.Failed -> {
-                conversation[index] = placeholder.copy(body = MessageBody.Notice(outcome.message, isError = true))
-                appendArtifacts(conversation, index + 1, generatedArtifacts, member.id, round)
+                slot.setNotice(outcome.message, isError = true)
+                appendArtifacts(conversation, slot.nextInsertionIndex, turnResult.artifacts, member.id, round)
                 return
             }
             is LoopOutcome.Stopped -> {
-                // 上限停下：保留已经说出的部分，再补一条说明——与单聊一致
-                if (buffer.isEmpty()) {
-                    conversation[index] = placeholder.copy(body = MessageBody.Notice(outcome.reason))
+                if (turnResult.text.isEmpty()) {
+                    slot.setNotice(outcome.reason)
                 } else {
-                    conversation.add(notice(outcome.reason).copy(speakerAgentId = member.id, roundIndex = round))
+                    slot.addNoticeAfter(outcome.reason)
                 }
-                appendArtifacts(conversation, index + 1, generatedArtifacts, member.id, round)
+                appendArtifacts(conversation, slot.nextInsertionIndex, turnResult.artifacts, member.id, round)
                 return
             }
             is LoopOutcome.Done -> Unit
         }
 
-        val raw = outcome.let { if (it is LoopOutcome.Done) it.text else buffer.toString() }
-        if (raw.isBlank() && generatedArtifacts.isEmpty()) {
-            conversation[index] = placeholder.copy(body = MessageBody.Notice("模型没有返回内容", isError = true))
+        val raw = turnResult.text
+        if (raw.isBlank() && turnResult.artifacts.isEmpty()) {
+            slot.setNotice("模型没有返回内容", isError = true)
             return
         }
 
-        conversation[index] = if (raw.isBlank()) {
-            placeholder.copy(body = MessageBody.Text("已生成文件，见下方预览卡片。"))
+        if (raw.isBlank()) {
+            slot.setReply(MessageBody.Text("已生成文件，见下方预览卡片。"))
         } else {
             when (val resolved = resolveGroupReply(raw)) {
-                is GroupReplyOutcome.Speak -> placeholder.copy(body = MessageBody.Text(resolved.text))
-                is GroupReplyOutcome.Skip -> placeholder.copy(body = MessageBody.Skipped(resolved.reason))
+                is GroupReplyOutcome.Speak -> slot.setReply(MessageBody.Text(resolved.text))
+                is GroupReplyOutcome.Skip -> slot.setReply(MessageBody.Skipped(resolved.reason))
             }
         }
-        appendArtifacts(conversation, index + 1, generatedArtifacts, member.id, round)
+        appendArtifacts(conversation, slot.nextInsertionIndex, turnResult.artifacts, member.id, round)
     }
 
     private fun appendArtifacts(
@@ -1760,27 +1639,14 @@ class AppState(
         )
 
         val placeholder = ChatMessage(nextId("m"), Author.Agent, MessageBody.Text(""), "刚刚")
-        conversation.add(placeholder)
-        var index = conversation.lastIndex
-
-        // 执行卡片和 send() 一样是**一张会变的卡**：记下它在对话里的位置，
-        // 之后每有进展就重写那一条，而不是一步一个气泡。
-        val stepCalls = mutableListOf<ToolCall>()
-        val stepResults = mutableListOf<ToolResult>()
-        val generatedArtifacts = mutableListOf<Artifact>()
-        var executionIndex = -1
-
-        // 这一轮取过外部网页就不写记忆，与 send() 是同一道闸门：
-        // 任务跑着的时候抓回来的网页正文同样可能"教"模型写一条假记忆。
-        var externalFetchThisTurn = false
+        val slot = TurnConversationSlot(conversation, placeholder, { nextId(it) })
+        slot.attach()
 
         // 历史里不含刚加的这两条：Notice 和空文本都会被 historyFor 过滤掉
         val history = historyFor(task.agentId).toMutableList()
         history += LlmTurn(LlmRole.User, taskInstruction(task))
 
         busy[task.agentId] = true
-        val buffer = StringBuilder()
-        var outcome: LoopOutcome
 
         // 收尾：把这一期的结果写成"上次执行"的文案，并把期排到下一次。
         // 提前 return 的几条路都要经过它，否则任务会永远停在"到点"。
@@ -1797,109 +1663,56 @@ class AppState(
             reschedule(task, lastRun = stamp)
         }
 
-        try {
-            val loop = AgentLoop(stream = stream)
-            val host = ToolHost(
-                memory = AppMemoryPort(this) { externalFetchThisTurn },
-                tasks = AppTaskPort(this),
-                web = webPort,
-                userInput = userInputPort,
-                files = AppFilePort(),
-                commands = platformCommandPort(),
-                search = AppSearchPort(),
-                skills = AppSkillPort(this) { externalFetchThisTurn },
-                browser = AppBrowserPort(webPort),
-                mcp = platformMcpManager(),
-                device = platformDevicePort(),
-                permissions = PermissionRequests,
-                executionPolicy = executionPolicy,
-                agentId = task.agentId,
-                conversationKey = task.agentId,
-            )
-
-            outcome = loop.run(
+        val turnResult = try {
+            turnRunner.run(
                 endpoint = endpoint,
                 history = history,
-                host = host,
                 registry = registryFor(agent),
-                onText = { chunk ->
-                    buffer.append(chunk)
-                    conversation[index] = placeholder.copy(body = MessageBody.Text(buffer.toString()))
-                },
-                onToolStart = { call ->
-                    stepCalls += call
-                    val steps = executionStepsFor(stepCalls, stepResults)
-                    if (executionIndex < 0) {
-                        // 第一次调工具时才插卡片，别让纯任务叙述也顶一张空的
-                        // 回复占位已经先插入以承载流式文本；工具卡必须插到它前面，
-                        // 用户看到的顺序才是「工具执行 → 最终回复」。
-                        conversation.add(
-                            index,
-                            ChatMessage(
-                                id = nextId("m"),
-                                author = Author.Agent,
-                                body = MessageBody.Execution(steps),
-                                timeLabel = "刚刚",
-                            )
-                        )
-                        executionIndex = index
-                        index++
-                    } else {
-                        conversation[executionIndex] =
-                            conversation[executionIndex].copy(body = MessageBody.Execution(steps))
-                    }
-                },
-                onToolEnd = { _, result ->
-                    stepResults += result
-                    // 只累积（取或）：一轮里多个结果时"最后一个说了算"会把闸门重新打开
-                    if (result.externalContext) externalFetchThisTurn = true
-                    result.artifact?.takeUnless { result.isError }?.let(generatedArtifacts::add)
-                    if (executionIndex >= 0) {
-                        conversation[executionIndex] = conversation[executionIndex].copy(
-                            body = MessageBody.Execution(executionStepsFor(stepCalls, stepResults)),
-                        )
+                createHost = { isSuppressed -> createToolHost(task.agentId, task.agentId, isSuppressed) },
+                onEvent = { event ->
+                    when (event) {
+                        is TurnEvent.RoundStarted -> Unit
+                        is TurnEvent.TextChunk -> slot.onText(event.chunk)
+                        is TurnEvent.StepsChanged -> slot.onSteps(event.steps)
+                        is TurnEvent.ArtifactProduced -> Unit
                     }
                 },
             )
-        } catch (cancelled: CancellationException) {
-            if (buffer.isEmpty()) conversation[index] = placeholder.copy(body = MessageBody.Notice("已停止"))
-            appendArtifacts(conversation, index + 1, generatedArtifacts)
+        } catch (cancelled: TurnCancelledException) {
+            slot.onCancelled(cancelled) { c, pos, arts -> appendArtifacts(c, pos, arts) }
+            finish(ran = false)
             persistState()
-            throw cancelled
+            throw cancelled.cause
         } finally {
             busy[task.agentId] = false
         }
 
-        when (outcome) {
+        when (val outcome = turnResult.outcome) {
             is LoopOutcome.Failed -> {
-                conversation[index] = placeholder.copy(
-                    body = MessageBody.Notice(outcome.message, isError = true),
-                )
-                appendArtifacts(conversation, index + 1, generatedArtifacts)
-                finish(ran = false, artifactId = generatedArtifacts.lastOrNull()?.id)
+                slot.setNotice(outcome.message, isError = true)
+                appendArtifacts(conversation, slot.nextInsertionIndex, turnResult.artifacts)
+                finish(ran = false, artifactId = turnResult.artifacts.lastOrNull()?.id)
                 return
             }
             is LoopOutcome.Stopped -> {
                 // 上限停下：保留已经说出来的部分，再补一条说明——与 send() 一致
-                if (buffer.isEmpty()) {
-                    conversation[index] = placeholder.copy(body = MessageBody.Notice(outcome.reason))
+                if (turnResult.text.isEmpty()) {
+                    slot.setNotice(outcome.reason)
                 } else {
-                    conversation.add(notice(outcome.reason))
+                    slot.addNoticeAfter(outcome.reason)
                 }
                 // 撞上限**不算跑完**：lastRunLabel 得如实说"执行失败"，
                 // 否则用户会以为那次半截的结果是完整的（一次性任务还会因此被标成已完成）。
-                appendArtifacts(conversation, index + 1, generatedArtifacts)
-                finish(ran = false, artifactId = generatedArtifacts.lastOrNull()?.id)
+                appendArtifacts(conversation, slot.nextInsertionIndex, turnResult.artifacts)
+                finish(ran = false, artifactId = turnResult.artifacts.lastOrNull()?.id)
                 return
             }
             is LoopOutcome.Done -> Unit
         }
 
-        val raw = outcome.let { if (it is LoopOutcome.Done) it.text else buffer.toString() }
-        if (raw.isBlank() && generatedArtifacts.isEmpty()) {
-            conversation[index] = placeholder.copy(
-                body = MessageBody.Notice("模型没有返回内容", isError = true),
-            )
+        val raw = turnResult.text
+        if (raw.isBlank() && turnResult.artifacts.isEmpty()) {
+            slot.setNotice("模型没有返回内容", isError = true)
             finish(ran = false)
             return
         }
@@ -1911,9 +1724,9 @@ class AppState(
             is ReplyOutcome.AsTask -> reply.text
         }
         val finalText = spoken.ifBlank { "任务已生成文件，点击下方产物预览。" }
-        conversation[index] = placeholder.copy(body = MessageBody.Text(finalText))
-        appendArtifacts(conversation, index + 1, generatedArtifacts)
-        val latestArtifact = generatedArtifacts.lastOrNull()
+        slot.setReply(MessageBody.Text(finalText))
+        appendArtifacts(conversation, slot.nextInsertionIndex, turnResult.artifacts)
+        val latestArtifact = turnResult.artifacts.lastOrNull()
         finish(ran = true, result = finalText, artifactId = latestArtifact?.id)
         Notifiers.current.notify(
             id = task.id,
