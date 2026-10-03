@@ -24,8 +24,8 @@ class MainActivity : ComponentActivity() {
     private var eventSequence = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 这一端所有平台能力一次装齐：Context、本地存储、选图、保存、语音。
-        // **必须在 super.onCreate 之前**——选图、保存、录音、识别四样都要
+        // 只要 Context 的能力已由 StarAgentApplication 装好；这里装要绑 Activity 的那部分：
+        // 选图、保存、录音、识别、权限。**必须在 super.onCreate 之前**——它们都要
         // registerForActivityResult，那只有 Activity 初始化阶段能调。
         // 装了什么、为什么是这个顺序，都在 core:bootstrap 里。
         PlatformInstall.install(applicationContext, this)

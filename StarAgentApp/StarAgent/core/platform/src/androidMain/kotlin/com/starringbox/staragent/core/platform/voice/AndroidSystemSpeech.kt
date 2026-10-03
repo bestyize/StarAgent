@@ -113,6 +113,27 @@ class AndroidSystemTranscriber(
         }
     }
 
+    /**
+     * 被新实例替换时调用（Activity 重建）。
+     *
+     * 不能直接用 [cancel]：它会把结果清空。重建时如果正在听，`Voice` 手里还拿着这个旧实例，
+     * 用户再点结束就会走到这里的 [finish]——结果被清空的话它会一直等下去，
+     * `Voice` 也就一直卡在"正在识别上一段语音"。所以中断要作为一个结果留下来：
+     * 正在等的立刻收到，还没来取的下次 [finish] 取到。
+     */
+    fun release() {
+        settle(SpeechOutcome.Failed("识别已中断"))
+        pendingPermission?.invoke(false)
+        pendingPermission = null
+        main.post {
+            runCatching {
+                recognizer?.cancel()
+                recognizer?.destroy()
+            }
+            recognizer = null
+        }
+    }
+
     private fun settle(outcome: SpeechOutcome<String>) {
         val callback = waiting
         if (callback != null) {

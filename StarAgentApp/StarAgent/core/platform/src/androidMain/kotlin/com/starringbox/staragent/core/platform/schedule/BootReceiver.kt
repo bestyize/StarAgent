@@ -12,7 +12,8 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
         if (intent?.action != Intent.ACTION_BOOT_COMPLETED) return
         val pendingResult = goAsync()
-        CoroutineScope(Dispatchers.Default).launch {
+        // 主线程，理由同 TaskAlarmReceiver。
+        CoroutineScope(Dispatchers.Main.immediate).launch {
             try {
                 WakeupTrigger.fire()
             } finally {

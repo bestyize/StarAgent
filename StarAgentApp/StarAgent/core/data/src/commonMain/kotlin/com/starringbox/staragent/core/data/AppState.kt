@@ -87,6 +87,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.TimeZone
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -1650,7 +1652,7 @@ class AppState(
      * **没有平台后台调度**：App 关着的时候不会跑。关着期间刚好错过的那次，会在下次打开时补跑
      * ——补的是"一次"，不会把错过的每一天都补一遍。
      */
-    suspend fun runDueTasks() {
+    suspend fun runDueTasks() = dueTasksLock.withLock {
         scheduleUnplanned()
 
         val boundary = now().toEpochMilliseconds()
@@ -1661,6 +1663,14 @@ class AppState(
         // 串行跑：每个任务都是一次模型调用，并发发出去既没必要也更容易撞上同一个会话
         due.forEach { runTask(it) }
     }
+
+    /**
+     * 界面心跳和系统闹钟会各自调 [runDueTasks]。每一路都先拍一张到点快照再串行跑，
+     * [isBusy] 只挡得住正在跑的那个任务：快照里排在后面的任务被另一路跑完、排过期之后，
+     * 这一路轮到它时照样会再跑一遍。排队之后，后一路拍快照时前一路已经全部跑完排好。
+     * 复现见 TaskRunConcurrencyTest。
+     */
+    private val dueTasksLock = Mutex()
 
     /**
      * 计算当前所有活跃任务中，未来最早需要执行的唤醒时间戳（epoch 毫秒）。

@@ -34,11 +34,32 @@ import androidx.activity.result.ActivityResultCaller
  * **androidMain 依赖 compose.runtime 的唯一原因**，不是随手加的。
  */
 fun DeviceVoice.install(context: Context, caller: ActivityResultCaller) {
+    installProcess(context)
     Recorders.install(AndroidVoiceRecorder(context, caller))
-    Players.install(AndroidVoicePlayer(context))
-    PcmPlayers.install(AndroidPcmPlayer())
-    Voice.installDevice(
-        transcriber = AndroidSystemTranscriber(context, caller),
-        synthesizer = AndroidSystemSynthesizer(context),
-    )
+    // 识别器要注册权限回调，只能跟着 Activity 换；换之前先放掉旧的 SpeechRecognizer，
+    // 否则每次重建都留下一个绑着系统识别服务的实例。
+    deviceTranscriber?.release()
+    deviceTranscriber = AndroidSystemTranscriber(context, caller)
+    Voice.installDevice(transcriber = deviceTranscriber, synthesizer = deviceSynthesizer)
 }
+
+/**
+ * 只要 Context 的那几样，一个进程装一次（`Application.onCreate`），重复调用是空操作。
+ *
+ * 它们原先也跟着 Activity 每次重建：`TextToSpeech` 每次 new 一个、从不 shutdown，
+ * 旧引擎和它对系统 TTS 服务的绑定就一直泄漏；`PcmPlayers.install` 会关掉旧播放器，
+ * 旋转屏幕时正在流式朗读的那段会被直接掐断。
+ *
+ * 必须在主线程调用。
+ */
+fun DeviceVoice.installProcess(context: Context) {
+    if (deviceSynthesizer != null) return
+    val app = context.applicationContext
+    Players.install(AndroidVoicePlayer(app))
+    PcmPlayers.install(AndroidPcmPlayer())
+    deviceSynthesizer = AndroidSystemSynthesizer(app)
+    Voice.installDevice(transcriber = deviceTranscriber, synthesizer = deviceSynthesizer)
+}
+
+private var deviceSynthesizer: AndroidSystemSynthesizer? = null
+private var deviceTranscriber: AndroidSystemTranscriber? = null
