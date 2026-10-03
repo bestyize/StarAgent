@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.starringbox.staragent.core.data.AppState
+import com.starringbox.staragent.core.data.AppStates
 import com.starringbox.staragent.core.data.LocalAppState
 import com.starringbox.staragent.core.model.BuiltInCompanion
 import com.starringbox.staragent.core.designsystem.theme.avatarGradient
@@ -87,7 +88,7 @@ fun App(
     initialRoute: Route = Route.Agents,
 ) {
     StarAgentTheme {
-        val state = remember { appState ?: AppState() }
+        val state = remember { appState ?: AppStates.current() }
         val navigator = remember { Navigator(initialRoute) }
         val companionDark = (navigator.current == Route.Companion ||
             (navigator.current as? Route.Chat)?.agentId == BuiltInCompanion.ID) &&

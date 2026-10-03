@@ -9,7 +9,8 @@ package com.starringbox.staragent.core.bootstrap
  * ## 三端的签名
  *
  * ```
- * androidMain    fun PlatformInstall.install(context: Context, caller: ActivityResultCaller)
+ * androidMain    fun PlatformInstall.installProcess(context: Context)   // Application.onCreate
+ *                fun PlatformInstall.install(context: Context, caller: ActivityResultCaller)
  * jvmMain        fun PlatformInstall.install()
  * iosMain        fun PlatformInstall.install()
  * ```
