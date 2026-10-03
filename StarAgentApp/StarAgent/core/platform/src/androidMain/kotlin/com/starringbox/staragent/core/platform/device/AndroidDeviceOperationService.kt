@@ -40,7 +40,6 @@ class AndroidDeviceOperationService : Service() {
     private lateinit var windowManager: WindowManager
     private var foregroundStarted = false
     private var sessionActive = false
-    private var targetPackage: String? = null
     private var foregroundPackage: String? = null
     private var expanded = false
     private var isPaused = false
@@ -64,42 +63,48 @@ class AndroidDeviceOperationService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP_OPERATION) {
-            if (!foregroundStarted) {
-                stopSelf(startId)
-                return START_NOT_STICKY
-            }
+            // Android 8.0+ 要求 startForegroundService 后必须在超时前调用 startForeground，
+            // 否则会抛出 ForegroundServiceDidNotStartInTimeException 崩溃。无论早退还是停止均须履约。
+            ensureForeground()
             AndroidAccessibilityController.requestStopFromUser()
             hideOverlay()
             notificationText = "手机操作已停止，Agent 正在结束本轮。"
             notificationManager().notify(NOTIFICATION_ID, buildNotification())
+            stopForeground(false)
+            stopSelf(startId)
             return START_NOT_STICKY
         }
 
         if (finishRequestedBeforeStart) {
+            finishRequestedBeforeStart = false
+            ensureForeground()
+            stopForeground(true)
             stopSelf(startId)
             return START_NOT_STICKY
         }
-        finishRequestedBeforeStart = false
+
         sessionActive = true
         taskFinished = false
         isPaused = false
         expanded = false
         currentStatusText = "正在准备操作..."
-        intent?.getStringExtra(EXTRA_TARGET_PACKAGE)?.let { targetPackage = it }
         notificationText = if (canDrawOverlay()) {
             "星环正在操作手机。点击通知可返回星环。"
         } else {
             "悬浮窗未授权；操作期间可从通知返回星环。"
         }
 
+        ensureForeground()
+        notificationManager().notify(NOTIFICATION_ID, buildNotification())
+        updateOverlayForForeground()
+        return START_NOT_STICKY
+    }
+
+    private fun ensureForeground() {
         if (!foregroundStarted) {
             startForeground(NOTIFICATION_ID, buildNotification())
             foregroundStarted = true
-        } else {
-            notificationManager().notify(NOTIFICATION_ID, buildNotification())
         }
-        updateOverlayForForeground()
-        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
