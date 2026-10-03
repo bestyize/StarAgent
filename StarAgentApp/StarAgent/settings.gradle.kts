@@ -58,6 +58,8 @@ include(":core:designsystem")
 include(":core:platform")
 include(":core:speech-local")
 include(":core:llm")
+// llm-contracts 模型契约，运行时无需依赖 HTTP、语音或平台实现
+include(":core:llm-contracts")
 include(":core:data")
 // bootstrap    装配层：启动时把各端的平台能力一次装起来
 //              （各端实现在 core:platform 里，这里只管"什么时候装"）
@@ -66,6 +68,9 @@ include(":core:bootstrap")
 include(":core:tools")
 // agent-runtime 通用 Agent 运行时（无 Compose / UI 依赖）
 include(":core:agent-runtime")
+
+// 无头示例与依赖边界验证
+include(":samples:headless")
 
 // ── 公共层 ─────────────────────────────────────
 include(":common:apptheme")

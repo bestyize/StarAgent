@@ -59,6 +59,7 @@ data class TurnResult(
  */
 class TurnRunner(
     private val loop: AgentLoop,
+    private val describeTool: (ToolCall) -> String = { it.name },
 ) {
     suspend fun run(
         endpoint: LlmEndpoint,
@@ -88,7 +89,7 @@ class TurnRunner(
                 },
                 onToolStart = { call ->
                     stepCalls += call
-                    onEvent(TurnEvent.StepsChanged(executionStepsFor(stepCalls, stepResults)))
+                    onEvent(TurnEvent.StepsChanged(executionStepsFor(stepCalls, stepResults, describeTool)))
                 },
                 onToolEnd = { _, result ->
                     stepResults += result
@@ -97,7 +98,7 @@ class TurnRunner(
                         generatedArtifacts += it
                         onEvent(TurnEvent.ArtifactProduced(it))
                     }
-                    onEvent(TurnEvent.StepsChanged(executionStepsFor(stepCalls, stepResults)))
+                    onEvent(TurnEvent.StepsChanged(executionStepsFor(stepCalls, stepResults, describeTool)))
                 },
             )
         } catch (cancelled: CancellationException) {

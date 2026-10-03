@@ -6,7 +6,7 @@ import com.starringbox.staragent.core.model.ToolCall
 import com.starringbox.staragent.core.model.ToolDefinition
 import com.starringbox.staragent.core.model.ToolResult
 
-/** 一次请求所需的全部信息。由服务商配置 + 当前智能体选定的模型解析得到。 */
+/** 宿主请求模型所需的信息。契约独立于 HTTP 客户端、平台及异步运行时。 */
 data class LlmEndpoint(
     val protocol: LlmProtocol,
     val baseUrl: String,
@@ -38,8 +38,7 @@ data class LlmTurn(
 /**
  * 流式响应事件。
  *
- * 之所以做成事件流而不是直接返回字符串：界面需要在文字逐段到达时就渲染出来，
- * 用户第一时间看到它在说话，而不是等整段生成完再一次性出现。
+ * 宿主可以通过回调、Flow 或其他机制递交这些事件；事件类型本身不绑定运行时。
  */
 sealed interface ChatStreamEvent {
     data class Delta(val text: String) : ChatStreamEvent

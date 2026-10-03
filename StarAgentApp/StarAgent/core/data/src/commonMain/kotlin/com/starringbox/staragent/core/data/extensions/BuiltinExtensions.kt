@@ -1,13 +1,28 @@
 package com.starringbox.staragent.core.data.extensions
 
 import com.starringbox.staragent.core.data.MemoryBlock
+import com.starringbox.staragent.core.data.AppState
 import com.starringbox.staragent.core.data.TaskBlock
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.MemoryItem
 import com.starringbox.staragent.core.model.Skill
 import com.starringbox.staragent.core.runtime.extensions.AgentExtension
 import com.starringbox.staragent.core.tools.Tool
+import com.starringbox.staragent.core.tools.McpRegistry
 import com.starringbox.staragent.core.tools.builtin.*
+
+/** 移动产品的默认装配；其他宿主可独立选择扩展，或用此集合增减能力。 */
+fun builtinExtensions(state: AppState): List<AgentExtension> = listOf(
+    MemoryExtension(memoriesOf = { state.memoriesOf(it) }),
+    SkillExtension(installedSkills = { state.skills }),
+    DeviceExtension(),
+    TaskExtension(),
+    WebExtension(),
+    FileExtension(),
+    CommandExtension(),
+    UserInputExtension(),
+    McpExtension(),
+)
 
 /**
  * 记忆扩展：提供记忆回忆/记录工具，以及系统提示中关于用户的长期记忆注入。
@@ -169,9 +184,9 @@ class UserInputExtension : AgentExtension {
 class McpExtension : AgentExtension {
     override val id = "mcp"
 
-    override fun tools(agent: Agent): List<Tool> = listOf(
-        McpListServersTool,
-        McpConnectTool,
-        McpDisconnectTool,
-    )
+    override fun tools(agent: Agent): List<Tool> {
+        val connected = McpRegistry.registry()
+        return listOf(McpListServersTool, McpConnectTool, McpDisconnectTool) +
+            connected.definitions().map { requireNotNull(connected.find(it.name)) }
+    }
 }

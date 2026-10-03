@@ -461,6 +461,8 @@ object DeviceUseTool : Tool {
     }))
     override val requiresConfirmation = true
 
+    override fun confirmationRequired(args: JsonObject): Boolean = args.str("operation") != "list_apps"
+
     override suspend fun execute(args: JsonObject, host: ToolHost): ToolResult {
         val operation = args.str("operation") ?: return ToolResult("", "缺少 operation", true)
         val result = when (operation) {

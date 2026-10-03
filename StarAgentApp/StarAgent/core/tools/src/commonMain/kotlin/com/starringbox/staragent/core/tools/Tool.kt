@@ -29,6 +29,9 @@ interface Tool {
      */
     val requiresConfirmation: Boolean get() = false
 
+    /** 按参数声明本次操作是否有副作用；工具负责自身语义，运行时不按工具名特判。 */
+    fun confirmationRequired(args: JsonObject): Boolean = requiresConfirmation
+
     /**
      * 不论执行策略，每次都要用户确认。留给会留下长期影响的操作（安装、创建技能）：
      * 默认策略是 Auto，只靠 [requiresConfirmation] 的话，这类操作在默认设置下一次都不会问。

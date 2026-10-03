@@ -15,6 +15,7 @@ class ExecutionBlockTest {
         val steps = executionStepsFor(
             calls = listOf(ToolCall("c1", "web_fetch", "{\"url\":\"https://example.com\"}")),
             results = emptyList(),
+            labelFor = ::readableLabelFor,
         )
         assertEquals(1, steps.size)
         assertTrue(steps[0].label.isNotBlank())

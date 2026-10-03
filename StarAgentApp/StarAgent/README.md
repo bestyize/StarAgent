@@ -39,9 +39,11 @@ StarAgent/
 │   ├── platform/            平台能力层：本地存储 / 选图保存 / 语音
 │   │                        （内部分包，三端实现各在自己的源集里）
 │   ├── llm/                 模型接入：协议实现 + 流式解析 + 工具 wire 渲染（不依赖 Compose）
+│   ├── llm-contracts/       模型请求、对话、响应事件（没有网络或平台实现）
+│   ├── agent-runtime/       无 I/O 循环规则、Kotlin 执行宿主与扩展装配
 │   ├── speech-local/        SenseVoice / Piper / Silero 离线语音与模型管理
 │   ├── tools/               工具执行层：契约、注册表、内置工具（只依赖 core:model）
-│   ├── data/                应用状态、模型服务配置、对话流、Agent 循环
+│   ├── data/                应用状态、模型服务配置、对话流、移动产品装配与展示
 │   └── bootstrap/           装配层：启动时把各端的平台能力一次装起来
 │
 ├── feature/                 功能层：一个模块 = 一块完整功能
@@ -95,6 +97,16 @@ StarAgent/
 ---
 
 ## 平台相关代码
+
+通用执行核心已支持独立运行。`AgentLoopMachine` 处理状态推进，`AgentLoop` 是
+Kotlin 协程宿主，扩展通过 `AgentExtensions` 或 `AppState(extensionFactory = ...)`
+显式装配。运行时只依赖模型契约、工具和领域模型，无头示例不携带 Compose、网络
+或平台实现，见 [samples/headless](samples/headless/README.md)：
+
+```powershell
+.\gradlew.bat :samples:headless:run
+.\gradlew.bat :core:agent-runtime:jvmTest
+```
 
 按平台实现的代码集中在 `core:platform` 里；各端入口**只负责把它们装起来**：
 

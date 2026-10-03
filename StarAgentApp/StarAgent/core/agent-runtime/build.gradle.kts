@@ -7,9 +7,9 @@ plugins {
 
 /**
  * 通用 Agent 运行时（无 Compose 依赖、无 Android UI 绑定）：
- * 包含 AgentLoop 迭代循环、TurnRunner 通用编排器、AgentExtension 扩展标准与事件流。
+ * 包含无 I/O 的 AgentLoopMachine、Kotlin 执行宿主、TurnRunner 与扩展装配。
  *
- * 纯 Kotlin 逻辑，可独立在控制台（CLI）、服务端、桌面或移动端复用。
+ * 只依赖模型契约、工具及领域模型，不携带 HTTP、音频或平台实现。
  */
 kotlin {
     jvm()
@@ -29,7 +29,7 @@ kotlin {
         commonMain.dependencies {
             api(project(":core:model"))
             api(project(":core:tools"))
-            api(project(":core:llm"))
+            api(project(":core:llm-contracts"))
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
         }

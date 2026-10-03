@@ -1,0 +1,58 @@
+{
+  "format": 1,
+  "cases": [
+    {
+      "id": "plain-reply",
+      "max_iterations": 3,
+      "initial_text": "hello",
+      "events": [{ "type": "model", "text": "hi" }],
+      "expected": { "trace": ["model:1", "done:hi"], "iterations": 1, "roles": ["user"], "result_call_ids": [] }
+    },
+    {
+      "id": "tools-then-reply",
+      "max_iterations": 3,
+      "initial_text": "calculate",
+      "events": [
+        { "type": "model", "text": "working", "calls": [{ "id": "a", "name": "add", "arguments": "{}" }] },
+        { "type": "tools", "results": [{ "call_id": "a", "content": "42" }] },
+        { "type": "model", "text": "42" }
+      ],
+      "expected": { "trace": ["model:1", "tools:a", "model:3", "done:42"], "iterations": 2, "roles": ["user", "assistant", "user"], "result_call_ids": ["a"] }
+    },
+    {
+      "id": "results-arrive-in-reverse-order",
+      "max_iterations": 3,
+      "initial_text": "two tools",
+      "events": [
+        { "type": "model", "text": "", "calls": [{ "id": "a", "name": "first", "arguments": "{}" }, { "id": "b", "name": "second", "arguments": "{}" }] },
+        { "type": "tools", "results": [{ "call_id": "b", "content": "second" }, { "call_id": "a", "content": "first" }] },
+        { "type": "model", "text": "done" }
+      ],
+      "expected": { "trace": ["model:1", "tools:a,b", "model:3", "done:done"], "iterations": 2, "roles": ["user", "assistant", "user"], "result_call_ids": ["a", "b"] }
+    },
+    {
+      "id": "budget-exhausted-after-tools",
+      "max_iterations": 1,
+      "initial_text": "work",
+      "events": [
+        { "type": "model", "text": "", "calls": [{ "id": "a", "name": "write", "arguments": "{}" }] },
+        { "type": "tools", "results": [{ "call_id": "a", "content": "written" }] }
+      ],
+      "expected": { "trace": ["model:1", "tools:a", "limit"], "iterations": 1, "roles": ["user", "assistant", "user"], "result_call_ids": ["a"] }
+    },
+    {
+      "id": "failed-model-does-not-execute-tools",
+      "max_iterations": 3,
+      "initial_text": "work",
+      "events": [{ "type": "model", "text": "partial", "failure": "disconnected", "calls": [{ "id": "a", "name": "write", "arguments": "{}" }] }],
+      "expected": { "trace": ["model:1", "failed:disconnected"], "iterations": 1, "roles": ["user"], "result_call_ids": [] }
+    },
+    {
+      "id": "cancel-pending-model",
+      "max_iterations": 3,
+      "initial_text": "work",
+      "events": [{ "type": "cancel" }],
+      "expected": { "trace": ["model:1", "cancelled"], "iterations": 1, "roles": ["user"], "result_call_ids": [] }
+    }
+  ]
+}

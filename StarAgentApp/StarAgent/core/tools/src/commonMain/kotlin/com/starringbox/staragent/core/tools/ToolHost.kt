@@ -26,8 +26,8 @@ import com.starringbox.staragent.core.tools.ports.NoopSkillPort
 /**
  * 一次工具调用的现场。
  *
- * 工具**不能是单例**——记忆和任务都是按智能体隔离的，工具得知道是谁在调。
- * 端口本身是无状态的（方法都带 agentId），所以"是谁"放在这里而不是端口里。
+ * 工具可以是无状态单例；调用身份与执行现场在这里按轮次提供。
+ * 资源释放由宿主注入，运行时不直接调用具体设备端口的收尾方法。
  */
 class ToolHost(
     val memory: MemoryPort,
@@ -45,4 +45,5 @@ class ToolHost(
     val executionPolicy: ExecutionPolicy = ExecutionPolicy.Auto,
     val agentId: String,
     val conversationKey: String,
+    val onTurnFinished: suspend () -> Unit = {},
 )

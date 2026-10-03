@@ -76,7 +76,6 @@ import com.starringbox.staragent.core.model.ToolCall
 import com.starringbox.staragent.core.model.ToolResult
 import com.starringbox.staragent.core.tools.ToolHost
 import com.starringbox.staragent.core.tools.ToolRegistry
-import com.starringbox.staragent.core.tools.McpRegistry
 import com.starringbox.staragent.core.tools.builtin.BuiltinTools
 import com.starringbox.staragent.core.tools.ports.TaskSummary
 import com.starringbox.staragent.core.tools.ports.WebPort
@@ -110,6 +109,7 @@ import kotlin.time.Instant
  *
  * [stream] 是给测试留的缝：单测可以塞一个假的流实现，把整条编排链路变成可回归的，
  * 默认值就是真实实现，生产路径不受影响。
+ * [extensionFactory] 在恢复应用数据前组装扩展；访问会话或记忆的扩展应通过闭包延迟读取。
  *
  * [webPort] 同样是缝，而且**声明在 [stream] 之前**：Kotlin 的尾随 lambda 只绑最后一个参数，
  * `stream` 必须留在末位，`AppState { ... }` 这种现有写法才不会被迫改写。它留成参数是为了
@@ -118,6 +118,7 @@ import kotlin.time.Instant
  */
 class AppState(
     private val webPort: WebPort = AppWebPort(),
+    extensionFactory: (AppState) -> List<AgentExtension> = ::builtinExtensions,
     private val stream: (LlmEndpoint, List<LlmTurn>) -> Flow<ChatStreamEvent> = ChatCompletion::stream,
 ) {
 
@@ -133,17 +134,8 @@ class AppState(
     val companion: Agent get() = requireNotNull(agent(BuiltInCompanion.ID))
 
     /** 平台与业务扩展集合，各扩展独立声明工具与 Prompt 贡献。 */
-    val extensions: List<AgentExtension> = listOf(
-        MemoryExtension(memoriesOf = { memoriesOf(it) }),
-        SkillExtension(installedSkills = { skills }),
-        DeviceExtension(),
-        TaskExtension(),
-        WebExtension(),
-        FileExtension(),
-        CommandExtension(),
-        UserInputExtension(),
-        McpExtension(),
-    )
+    private val extensionSet = AgentExtensions(extensionFactory(this))
+    val extensions: List<AgentExtension> get() = extensionSet.installed
 
     var companionDarkMode by mutableStateOf<Boolean?>(null)
         private set
@@ -242,29 +234,39 @@ class AppState(
     private val persister: StatePersister? =
         if (LocalStores.available) StatePersister(LocalStores.current) else null
 
-    private val turnRunner = TurnRunner(AgentLoop(stream = stream))
+    private val turnRunner = TurnRunner(
+        AgentLoop(
+            stream = stream,
+            toolExecutor = DefaultToolCallExecutor(confirmation = UserInputToolConfirmation(::describeToolOperation)),
+        ),
+        describeTool = ::readableLabelFor,
+    )
 
     private fun createToolHost(
         agentId: String,
         conversationKey: String,
         isSuppressed: () -> Boolean,
-    ): ToolHost = ToolHost(
-        memory = AppMemoryPort(this, isSuppressed),
-        tasks = AppTaskPort(this),
-        web = webPort,
-        userInput = userInputPort,
-        files = AppFilePort(),
-        commands = platformCommandPort(),
-        search = AppSearchPort(),
-        skills = AppSkillPort(this, isSuppressed),
-        browser = AppBrowserPort(webPort),
-        mcp = platformMcpManager(),
-        device = platformDevicePort(),
-        permissions = PermissionRequests,
-        executionPolicy = executionPolicy,
-        agentId = agentId,
-        conversationKey = conversationKey,
-    )
+    ): ToolHost {
+        val device = platformDevicePort()
+        return ToolHost(
+            memory = AppMemoryPort(this, isSuppressed),
+            tasks = AppTaskPort(this),
+            web = webPort,
+            userInput = userInputPort,
+            files = AppFilePort(),
+            commands = platformCommandPort(),
+            search = AppSearchPort(),
+            skills = AppSkillPort(this, isSuppressed),
+            browser = AppBrowserPort(webPort),
+            mcp = platformMcpManager(),
+            device = device,
+            permissions = PermissionRequests,
+            executionPolicy = executionPolicy,
+            agentId = agentId,
+            conversationKey = conversationKey,
+            onTurnFinished = { device.finishOperationSession() },
+        )
+    }
 
     /**
      * 上次启动有几个文件没能用（坏掉的已经挪到 `backups/broken/`）。
@@ -898,11 +900,10 @@ class AppState(
 
     /**
      * 这个智能体能用哪些工具。由已注册的 [extensions] 按需提供，
-     * 并合并运行时动态连接的 [McpRegistry]。
+     * 动态连接的 MCP 工具也由 McpExtension 贡献，未装配该扩展时不暴露其工具。
      */
     internal fun registryFor(agent: Agent): ToolRegistry {
-        val tools = extensions.flatMap { it.tools(agent) }
-        return ToolRegistry.of(*tools.toTypedArray()) + McpRegistry.registry()
+        return extensionSet.registryFor(agent)
     }
 
     fun updateProvider(updated: ModelProvider) {
@@ -2065,10 +2066,8 @@ class AppState(
         )
 
         // 由各扩展独立向系统提示中注入其领域上下文（记忆列表、技能目录、设备操作规范等）
-        extensions.forEach { ext ->
-            ext.contributePrompt(agent, toolsAvailable)?.takeIf { it.isNotBlank() }?.let { section ->
-                append("\n\n").append(section.trim())
-            }
+        extensionSet.promptSections(agent, toolsAvailable).forEach { section ->
+            append("\n\n").append(section)
         }
     }
 

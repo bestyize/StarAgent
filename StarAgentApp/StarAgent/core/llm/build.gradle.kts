@@ -27,7 +27,7 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            api(project(":core:model"))
+            api(project(":core:llm-contracts"))
             implementation(project(":core:platform"))
             // 语音的模型后端在这一层：它要用同一套 HTTP 引擎和错误文案
             implementation(libs.ktor.client.core)

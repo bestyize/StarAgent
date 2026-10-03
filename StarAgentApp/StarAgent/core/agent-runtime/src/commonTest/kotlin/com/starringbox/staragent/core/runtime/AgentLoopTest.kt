@@ -1,6 +1,4 @@
-package com.starringbox.staragent.core.data
-
-import com.starringbox.staragent.core.runtime.*
+package com.starringbox.staragent.core.runtime
 
 import com.starringbox.staragent.core.llm.ChatStreamEvent
 import com.starringbox.staragent.core.llm.LlmEndpoint
@@ -519,4 +517,5 @@ private fun testHost(device: DevicePort = NoopDevicePort) = ToolHost(
     device = device,
     agentId = "a-xing",
     conversationKey = "agent:a-xing",
+    onTurnFinished = { device.finishOperationSession() },
 )
