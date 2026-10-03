@@ -13,6 +13,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.starringbox.staragent.core.data.speech.ReplySpeechSession
+import com.starringbox.staragent.core.data.extensions.*
 import com.starringbox.staragent.core.platform.voice.PcmPlayers
 
 import androidx.compose.runtime.getValue
@@ -128,6 +129,19 @@ class AppState(
     val userInputPort = AppUserInputPort(this)
     val companionVoice = CompanionVoiceSession(this)
     val companion: Agent get() = requireNotNull(agent(BuiltInCompanion.ID))
+
+    /** 平台与业务扩展集合，各扩展独立声明工具与 Prompt 贡献。 */
+    val extensions: List<AgentExtension> = listOf(
+        MemoryExtension(memoriesOf = { memoriesOf(it) }),
+        SkillExtension(installedSkills = { skills }),
+        DeviceExtension(),
+        TaskExtension(),
+        WebExtension(),
+        FileExtension(),
+        CommandExtension(),
+        UserInputExtension(),
+        McpExtension(),
+    )
 
     var companionDarkMode by mutableStateOf<Boolean?>(null)
         private set
@@ -881,21 +895,13 @@ class AppState(
     }
 
     /**
-     * 这个智能体能用哪些工具。
-     *
-     * 智能体的 [Agent.canScheduleTasks] 控制 `create_task` 是否注册（设计规范 §附表）：
-     * 关掉时（如陪练、学习类智能体）不给 `create_task`，彻底杜绝模型主动弹任务卡片。
-     *
-     * 其余三个任务工具（list_tasks / update_task / cancel_task）保留提供：
-     * 若该智能体过去曾建过任务，或用户在任务中心给它指派了任务，它仍需能够查看、调整或取消已有任务；
-     * 且这三个是被动响应式的，不会引起模型主动新建任务的误触发。
+     * 这个智能体能用哪些工具。由已注册的 [extensions] 按需提供，
+     * 并合并运行时动态连接的 [McpRegistry]。
      */
-    internal fun registryFor(agent: Agent): ToolRegistry =
-        if (agent.canScheduleTasks) {
-            BuiltinTools.all + McpRegistry.registry()
-        } else {
-            BuiltinTools.withoutTaskCreation + McpRegistry.registry()
-        }
+    internal fun registryFor(agent: Agent): ToolRegistry {
+        val tools = extensions.flatMap { it.tools(agent) }
+        return ToolRegistry.of(*tools.toTypedArray()) + McpRegistry.registry()
+    }
 
     fun updateProvider(updated: ModelProvider) {
         val index = providers.indexOfFirst { it.id == updated.id }
@@ -2056,62 +2062,11 @@ class AppState(
             }
         )
 
-        // 已经记住的事要回灌进来，否则"记住"就只是把它存进了某个用户看不见也问不着的地方。
-        // 取最近的若干条而不是全部：记忆会越攒越多，全塞进去既挤占上下文，
-        // 也会让早期的琐事一直压着近期的对话。
-        val known = memoriesOf(agent.id).take(MAX_PROMPT_MEMORIES)
-        if (known.isNotEmpty()) {
-            append("\n\n【你已经记得的关于他的事】")
-            known.forEach { append('\n').append("- ").append(it.text) }
-            append("\n自然地用上这些，不要刻意复述，也不要逐条罗列。")
-        }
-
-        // 技能每轮按当前安装状态重新拼：在设置里开关、或模型调 set_skill_enabled 之后，下一轮就生效。
-        // 渐进披露的第一层：发得出工具时只给目录（名字 + 简介），正文由模型按需调 use_skill 去取；
-        // 发不出工具时没有取的途径，只能把正文直接带上。标了 disable-model-invocation 的不进目录，
-        // 它们只在用户输入 /id 时生效（见 expandSkillInvocation）。
-        val listedSkills = skills.filter { it.installed && it.modelInvocable }
-        if (listedSkills.isNotEmpty()) {
-            append("\n\n【已启用的技能】")
-            listedSkills.forEach { skill ->
-                append('\n').append("- ").append(skill.name).append("（id=").append(skill.id).append("）：")
-                    .append(skill.summary.take(MAX_LISTED_SKILL_DESCRIPTION))
-                if (!toolsAvailable && skill.instructions.isNotBlank()) {
-                    append('\n').append(skill.instructions.take(MAX_INLINE_SKILL_CHARS).prependIndent("  "))
-                }
+        // 由各扩展独立向系统提示中注入其领域上下文（记忆列表、技能目录、设备操作规范等）
+        extensions.forEach { ext ->
+            ext.contributePrompt(agent, toolsAvailable)?.takeIf { it.isNotBlank() }?.let { section ->
+                append("\n\n").append(section.trim())
             }
-            if (toolsAvailable) {
-                append("\n用户的请求用得上其中某个技能时，先调用 use_skill 读取它的完整说明，再按说明去做；同一轮里读过的不必重复读。")
-            }
-        }
-        if (toolsAvailable) {
-            // Hermes 的"从经验里长技能"，但不放后台自己写：只是提醒模型可以提议，保存要经用户确认
-            append("\n如果你刚帮用户完成了一件步骤较多、以后很可能还会再做的事，可以提议用 create_skill 把做法沉淀成技能；保存前会请用户确认。")
-        }
-
-        if (toolsAvailable) {
-            append("\n\n【移动端设备操作与系统权限规范】")
-            append("\n当你需要在手机上操作应用（如点击、滑动、输入、查看界面）时：")
-            append("\n1. 若无障碍服务未开启或工具报错提示未连接，请先调用 request_permission(capability=\"accessibility\") 协助用户跳转到系统设置开启。用户开启返回后系统会自动接续，切勿盲目重复点击或空报失败。")
-            append("\n2. 启动第三方应用并进行跨应用屏幕操作时，悬浮窗权限（overlay）可在前台提供实时操作进度与控制胶囊。")
-        }
-
-        // 一期**无条件发工具**：单聊、群聊、定时执行三个调用点全传 true，没有"这家不支持就
-        // 退回文本块"的探测、也没有 400 重试。这意味着一个拒收 `tools` 字段的服务商会直接 400
-        // ——而被让出去的，正是下面这段"不发工具时靠 ```task / ```memory 兜底"的路。
-        //
-        // 所以这段**现在是死代码**：没有任何生产调用点传 false（Task 12 把最后一个
-        // ——runTask——也接进了工具循环）。它留着是给将来那条完整的降级路径用的
-        // （先发工具、被拒、再退回文本协议重试），那件事还没做；
-        // **别把这里当成已生效的兜底**，它今天一次都不会跑。测试里传 false 才能走到。
-        if (!toolsAvailable) {
-            // 记忆不跟着任务开关走——记忆是"认不认识你"，陪聊型智能体也该记得住。
-            if (agent.canScheduleTasks) {
-                append("\n\n")
-                append(TaskBlock.INSTRUCTION)
-            }
-            append("\n\n")
-            append(MemoryBlock.INSTRUCTION)
         }
     }
 
