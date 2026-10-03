@@ -6,6 +6,7 @@ import com.starringbox.staragent.core.model.Author
 import com.starringbox.staragent.core.model.ChatMessage
 import com.starringbox.staragent.core.model.ExecutionStep
 import com.starringbox.staragent.core.model.MessageBody
+import com.starringbox.staragent.core.runtime.TurnCancelledException
 
 /**
  * 管理单轮回复在对话消息列表中的呈现槽位。

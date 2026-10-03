@@ -5,6 +5,7 @@ import com.starringbox.staragent.core.data.TaskBlock
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.MemoryItem
 import com.starringbox.staragent.core.model.Skill
+import com.starringbox.staragent.core.runtime.extensions.AgentExtension
 import com.starringbox.staragent.core.tools.Tool
 import com.starringbox.staragent.core.tools.builtin.*
 

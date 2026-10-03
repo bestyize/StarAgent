@@ -31,6 +31,7 @@ kotlin {
         commonMain.dependencies {
             api(project(":core:model"))
             api(project(":core:llm"))
+            api(project(":core:agent-runtime"))
             implementation(project(":core:platform"))
             implementation(project(":core:speech-local"))
             // 实现 core:tools 的三个端口。core:tools 自己不认识 Ktor——

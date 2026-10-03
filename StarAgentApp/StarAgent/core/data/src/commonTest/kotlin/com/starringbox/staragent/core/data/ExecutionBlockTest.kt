@@ -2,6 +2,7 @@ package com.starringbox.staragent.core.data
 
 import com.starringbox.staragent.core.model.ToolCall
 import com.starringbox.staragent.core.model.ToolResult
+import com.starringbox.staragent.core.runtime.executionStepsFor
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

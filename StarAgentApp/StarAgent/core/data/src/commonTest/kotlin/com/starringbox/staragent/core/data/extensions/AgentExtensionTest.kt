@@ -4,6 +4,7 @@ import com.starringbox.staragent.core.data.AppState
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.ToolDefinition
 import com.starringbox.staragent.core.model.ToolResult
+import com.starringbox.staragent.core.runtime.extensions.AgentExtension
 import com.starringbox.staragent.core.tools.Tool
 import com.starringbox.staragent.core.tools.ToolHost
 import kotlinx.serialization.json.JsonObject

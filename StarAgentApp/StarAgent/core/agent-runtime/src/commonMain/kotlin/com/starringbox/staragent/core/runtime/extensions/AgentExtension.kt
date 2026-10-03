@@ -1,4 +1,4 @@
-package com.starringbox.staragent.core.data.extensions
+package com.starringbox.staragent.core.runtime.extensions
 
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.tools.Tool

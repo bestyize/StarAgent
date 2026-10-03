@@ -1,4 +1,4 @@
-package com.starringbox.staragent.core.data
+package com.starringbox.staragent.core.runtime
 
 import com.starringbox.staragent.core.llm.LlmEndpoint
 import com.starringbox.staragent.core.llm.LlmTurn
@@ -16,7 +16,7 @@ import kotlinx.coroutines.CancellationException
  * 界面层（卡片更新、流式文本显示）、语音层（流式 TTS）订阅这些事件，
  * 实现表现层与核心调度解耦。
  */
-internal sealed interface TurnEvent {
+sealed interface TurnEvent {
     /** 新一轮模型调用开始（用于流式语音打断分句/排队边界）。 */
     data object RoundStarted : TurnEvent
 
@@ -31,7 +31,7 @@ internal sealed interface TurnEvent {
 }
 
 /** 单轮 Agent 执行完毕的最终结果。 */
-internal data class TurnResult(
+data class TurnResult(
     val outcome: LoopOutcome,
     /** 累积接收到的文本（Done 时的完整回复文本，或截断时的已有文本）。 */
     val text: String,
@@ -57,7 +57,7 @@ internal data class TurnResult(
  *
  * 纯 Kotlin 逻辑，不依赖 Compose 状态，单聊、群聊、定时任务均复用此类。
  */
-internal class TurnRunner(
+class TurnRunner(
     private val loop: AgentLoop,
 ) {
     suspend fun run(

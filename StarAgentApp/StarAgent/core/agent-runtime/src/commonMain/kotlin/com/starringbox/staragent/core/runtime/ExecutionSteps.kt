@@ -1,19 +1,13 @@
-package com.starringbox.staragent.core.data
+package com.starringbox.staragent.core.runtime
 
 import com.starringbox.staragent.core.model.ExecutionStep
 import com.starringbox.staragent.core.model.ToolCall
 import com.starringbox.staragent.core.model.ToolResult
 
 /**
- * 把工具调用翻成用户看得懂的步骤。
- *
- * 界面上显示的必须是**在做什么**（"查资料"），不是工具的内部名字（"web_fetch"）。
- * 用户不关心我们内部把工具叫什么。
- *
- * 一期内置工具就那么几个，所以用一张表映射；表里没有的工具退回它的描述性名字，
- * 而不是空白——将来加工具忘了更新这张表，界面上也还是个能看的词。
+ * 把工具调用计算为用户可读的执行步骤。
  */
-internal fun executionStepsFor(
+fun executionStepsFor(
     calls: List<ToolCall>,
     results: List<ToolResult>,
 ): List<ExecutionStep> {
@@ -26,7 +20,7 @@ internal fun executionStepsFor(
     }
 }
 
-internal fun readableLabelFor(call: ToolCall): String = when (call.name) {
+fun readableLabelFor(call: ToolCall): String = when (call.name) {
     "recall_memory" -> "回忆关于你的事"
     "remember" -> "记住这件事"
     "create_task" -> "创建托管任务"
@@ -39,5 +33,12 @@ internal fun readableLabelFor(call: ToolCall): String = when (call.name) {
     "device_inspect" -> "查看手机当前界面"
     "device_use" -> "操作手机应用"
     "request_permission" -> "申请系统权限"
+    "list_skills" -> "查看可用技能"
+    "use_skill" -> "使用技能"
+    "read_skill_file" -> "读取技能资料"
+    "create_skill" -> "保存新技能"
+    "set_skill_enabled" -> "设置技能状态"
+    "install_skill" -> "安装技能"
+    "remove_skill" -> "卸载技能"
     else -> call.name
 }
