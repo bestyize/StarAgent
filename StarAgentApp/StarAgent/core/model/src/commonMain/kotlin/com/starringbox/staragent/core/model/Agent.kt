@@ -169,7 +169,15 @@ data class Channel(
     val connected: Boolean = false,
 )
 
-/** Skill：可插拔的能力单元。 */
+/**
+ * Skill：可插拔的能力单元，和 agentskills.io 开放规范（Claude / Codex / Hermes / OpenClaw 通用）同形。
+ *
+ * 渐进披露分三层：[summary] 每轮都随系统提示发给模型，让它知道有这个技能；[instructions]
+ * （SKILL.md 正文）只在模型调 `use_skill` 或用户输入 `/id` 时才读进上下文；技能目录里附带的
+ * 其他文件（references/、assets/…）再按需用 `read_skill_file` 读——技能一多，全塞进提示会挤掉对话本身。
+ *
+ * [id] 就是规范里的 `name`、也是目录名；[name] 是给人看的名字（规范外，存在 `metadata.display-name`）。
+ */
 @Serializable
 data class Skill(
     val id: String,
@@ -177,4 +185,23 @@ data class Skill(
     val summary: String,
     val glyph: String,
     val installed: Boolean = false,
+    val instructions: String = "",
+    val source: SkillSource = SkillSource.Imported,
+    /** 规范的 `disable-model-invocation` 取反。false 时不进技能目录，只能由用户 `/id` 调用。 */
+    val modelInvocable: Boolean = true,
+    /** Claude Code 的 `user-invocable`。false 时用户不能 `/id` 调用，只给模型用。 */
+    val userInvocable: Boolean = true,
+    /**
+     * 导入时的 SKILL.md 原文。非空时按原文落盘，`license`、`allowed-tools`、`metadata`
+     * 这些本 App 不认识的字段才不会在保存时丢掉；内置和智能体创建的技能为空，由字段重新生成。
+     */
+    val document: String = "",
 )
+
+/** 技能从哪来。决定能不能被智能体改写：只有 [Agent] 来源的才能。 */
+@Serializable
+enum class SkillSource(val label: String) {
+    BuiltIn("内置"),
+    Imported("导入"),
+    Agent("智能体创建"),
+}

@@ -29,12 +29,48 @@ data class SearchItem(val title: String, val url: String, val snippet: String)
 interface SkillPort {
     fun list(): List<SkillSummary>
     fun setInstalled(id: String, installed: Boolean): Boolean
+
+    /** [path] 可以是 SKILL.md、任意 .md 文件，或含 SKILL.md 的目录；目录里的其他文件随技能一起装。 */
     fun installFromFile(agentId: String, path: String): SkillInstallResult
-    fun remove(id: String): Boolean
+    fun remove(id: String): SkillInstallResult
+
+    /** 取一个技能的完整内容，包括没启用的；是否放行由调用方决定。找不到返回 null。 */
+    fun read(id: String): SkillDetail? = null
+
+    /** 读技能目录里附带的文件（references/、assets/ 等）。技能没启用或文件不存在返回 null。 */
+    fun readFile(id: String, path: String): String? = null
+
+    /** 智能体沉淀新技能，或改写它自己以前创建的技能。内置和导入的技能不能改。 */
+    fun create(draft: SkillDraft): SkillInstallResult = SkillInstallResult(false, message = "Skill 能力未安装")
 }
 data class SkillInstallResult(val ok: Boolean, val id: String? = null, val message: String)
 
-data class SkillSummary(val id: String, val name: String, val summary: String, val installed: Boolean)
+data class SkillSummary(
+    val id: String,
+    val name: String,
+    val summary: String,
+    val installed: Boolean,
+    val source: String = "",
+    val modelInvocable: Boolean = true,
+)
+
+data class SkillDetail(
+    val id: String,
+    val name: String,
+    val summary: String,
+    val installed: Boolean,
+    val instructions: String,
+    val modelInvocable: Boolean = true,
+    /** 技能目录里除 SKILL.md 以外的文件，相对技能目录的路径。 */
+    val resources: List<String> = emptyList(),
+)
+
+data class SkillDraft(
+    val id: String,
+    val name: String,
+    val description: String,
+    val instructions: String,
+)
 
 object NoopFilePort : FilePort {
     override fun list(agentId: String, path: String) = emptyList<FileEntry>()
@@ -53,7 +89,7 @@ object NoopSkillPort : SkillPort {
     override fun list() = emptyList<SkillSummary>()
     override fun setInstalled(id: String, installed: Boolean) = false
     override fun installFromFile(agentId: String, path: String) = SkillInstallResult(false, message = "Skill 能力未安装")
-    override fun remove(id: String) = false
+    override fun remove(id: String) = SkillInstallResult(false, message = "Skill 能力未安装")
 }
 
 /** MCP 调用结果。Transport 和配置由平台/数据层实现。 */

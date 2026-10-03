@@ -31,14 +31,17 @@ internal class MemoryStore : LocalStore {
     /** 现在存着哪些路径。断言"某棵子树没留下东西"时用。 */
     fun paths(): List<String> = (texts.keys + blobs.keys).sorted()
 
-    override fun readText(name: String): String? = texts[name]
+    // 真实存储（DesktopLocalStore 等）文本和字节是同一个文件，readText/readBytes 只是两种
+    // 读法；这里分两个 map 是为了单独数写入次数，但读的时候要退到另一个 map 去找，
+    // 否则 writeBytes 写的文件用 readText 读不出来——那是这份测试替身的事，不是真实存储的行为。
+    override fun readText(name: String): String? = texts[name] ?: blobs[name]?.decodeToString()
 
     override fun writeText(name: String, text: String) {
         textWrites++
         texts[name] = text
     }
 
-    override fun readBytes(name: String): ByteArray? = blobs[name]
+    override fun readBytes(name: String): ByteArray? = blobs[name] ?: texts[name]?.encodeToByteArray()
 
     override fun writeBytes(name: String, bytes: ByteArray) {
         byteWrites++

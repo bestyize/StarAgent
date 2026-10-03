@@ -245,6 +245,13 @@ fun CompanionScreen(navigator: Navigator) {
                 Text("已添加 ${attachments.size} 张图片 · 点击移除", color = colors.muted, fontSize = 12.sp,
                     modifier = Modifier.padding(horizontal = 26.dp).clickable { attachments = emptyList() })
             }
+            val skillMatches = remember(draft, state.skills) { skillSuggestions(draft, state.skills) }
+            if (skillMatches.isNotEmpty()) {
+                SkillSuggestionPicker(
+                    candidates = skillMatches,
+                    onPick = { skill -> draft = "/" + skill.id + " " },
+                )
+            }
             Row(
                 Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth()
                     .clip(RoundedCornerShape(30.dp)).background(colors.surface).padding(8.dp),

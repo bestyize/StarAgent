@@ -56,20 +56,28 @@ class ToolRegistryTest {
 
     @Test
     fun builtinToolsContainExtendedToolsAndWithoutTaskCreationExcludesCreateTask() {
-        assertEquals(28, BuiltinTools.all.definitions().size)
+        // 31/30：技能重做加了三个工具（use_skill、read_skill_file、create_skill），
+        // 两份清单各多三个（之前是 28/27）。
+        assertEquals(31, BuiltinTools.all.definitions().size)
         assertNotNull(BuiltinTools.all.find("create_task"))
         assertNotNull(BuiltinTools.all.find("create_artifact"))
         assertNotNull(BuiltinTools.all.find("web_fetch"))
         assertNotNull(BuiltinTools.all.find("request_user_input"))
         assertNotNull(BuiltinTools.all.find("request_permission"))
         assertNotNull(BuiltinTools.all.find("list_apps"))
+        assertNotNull(BuiltinTools.all.find("use_skill"))
+        assertNotNull(BuiltinTools.all.find("read_skill_file"))
+        assertNotNull(BuiltinTools.all.find("create_skill"))
 
-        assertEquals(27, BuiltinTools.withoutTaskCreation.definitions().size)
+        assertEquals(30, BuiltinTools.withoutTaskCreation.definitions().size)
         assertNull(BuiltinTools.withoutTaskCreation.find("create_task"))
         assertNotNull(BuiltinTools.withoutTaskCreation.find("create_artifact"))
         assertNotNull(BuiltinTools.withoutTaskCreation.find("list_tasks"))
         assertNotNull(BuiltinTools.withoutTaskCreation.find("request_user_input"))
         assertNotNull(BuiltinTools.withoutTaskCreation.find("request_permission"))
         assertNotNull(BuiltinTools.withoutTaskCreation.find("list_apps"))
+        assertNotNull(BuiltinTools.withoutTaskCreation.find("use_skill"))
+        assertNotNull(BuiltinTools.withoutTaskCreation.find("read_skill_file"))
+        assertNotNull(BuiltinTools.withoutTaskCreation.find("create_skill"))
     }
 }

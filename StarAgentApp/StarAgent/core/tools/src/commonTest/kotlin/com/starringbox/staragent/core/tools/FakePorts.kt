@@ -11,6 +11,8 @@ import com.starringbox.staragent.core.tools.ports.FetchResult
 import com.starringbox.staragent.core.tools.ports.MemoryPort
 import com.starringbox.staragent.core.tools.ports.PermissionPort
 import com.starringbox.staragent.core.tools.ports.NoopPermissionPort
+import com.starringbox.staragent.core.tools.ports.NoopSkillPort
+import com.starringbox.staragent.core.tools.ports.SkillPort
 import com.starringbox.staragent.core.tools.ports.TaskPort
 import com.starringbox.staragent.core.tools.ports.TaskSummary
 import com.starringbox.staragent.core.tools.ports.UserInputPort
@@ -168,12 +170,14 @@ fun testHost(
     executionPolicy: ExecutionPolicy = ExecutionPolicy.Auto,
     agentId: String = "a-xing",
     files: FilePort = NoopFilePort,
+    skills: SkillPort = NoopSkillPort,
 ) = ToolHost(
     memory = memory,
     tasks = tasks,
     web = web,
     userInput = userInput,
     files = files,
+    skills = skills,
     permissions = permissions,
     device = device,
     executionPolicy = executionPolicy,

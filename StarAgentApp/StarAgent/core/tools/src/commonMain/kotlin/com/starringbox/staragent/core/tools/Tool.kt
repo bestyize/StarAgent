@@ -29,5 +29,11 @@ interface Tool {
      */
     val requiresConfirmation: Boolean get() = false
 
+    /**
+     * 不论执行策略，每次都要用户确认。留给会留下长期影响的操作（安装、创建技能）：
+     * 默认策略是 Auto，只靠 [requiresConfirmation] 的话，这类操作在默认设置下一次都不会问。
+     */
+    val alwaysConfirm: Boolean get() = false
+
     suspend fun execute(args: JsonObject, host: ToolHost): ToolResult
 }
