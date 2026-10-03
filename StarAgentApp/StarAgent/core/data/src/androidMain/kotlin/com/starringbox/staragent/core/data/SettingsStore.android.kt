@@ -16,11 +16,27 @@ object AndroidAppContext {
 }
 
 actual object SettingsStore {
-    actual fun get(key: String): String? =
-        AndroidAppContext.preferences()?.getString(key, null)
+    actual fun get(key: String): String? {
+        val raw = AndroidAppContext.preferences()?.getString(key, null) ?: return null
+        return if (AndroidSecureStorage.isSensitive(key)) {
+            val decrypted = AndroidSecureStorage.decrypt(raw)
+            // 如果读取到历史明文，且加密成功产生新密文，透明升级写回
+            if (decrypted.isNotBlank() && !raw.startsWith("enc:v1:")) {
+                put(key, decrypted)
+            }
+            decrypted
+        } else {
+            raw
+        }
+    }
 
     actual fun put(key: String, value: String) {
-        AndroidAppContext.preferences()?.edit()?.putString(key, value)?.apply()
+        val storedValue = if (AndroidSecureStorage.isSensitive(key)) {
+            AndroidSecureStorage.encrypt(value)
+        } else {
+            value
+        }
+        AndroidAppContext.preferences()?.edit()?.putString(key, storedValue)?.apply()
     }
 
     actual fun remove(key: String) {
