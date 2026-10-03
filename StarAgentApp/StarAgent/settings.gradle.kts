@@ -64,6 +64,8 @@ include(":core:data")
 include(":core:bootstrap")
 // tools  工具执行：契约 + 注册表 + 内置工具（只依赖 core:model）
 include(":core:tools")
+// agent-runtime 通用 Agent 运行时（无 Compose / UI 依赖）
+include(":core:agent-runtime")
 
 // ── 公共层 ─────────────────────────────────────
 include(":common:apptheme")
