@@ -27,6 +27,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
+import com.starringbox.staragent.core.data.LocalAppState
 import com.starringbox.staragent.core.designsystem.component.AgentAvatar
 import com.starringbox.staragent.core.designsystem.component.CircleIconButton
 import com.starringbox.staragent.core.designsystem.icon.StarIcon
@@ -35,6 +37,7 @@ import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.model.MediaAsset
 import com.starringbox.staragent.core.model.Agent
+import com.starringbox.staragent.core.model.Skill
 
 /**
  * 输入坞：文字 / 语音 / 拍照三合一。
@@ -79,6 +82,8 @@ internal fun InputDock(
     // 只有图片、没有文字也要能发
     val canSend = enabled && !busy && (text.isNotBlank() || attachments.isNotEmpty())
     val openMention = remember(text, mentions) { openMention(text, mentions) }
+    val skills = LocalAppState.current.skills
+    val skillMatches = remember(text, skills) { skillSuggestions(text, skills) }
 
     Column(
         Modifier
@@ -99,6 +104,14 @@ internal fun InputDock(
                 onPick = { agent ->
                     text = text.substring(0, mention.start) + "@" + agent.name + " "
                 },
+            )
+        }
+
+        // 打 "/" 或 "$" 且还没敲空格时，在输入框上方列出能手动调用的技能。
+        if (openMention == null && skillMatches.isNotEmpty()) {
+            SkillSuggestionPicker(
+                candidates = skillMatches,
+                onPick = { skill -> text = "/" + skill.id + " " },
             )
         }
 
@@ -274,6 +287,62 @@ private fun PendingAttachments(attachments: List<MediaAsset>, onRemove: (MediaAs
                         strokeWidth = 2.6f,
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * 输入框以 "/" 或 "$" 开头、且还没敲出空格时，列出能手动调用的技能候选。
+ *
+ * 只匹配**已启用**且 `userInvocable` 的技能——没启用或模型专属的技能打 /id 也调不动，
+ * 列出来点了也没用，不如不显示。
+ */
+internal fun skillSuggestions(text: String, skills: List<Skill>): List<Skill> {
+    if (text.isEmpty() || (text[0] != '/' && text[0] != '$')) return emptyList()
+    val query = text.substring(1)
+    if (query.any { it == ' ' || it == '\n' }) return emptyList()
+
+    return skills
+        .filter { it.installed && it.userInvocable }
+        .filter { it.id.contains(query, ignoreCase = true) || it.name.contains(query, ignoreCase = true) }
+        .take(5)
+}
+
+/** 技能候选列表，和 [MentionPicker] 同样的点选式交互。 */
+@Composable
+internal fun SkillSuggestionPicker(candidates: List<Skill>, onPick: (Skill) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(StarPalette.SurfaceAlt)
+            .padding(vertical = 4.dp),
+    ) {
+        candidates.forEach { skill ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onPick(skill) }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = skill.glyph + " " + skill.name + "  /" + skill.id,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = StarPalette.Text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = skill.summary,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = StarPalette.TextFaint,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
     }

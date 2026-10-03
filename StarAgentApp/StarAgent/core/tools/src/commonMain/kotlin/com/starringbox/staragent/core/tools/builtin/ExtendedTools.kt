@@ -7,6 +7,7 @@ import com.starringbox.staragent.core.model.ToolResult
 import com.starringbox.staragent.core.tools.Tool
 import com.starringbox.staragent.core.tools.ToolHost
 import com.starringbox.staragent.core.tools.ports.DeviceScope
+import com.starringbox.staragent.core.tools.ports.SkillDraft
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -216,11 +217,13 @@ object CreateArtifactTool : Tool {
     }
 }
 
+/** 技能装进来就会被当成做事说明长期执行，所以不管执行策略是什么都要用户点头。 */
 object InstallSkillTool : Tool {
-    override val definition = ToolDefinition("install_skill", "从当前智能体文件沙箱中的 SKILL.md 安装一个本地 Skill。不会联网下载代码。", schema("path", properties = {
-        putJsonObject("path") { put("type", "string"); put("description", "SKILL.md 的相对路径") }
+    override val definition = ToolDefinition("install_skill", "从当前智能体文件沙箱安装一个 Skill（agentskills.io 格式，Claude / Codex 的技能可直接装）。path 可以是 SKILL.md、普通 .md 文件，或含 SKILL.md 的目录；目录里的 references/ 等文件会一起装上。不会联网下载代码。", schema("path", properties = {
+        putJsonObject("path") { put("type", "string"); put("description", "沙箱内的相对路径，例如 skills/pdf/SKILL.md 或 skills/pdf") }
     }))
     override val requiresConfirmation = true
+    override val alwaysConfirm = true
     override suspend fun execute(args: JsonObject, host: ToolHost): ToolResult {
         val path = safePath(args.str("path")) ?: return ToolResult("", "path 不安全或为空", true)
         val result = host.skills.installFromFile(host.agentId, path)
@@ -228,15 +231,63 @@ object InstallSkillTool : Tool {
     }
 }
 object RemoveSkillTool : Tool {
-    override val definition = ToolDefinition("remove_skill", "卸载一个已安装的 Skill。", schema("id", properties = {
+    override val definition = ToolDefinition("remove_skill", "删除一个导入或智能体创建的 Skill。内置技能不能删除，只能用 set_skill_enabled 停用。", schema("id", properties = {
         putJsonObject("id") { put("type", "string") }
     }))
     override val requiresConfirmation = true
     override suspend fun execute(args: JsonObject, host: ToolHost): ToolResult {
         val id = args.str("id") ?: return ToolResult("", "缺少 id", true)
-        val ok = host.skills.remove(id)
-        return ToolResult("", if (ok) "Skill 已卸载：$id" else "找不到可卸载的 Skill：$id", !ok)
+        val result = host.skills.remove(id)
+        return ToolResult("", result.message, !result.ok)
     }
+}
+
+/**
+ * 智能体把一套做法沉淀成技能（Hermes 的"从经验里学"）。
+ *
+ * 和 Hermes 不同，这里没有后台自己写的循环：只能在对话里由模型提出，[alwaysConfirm] 保证每次都经用户同意；
+ * 只能新建或改写智能体自己建的技能，碰不到内置和导入的；本轮读过网页等外部内容时端口直接拒绝。
+ */
+object CreateSkillTool : Tool {
+    override val definition = ToolDefinition(
+        "create_skill",
+        "把一套以后会重复用到的做法保存成技能，或改写一个你以前创建的技能。适合：刚完成一件步骤较多的事、用户说“以后都这样做”。保存前会请用户确认。不能修改内置或导入的技能。",
+        schema("id", "name", "description", "instructions", properties = {
+            putJsonObject("id") { put("type", "string"); put("description", "技能 id：小写字母、数字、连字符，如 weekly-report") }
+            putJsonObject("name") { put("type", "string"); put("description", "给用户看的名字，如“周报整理”") }
+            putJsonObject("description") { put("type", "string"); put("description", "一句话：做什么、什么时候用。模型靠它判断该不该用这个技能") }
+            putJsonObject("instructions") { put("type", "string"); put("description", "完整说明：分步骤写清怎么做、用哪些工具、注意什么。写成给另一个助手看的操作手册") }
+        }),
+    )
+    override val requiresConfirmation = true
+    override val alwaysConfirm = true
+    override suspend fun execute(args: JsonObject, host: ToolHost): ToolResult {
+        val draft = SkillDraft(
+            id = args.str("id").orEmpty(),
+            name = args.str("name").orEmpty(),
+            description = args.str("description").orEmpty(),
+            instructions = args.str("instructions").orEmpty(),
+        )
+        val result = host.skills.create(draft)
+        return ToolResult("", result.message, !result.ok)
+    }
+}
+
+/** 渐进披露的第三层：技能目录里附带的参考资料、模板，用到时才读。 */
+object ReadSkillFileTool : Tool {
+    override val definition = ToolDefinition("read_skill_file", "读取已启用技能目录里附带的文件（use_skill 的结果会列出有哪些）。", schema("id", "path", properties = {
+        putJsonObject("id") { put("type", "string"); put("description", "技能 id") }
+        putJsonObject("path") { put("type", "string"); put("description", "相对技能目录的路径，如 references/style.md") }
+    }))
+    override suspend fun execute(args: JsonObject, host: ToolHost): ToolResult {
+        val id = args.str("id")?.trim() ?: return ToolResult("", "缺少 id", true)
+        val path = safePath(args.str("path")) ?: return ToolResult("", "path 不安全或为空", true)
+        val text = host.skills.readFile(id, path)
+            ?: return ToolResult("", "读不到 $id/$path：技能不存在、未启用，或没有这个文件。", true)
+        return ToolResult("", text.take(MAX_SKILL_FILE_CHARS) + if (text.length > MAX_SKILL_FILE_CHARS) "\n…（已截断）" else "")
+    }
+
+    private const val MAX_SKILL_FILE_CHARS = 20_000
 }
 
 object WebSearchTool : Tool {
@@ -267,9 +318,39 @@ object RunCommandTool : Tool {
     }
 }
 object ListSkillsTool : Tool {
-    override val definition = ToolDefinition("list_skills", "列出可用 Skill 及其安装状态。", schema(properties = {}))
-    override suspend fun execute(args: JsonObject, host: ToolHost) = ToolResult("", host.skills.list().joinToString("\n") { "- ${it.name} [${if (it.installed) "已启用" else "未启用"}]：${it.summary}（id=${it.id}）" }.ifBlank { "暂无 Skill。" })
+    override val definition = ToolDefinition("list_skills", "列出所有 Skill 及其启用状态和来源。", schema(properties = {}))
+    override suspend fun execute(args: JsonObject, host: ToolHost) = ToolResult("", host.skills.list().joinToString("\n") {
+        val tags = listOfNotNull(
+            if (it.installed) "已启用" else "未启用",
+            it.source.takeIf { source -> source.isNotBlank() },
+            "仅用户手动调用".takeIf { _ -> !it.modelInvocable },
+        ).joinToString("，")
+        "- ${it.name} [$tags]：${it.summary}（id=${it.id}）"
+    }.ifBlank { "暂无 Skill。" })
 }
+/**
+ * 读取一个已启用技能的完整说明。系统提示里只放技能目录，正文要靠它取——
+ * 这样装再多技能，每轮的提示也只多几行。
+ *
+ * 未启用的技能不给读：用户在设置里关掉了，就不该再从这里绕回来生效。
+ */
+object UseSkillTool : Tool {
+    override val definition = ToolDefinition("use_skill", "读取一个已启用技能的完整说明。用户的请求用得上系统提示里列出的某个技能时，先调用它，再按说明执行。", schema("id", properties = {
+        putJsonObject("id") { put("type", "string"); put("description", "技能 id，见系统提示里的技能列表") }
+    }))
+    override suspend fun execute(args: JsonObject, host: ToolHost): ToolResult {
+        val id = args.str("id")?.trim() ?: return ToolResult("", "缺少 id", true)
+        val skill = host.skills.read(id) ?: return ToolResult("", "找不到技能：$id。可用的技能见 list_skills。", true)
+        if (!skill.installed) return ToolResult("", "技能「${skill.name}」未启用，不能使用。需要的话请用户先在设置里启用。", true)
+        // disable-model-invocation：作者的意思是"只在用户点名时用"，模型不能自己挑它
+        if (!skill.modelInvocable) return ToolResult("", "技能「${skill.name}」设为只能由用户手动调用（在消息开头输入 /${skill.id}），你不能自行使用。", true)
+        val body = skill.instructions.ifBlank { "这个技能没有额外说明，按简介去做即可：${skill.summary}" }
+        val resources = if (skill.resources.isEmpty()) "" else
+            "\n\n技能附带的文件（需要时用 read_skill_file 读取）：" + skill.resources.joinToString("、")
+        return ToolResult("", "【技能：${skill.name}】\n$body$resources")
+    }
+}
+
 object SetSkillInstalledTool : Tool {
     override val definition = ToolDefinition("set_skill_enabled", "安装或卸载一个已有 Skill。不会从网络下载未知代码。", schema("id", "installed", properties = {
         putJsonObject("id") { put("type", "string") }; putJsonObject("installed") { put("type", "boolean") }

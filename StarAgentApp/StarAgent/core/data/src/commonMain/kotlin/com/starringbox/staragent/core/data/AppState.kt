@@ -65,6 +65,7 @@ import com.starringbox.staragent.core.model.ModelProvider
 import com.starringbox.staragent.core.model.Recurrence
 import com.starringbox.staragent.core.model.ResponseMode
 import com.starringbox.staragent.core.model.Skill
+import com.starringbox.staragent.core.model.SkillSource
 import com.starringbox.staragent.core.model.SpeechProvider
 import com.starringbox.staragent.core.model.TaskDraft
 import com.starringbox.staragent.core.model.TaskStatus
@@ -257,7 +258,22 @@ class AppState(
             agents.addAll(saved.agents)
             tasks.addAll(saved.tasks)
             memories.addAll(saved.memories)
-            skills.addAll(saved.skills)
+            // 加技能正文之前的存档里，内置技能的 SKILL.md 只有 frontmatter：补上正文，否则老用户的
+            // 技能永远是空壳。只补空的——用户自己写过正文的不覆盖。
+            //
+            // 来源也在这里补：单文件 state.json 迁移过来的技能没有 source 字段，反序列化成了默认的
+            // Imported。真导入的技能一定带着原文（document），所以"Imported、没有原文、id 是内置的"
+            // 只可能是迁移来的内置技能。不改的话它会被当成导入技能按原文冻住，内置说明再也更新不到。
+            val backfilledSkills = saved.skills.map { skill ->
+                val builtIn = Seed.builtInSkillInstructions[skill.id]
+                var fixed = skill
+                if (builtIn != null && fixed.source == SkillSource.Imported && fixed.document.isBlank()) {
+                    fixed = fixed.copy(source = SkillSource.BuiltIn)
+                }
+                if (builtIn != null && fixed.instructions.isBlank()) fixed = fixed.copy(instructions = builtIn)
+                fixed
+            }
+            skills.addAll(backfilledSkills)
             channels.addAll(saved.channels)
             groups.addAll(saved.groups)
             var removedSeedMessages = false
@@ -270,7 +286,9 @@ class AppState(
 
             // 修过 id 或清掉旧种子消息就顺手落盘，否则这份存档每次启动都要再处理一遍。
             // 必须等上面填完再写——persistState 是从这些列表里取的，提前调会写出空存档。
-            if (saved != loaded.state || loaded.fromLegacyFile || removedSeedMessages) persistState()
+            if (saved != loaded.state || loaded.fromLegacyFile || removedSeedMessages || backfilledSkills != saved.skills) {
+                persistState()
+            }
         } else {
             Seed.populateDemo(this)
             // 首次运行立刻落盘：否则用户这次删的东西，下次启动又会被种子灌回来
@@ -1066,7 +1084,7 @@ class AppState(
                 files = AppFilePort(),
                 commands = platformCommandPort(),
                 search = AppSearchPort(),
-                skills = AppSkillPort(this),
+                skills = AppSkillPort(this) { externalFetchThisTurn },
                 browser = AppBrowserPort(webPort),
                 mcp = platformMcpManager(),
                 device = platformDevicePort(),
@@ -1078,7 +1096,7 @@ class AppState(
 
             outcome = loop.run(
                 endpoint = endpoint,
-                history = historyFor(agentId).toMutableList(),
+                history = withSkillInvocation(historyFor(agentId)),
                 host = host,
                 registry = registryFor(agent),
                 onText = { chunk ->
@@ -1415,7 +1433,7 @@ class AppState(
         }
 
         // 历史要在占位消息之前取，否则这句空发言会被带进上下文
-        val history = GroupTalk.historyFor(conversation, self = member, roster = roster)
+        val history = withSkillInvocation(GroupTalk.historyFor(conversation, self = member, roster = roster))
 
         val placeholder = ChatMessage(
             id = nextId("m"),
@@ -1451,7 +1469,7 @@ class AppState(
                 files = AppFilePort(),
                 commands = platformCommandPort(),
                 search = AppSearchPort(),
-                skills = AppSkillPort(this),
+                skills = AppSkillPort(this) { externalFetchThisTurn },
                 browser = AppBrowserPort(webPort),
                 mcp = platformMcpManager(),
                 device = platformDevicePort(),
@@ -1789,7 +1807,7 @@ class AppState(
                 files = AppFilePort(),
                 commands = platformCommandPort(),
                 search = AppSearchPort(),
-                skills = AppSkillPort(this),
+                skills = AppSkillPort(this) { externalFetchThisTurn },
                 browser = AppBrowserPort(webPort),
                 mcp = platformMcpManager(),
                 device = platformDevicePort(),
@@ -2104,8 +2122,63 @@ class AppState(
 
     fun removeSkill(skillId: String): Boolean {
         val removed = skills.removeAll { it.id == skillId }
-        if (removed) persistState()
+        if (removed) {
+            // SKILL.md 由落盘那一步删；随技能装进来的 references/ 等文件落盘不认识，要在这里清掉
+            if (LocalStores.available) {
+                LocalStores.current.list(StateTree.skillDir(skillId))
+                    .filterNot { it == StateTree.skillFile(skillId) }
+                    .forEach { LocalStores.current.delete(it) }
+            }
+            persistState()
+        }
         return removed
+    }
+
+    /** 新建或改写一个智能体创建的技能。来源检查在 AppSkillPort 里做，这里只管落地。 */
+    fun saveAgentSkill(skill: Skill) {
+        val index = skills.indexOfFirst { it.id == skill.id }
+        if (index >= 0) skills[index] = skill else skills.add(skill)
+        persistState()
+    }
+
+    /** 技能目录里除 SKILL.md 以外的文件（相对技能目录的路径），渐进披露的第三层。 */
+    fun skillResources(skillId: String): List<String> {
+        if (!LocalStores.available) return emptyList()
+        val dir = StateTree.skillDir(skillId)
+        return LocalStores.current.list(dir)
+            .filterNot { it == StateTree.skillFile(skillId) }
+            .map { it.removePrefix("$dir/") }
+            .sorted()
+    }
+
+    /**
+     * 用户在消息开头写 `/id`（Claude 的写法）或 `$id`（Codex 的写法）时，把那个技能的说明直接带进这一轮。
+     * 不是技能、没启用、或标了 `user-invocable: false` 的，原样返回 null——"/" 开头的普通句子照常发。
+     *
+     * 只展开发给模型的那一份，对话里显示的还是用户自己打的字。
+     */
+    internal fun expandSkillInvocation(text: String): String? {
+        val match = SKILL_INVOCATION.find(text.trimStart()) ?: return null
+        val skill = skills.firstOrNull { it.id == match.groupValues[1] && it.installed && it.userInvocable } ?: return null
+        val request = text.trimStart().substring(match.range.last + 1).trim()
+        return buildString {
+            append("【用户调用了技能「").append(skill.name).append("」（id=").append(skill.id).append("），按下面的说明处理这次请求】\n")
+            append(skill.instructions.ifBlank { skill.summary })
+            val resources = skillResources(skill.id)
+            if (resources.isNotEmpty()) {
+                append("\n\n技能附带的文件（需要时用 read_skill_file 读取）：").append(resources.joinToString("、"))
+            }
+            append("\n\n【用户的请求】\n")
+            append(request.ifBlank { "（用户没有补充说明。按技能说明开始；缺信息时先问用户。）" })
+        }
+    }
+
+    /** 把历史里最后一条用户发言的 `/id` 展开。更早的不展开：每轮都重复带一遍正文太费上下文，模型需要时会再调 use_skill。 */
+    private fun withSkillInvocation(history: List<LlmTurn>): MutableList<LlmTurn> {
+        val turns = history.toMutableList()
+        val last = turns.indexOfLast { it.role == LlmRole.User }
+        if (last >= 0) expandSkillInvocation(turns[last].text)?.let { turns[last] = turns[last].copy(text = it) }
+        return turns
     }
 
     fun toggleChannel(channelId: String) {
@@ -2178,6 +2251,29 @@ class AppState(
             append("\n\n【你已经记得的关于他的事】")
             known.forEach { append('\n').append("- ").append(it.text) }
             append("\n自然地用上这些，不要刻意复述，也不要逐条罗列。")
+        }
+
+        // 技能每轮按当前安装状态重新拼：在设置里开关、或模型调 set_skill_enabled 之后，下一轮就生效。
+        // 渐进披露的第一层：发得出工具时只给目录（名字 + 简介），正文由模型按需调 use_skill 去取；
+        // 发不出工具时没有取的途径，只能把正文直接带上。标了 disable-model-invocation 的不进目录，
+        // 它们只在用户输入 /id 时生效（见 expandSkillInvocation）。
+        val listedSkills = skills.filter { it.installed && it.modelInvocable }
+        if (listedSkills.isNotEmpty()) {
+            append("\n\n【已启用的技能】")
+            listedSkills.forEach { skill ->
+                append('\n').append("- ").append(skill.name).append("（id=").append(skill.id).append("）：")
+                    .append(skill.summary.take(MAX_LISTED_SKILL_DESCRIPTION))
+                if (!toolsAvailable && skill.instructions.isNotBlank()) {
+                    append('\n').append(skill.instructions.take(MAX_INLINE_SKILL_CHARS).prependIndent("  "))
+                }
+            }
+            if (toolsAvailable) {
+                append("\n用户的请求用得上其中某个技能时，先调用 use_skill 读取它的完整说明，再按说明去做；同一轮里读过的不必重复读。")
+            }
+        }
+        if (toolsAvailable) {
+            // Hermes 的"从经验里长技能"，但不放后台自己写：只是提醒模型可以提议，保存要经用户确认
+            append("\n如果你刚帮用户完成了一件步骤较多、以后很可能还会再做的事，可以提议用 create_skill 把做法沉淀成技能；保存前会请用户确认。")
         }
 
         if (toolsAvailable) {
@@ -2356,6 +2452,18 @@ class AppState(
          * 一直压着这两天的事——那反而不像"记得你"了。
          */
         const val MAX_PROMPT_MEMORIES = 20
+
+        /** 发不出工具时内联进提示的单个技能正文上限，防止一个超长的 SKILL.md 挤掉整段对话。 */
+        const val MAX_INLINE_SKILL_CHARS = 1_500
+
+        /**
+         * 目录里每个技能的简介上限。规范允许 1024 字，但目录每轮都发，技能一多就很可观；
+         * 简介只用来判断"该不该用"，细节在正文里。
+         */
+        const val MAX_LISTED_SKILL_DESCRIPTION = 200
+
+        /** `/id` 或 `$id` 开头，后面是空白或结束。id 放宽到旧版允许的字符，早先装的技能也能调。 */
+        private val SKILL_INVOCATION = Regex("""^[/$]([A-Za-z0-9._-]+)(?=\s|$)""")
 
         const val KEY_DEFAULT_MODEL = "defaultModel"
         const val KEY_RESPONSE_MODE = "responseMode"

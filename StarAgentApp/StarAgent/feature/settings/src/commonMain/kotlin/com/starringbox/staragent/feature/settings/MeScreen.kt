@@ -266,7 +266,7 @@ private fun SkillStoreModule(state: AppState, navigator: Navigator) {
             GridTile(
                 glyph = skill.glyph,
                 title = skill.name,
-                subtitle = if (skill.installed) "已安装" else "可安装",
+                subtitle = if (skill.installed) "已启用" else "未启用",
                 modifier = Modifier.weight(1f),
                 onClick = { navigator.push(Route.Skills) },
             )

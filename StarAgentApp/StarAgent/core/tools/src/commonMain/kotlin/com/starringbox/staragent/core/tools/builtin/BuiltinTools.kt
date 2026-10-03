@@ -19,7 +19,7 @@ object BuiltinTools {
         WebFetchTool,
         RequestUserInputTool,
         ListFilesTool, ReadFileTool, WriteFileTool, DeleteFileTool, CreateArtifactTool,
-        WebSearchTool, RunCommandTool, ListSkillsTool, SetSkillInstalledTool, InstallSkillTool, RemoveSkillTool, BrowserOpenTool, BrowserReadTool, McpListServersTool, McpConnectTool, McpDisconnectTool, DeviceInspectTool, DeviceUseTool, ListAppsTool, RequestPermissionTool,
+        WebSearchTool, RunCommandTool, ListSkillsTool, UseSkillTool, ReadSkillFileTool, SetSkillInstalledTool, InstallSkillTool, CreateSkillTool, RemoveSkillTool, BrowserOpenTool, BrowserReadTool, McpListServersTool, McpConnectTool, McpDisconnectTool, DeviceInspectTool, DeviceUseTool, ListAppsTool, RequestPermissionTool,
     )
 
     /**
@@ -37,6 +37,6 @@ object BuiltinTools {
         WebFetchTool,
         RequestUserInputTool,
         ListFilesTool, ReadFileTool, WriteFileTool, DeleteFileTool, CreateArtifactTool,
-        WebSearchTool, RunCommandTool, ListSkillsTool, SetSkillInstalledTool, InstallSkillTool, RemoveSkillTool, BrowserOpenTool, BrowserReadTool, McpListServersTool, McpConnectTool, McpDisconnectTool, DeviceInspectTool, DeviceUseTool, ListAppsTool, RequestPermissionTool,
+        WebSearchTool, RunCommandTool, ListSkillsTool, UseSkillTool, ReadSkillFileTool, SetSkillInstalledTool, InstallSkillTool, CreateSkillTool, RemoveSkillTool, BrowserOpenTool, BrowserReadTool, McpListServersTool, McpConnectTool, McpDisconnectTool, DeviceInspectTool, DeviceUseTool, ListAppsTool, RequestPermissionTool,
     )
 }

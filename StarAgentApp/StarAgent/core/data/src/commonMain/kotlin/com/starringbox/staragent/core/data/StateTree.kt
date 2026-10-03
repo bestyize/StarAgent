@@ -9,6 +9,7 @@ import com.starringbox.staragent.core.model.MediaAsset
 import com.starringbox.staragent.core.model.MemoryCategory
 import com.starringbox.staragent.core.model.MemoryItem
 import com.starringbox.staragent.core.model.Skill
+import com.starringbox.staragent.core.model.SkillSource
 import kotlinx.serialization.Serializable
 
 /**
@@ -25,7 +26,7 @@ import kotlinx.serialization.Serializable
  * │   ├── SOUL.md                人格正文（纯散文，用户手写）
  * │   ├── agent.json             名字/图标/配色/模型/技能/置顶/能否托管任务
  * │   └── MEMORY.md              记忆，按分类分节
- * ├── skills/<id>/SKILL.md       技能定义（frontmatter）
+ * ├── skills/<id>/SKILL.md       技能定义（agentskills.io 格式，同目录可附 references/ 等文件）
  * ├── groups/<id>.json
  * ├── sessions/agents/<id>.jsonl
  * ├── sessions/groups/<id>.jsonl
@@ -96,7 +97,8 @@ internal object StateTree {
     fun soulFile(agentId: String) = "$AGENTS/$agentId/SOUL.md"
     fun memoryFile(agentId: String) = "$AGENTS/$agentId/MEMORY.md"
 
-    fun skillFile(skillId: String) = "$SKILLS/$skillId/SKILL.md"
+    fun skillDir(skillId: String) = "$SKILLS/$skillId"
+    fun skillFile(skillId: String) = "${skillDir(skillId)}/SKILL.md"
     fun groupFile(groupId: String) = "$GROUPS/$groupId.json"
 
     /**
@@ -220,6 +222,11 @@ internal object StateTree {
     internal data class ConfigFile(
         val channels: List<Channel> = emptyList(),
         val installedSkills: List<String> = emptyList(),
+        /**
+         * 技能来源。和 installed 一样是这台设备上的事，不写进 SKILL.md：同一份技能分享出去，
+         * 不该带着"它是谁创建的"。缺省的按 id 推断：内置技能 id 是 BuiltIn，其余是 Imported。
+         */
+        val skillSources: Map<String, SkillSource> = emptyMap(),
     )
 
     /**
@@ -241,60 +248,7 @@ internal object StateTree {
         val groups: List<String> = emptyList(),
     )
 
-    /**
-     * 技能定义。写成 frontmatter + 正文留白的形状，和 Claude Code 的
-     * `.claude/skills/<name>/SKILL.md` 同形——将来要加 `scripts/`、`references/`
-     * 时不用改结构。正文暂时是空的（技能内容还只有这几行占位数据）。
-     *
-     * `installed` 不在这里：那是**这台设备上装没装**，是 App 的状态，
-     * 跟着 `config.json` 走。同一个 SKILL.md 分享给别人，不该把"我装过"也带过去。
-     */
-    internal data class SkillDoc(
-        val name: String,
-        val summary: String,
-        val glyph: String,
-    ) {
-        fun encode(): String = buildString {
-            append("---\n")
-            append("name: ").append(name).append('\n')
-            append("glyph: ").append(glyph).append('\n')
-            append("summary: ").append(summary).append('\n')
-            append("---\n")
-        }
-
-        companion object {
-            fun decode(text: String): SkillDoc? {
-                val fields = frontmatter(text) ?: return null
-                return SkillDoc(
-                    name = fields["name"] ?: return null,
-                    summary = fields["summary"].orEmpty(),
-                    glyph = fields["glyph"].orEmpty(),
-                )
-            }
-        }
-    }
-
-    /**
-     * 取 frontmatter 里的键值。没有 frontmatter 就返回 null。
-     *
-     * 值里可以有冒号（"文档处理：读写"是全角，但也可能有人写半角），
-     * 所以只按**第一个**冒号切。
-     */
-    internal fun frontmatter(text: String): Map<String, String>? {
-        val lines = text.lineSequence().toList()
-        if (lines.firstOrNull()?.trim() != "---") return null
-        val end = lines.drop(1).indexOfFirst { it.trim() == "---" }
-        if (end < 0) return null
-
-        val fields = mutableMapOf<String, String>()
-        lines.subList(1, end + 1).forEach { line ->
-            val colon = line.indexOf(':')
-            if (colon > 0) {
-                fields[line.substring(0, colon).trim()] = line.substring(colon + 1).trim()
-            }
-        }
-        return fields
-    }
+    // 技能（skills/<id>/SKILL.md）的格式见 SkillFormat。
 
     // ── MEMORY.md ───────────────────────────────
 

@@ -158,7 +158,9 @@ internal class AgentLoop(
             // 🔴 执行权限门控：如果当前策略是「按需（OnDemand）」且工具属于关键/有副作用操作（如建/改/取消任务），
             // 系统先原地向用户弹出提问卡片等待确认。用户允许后才真正执行；若用户拒绝或超时，操作直接取消。
             val isReadOnlyDeviceOp = call.name == "device_use" && (args["operation"] as? JsonPrimitive)?.content == "list_apps"
-            if (host.executionPolicy == ExecutionPolicy.OnDemand && tool.requiresConfirmation && !isReadOnlyDeviceOp) {
+            val needsConfirmation = tool.alwaysConfirm ||
+                (host.executionPolicy == ExecutionPolicy.OnDemand && tool.requiresConfirmation && !isReadOnlyDeviceOp)
+            if (needsConfirmation) {
                 val operationDesc = describeOperationForConfirmation(call, args)
                 val userChoice = withTimeoutOrNull(confirmationTimeoutMillis) {
                     host.userInput.requestInput(
@@ -232,6 +234,15 @@ internal class AgentLoop(
             "cancel_task" -> {
                 val id = (args["id"] as? JsonPrimitive)?.content
                 if (id != null) "取消托管任务 $id" else "取消托管任务"
+            }
+            "create_skill" -> {
+                val name = (args["name"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+                val description = (args["description"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+                "保存技能「${name ?: "未命名"}」${description?.let { "：$it" }.orEmpty()}"
+            }
+            "install_skill" -> {
+                val path = (args["path"] as? JsonPrimitive)?.content
+                if (path != null) "从 $path 安装技能" else "安装技能"
             }
             "device_use" -> {
                 val op = (args["operation"] as? JsonPrimitive)?.content

@@ -9,6 +9,7 @@ import com.starringbox.staragent.core.model.ChatMessage
 import com.starringbox.staragent.core.model.MemoryItem
 import com.starringbox.staragent.core.model.MessageBody
 import com.starringbox.staragent.core.model.Skill
+import com.starringbox.staragent.core.model.SkillSource
 import com.starringbox.staragent.core.platform.storage.LocalStore
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -142,11 +143,24 @@ internal class StatePersister(private val store: LocalStore) {
         }
 
         val skills = StateTree.entityIds(paths, "skills", "SKILL.md").mapNotNull { id ->
-            // SKILL.md 是 markdown 不是 JSON——它要能被别的工具读，所以按 frontmatter 解
             val text = store.readText(StateTree.skillFile(id)) ?: return@mapNotNull null
-            val doc = StateTree.SkillDoc.decode(text)
+            val doc = SkillFormat.parse(text)
                 ?: run { issues++; quarantine(StateTree.skillFile(id), text); return@mapNotNull null }
-            Skill(id, doc.name, doc.summary, doc.glyph, installed = id in installed)
+            val source = config.skillSources[id]
+                ?: if (id in Seed.builtInSkillInstructions) SkillSource.BuiltIn else SkillSource.Imported
+            Skill(
+                id = id,
+                name = doc.displayName ?: id,
+                summary = doc.description,
+                glyph = doc.glyph,
+                installed = id in installed,
+                instructions = doc.body,
+                source = source,
+                modelInvocable = doc.modelInvocable,
+                userInvocable = doc.userInvocable,
+                // 导入的技能按原文存回去，内置和智能体创建的由字段重新生成（见 Skill.document）
+                document = if (source == SkillSource.Imported) text else "",
+            )
         }
 
         val groups = StateTree.flatIds(paths, "groups", ".json").mapNotNull { id ->
@@ -211,6 +225,16 @@ internal class StatePersister(private val store: LocalStore) {
             }
 
         val restored = decoded.copy(
+            // 单文件存档里的技能没有 source 字段，反序列化出来一律是默认的 Imported。按读树时同样的规则补：
+            // 内置 id 是 BuiltIn；其余是 Imported，并补上原文——读树时导入技能的 document 就是 SKILL.md 原文，
+            // 不补的话迁移前后读出来的不是同一个技能。
+            skills = decoded.skills.map { skill ->
+                if (skill.id in Seed.builtInSkillInstructions) {
+                    skill.copy(source = SkillSource.BuiltIn, document = "")
+                } else {
+                    skill.copy(source = SkillSource.Imported, document = SkillFormat.encode(skill))
+                }
+            },
             conversations = decoded.conversations.mapValues { (_, messages) ->
                 messages.map { it.withMediaRestored(store) { asset -> StateTree.legacyMediaFile(asset.id) } }
             },
@@ -293,6 +317,7 @@ internal class StatePersister(private val store: LocalStore) {
             StateTree.ConfigFile(
                 channels = state.channels,
                 installedSkills = state.skills.filter { it.installed }.map { it.id },
+                skillSources = state.skills.associate { it.id to it.source },
             )
         )
 
@@ -316,7 +341,8 @@ internal class StatePersister(private val store: LocalStore) {
 
         state.skills.forEach { skill ->
             files[StateTree.skillFile(skill.id)] =
-                StateTree.SkillDoc(skill.name, skill.summary, skill.glyph).encode()
+                skill.document.takeIf { skill.source == SkillSource.Imported && it.isNotBlank() }
+                    ?: SkillFormat.encode(skill)
         }
 
         state.groups.forEach { group ->
