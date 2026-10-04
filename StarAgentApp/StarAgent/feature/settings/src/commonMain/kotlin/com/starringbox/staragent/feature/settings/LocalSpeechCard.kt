@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.starringbox.staragent.core.data.AppState
+import com.starringbox.staragent.core.data.speech.LocalModelState
 import com.starringbox.staragent.core.designsystem.component.StarCard
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import kotlinx.coroutines.launch
@@ -56,10 +57,10 @@ internal fun LocalSpeechCard(
                 LocalModelRow(
                     title = "SenseVoice 中英文识别 · 约 240 MB",
                     supported = state.speech.localAsrSupported,
-                    installed = state.speech.localAsrInstalled,
-                    busy = state.speech.localModelBusy,
+                    model = state.speech.localAsr,
                     onInstall = { scope.launch { state.speech.installLocalAsr() } },
                     onRemove = { scope.launch { state.speech.removeLocalAsr() } },
+                    onCancel = state.speech::cancelLocalAsrDownload,
                 )
             }
             if (showAsr && showTts) {
@@ -69,27 +70,11 @@ internal fun LocalSpeechCard(
                 LocalModelRow(
                     title = "Piper 中文超文音色 · 约 21 MB",
                     supported = state.speech.localTtsSupported,
-                    installed = state.speech.localTtsInstalled,
-                    busy = state.speech.localModelBusy,
+                    model = state.speech.localTts,
                     onInstall = { scope.launch { state.speech.installLocalTts() } },
                     onRemove = { scope.launch { state.speech.removeLocalTts() } },
+                    onCancel = state.speech::cancelLocalTtsDownload,
                 )
-            }
-            if (state.speech.localModelBusy) {
-                Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = state.speech.localModelProgress.ifBlank { "正在准备…" },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = StarPalette.TextMuted,
-                        modifier = Modifier.weight(1f),
-                    )
-                    ActionLabel("取消", enabled = true, onClick = state.speech::cancelLocalModelDownload)
-                }
-            }
-            state.speech.localModelError?.let { error ->
-                Spacer(Modifier.height(8.dp))
-                Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
         }
     }
@@ -99,31 +84,52 @@ internal fun LocalSpeechCard(
 private fun LocalModelRow(
     title: String,
     supported: Boolean,
-    installed: Boolean,
-    busy: Boolean,
+    model: LocalModelState,
     onInstall: () -> Unit,
     onRemove: () -> Unit,
+    onCancel: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
-            Text(
-                text = when {
-                    installed -> "已下载"
-                    supported -> "尚未下载"
-                    else -> "这台设备暂不支持"
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = StarPalette.TextFaint,
-            )
+    val installed = model.installed
+    val busy = model.busy
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
+                Text(
+                    text = when {
+                        installed -> "已下载"
+                        busy -> "下载中"
+                        supported -> "尚未下载"
+                        else -> "这台设备暂不支持"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = StarPalette.TextFaint,
+                )
+            }
+            when {
+                installed -> ActionLabel("删除", enabled = !busy, onClick = onRemove)
+                supported -> ActionLabel("下载", enabled = !busy, onClick = onInstall)
+            }
         }
-        when {
-            installed -> ActionLabel("删除", enabled = !busy, onClick = onRemove)
-            supported -> ActionLabel("下载", enabled = !busy, onClick = onInstall)
+        // 进度与错误只挂在这一行上，另一路下载时不会跟着一起闪。
+        if (busy) {
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = model.progress.ifBlank { "正在准备…" },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = StarPalette.TextMuted,
+                    modifier = Modifier.weight(1f),
+                )
+                ActionLabel("取消", enabled = true, onClick = onCancel)
+            }
+        }
+        model.error?.let { error ->
+            Spacer(Modifier.height(4.dp))
+            Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
     }
 }

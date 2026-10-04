@@ -63,17 +63,17 @@ class SpeechController {
         private set
     val localAsrSupported: Boolean get() = SenseVoiceAsr.supported()
     val localTtsSupported: Boolean get() = PiperTts.supported()
-    var localAsrInstalled by mutableStateOf(SenseVoiceAsr.installed())
-        private set
-    var localTtsInstalled by mutableStateOf(false)
-        private set
-    var localModelBusy by mutableStateOf(false)
-        private set
-    var localModelProgress by mutableStateOf("")
-        private set
-    var localModelError by mutableStateOf<String?>(null)
-        private set
-    private var localModelJob: Job? = null
+
+    /**
+     * 离线模型的下载状态。ASR 和 TTS 各自一套：
+     * 240MB 和 21MB 的下载互不影响，界面上也不会两个一起转圈。
+     */
+    val localAsr = LocalModelState(initialInstalled = SenseVoiceAsr.installed())
+    val localTts = LocalModelState(initialInstalled = false)
+
+    // 兼容入口：语音摘要等只关心"装没装"的调用方仍读这两个名字。
+    val localAsrInstalled: Boolean get() = localAsr.installed
+    val localTtsInstalled: Boolean get() = localTts.installed
     private var replySpeechSession: ReplySpeechSession? = null
     private var speechGeneration = 0L
     var speakingAgentId by mutableStateOf<String?>(null)
@@ -115,7 +115,7 @@ class SpeechController {
         // 结果这个选择在真机上一直是失效的。现在这边是唯一的真相。
         Voice.installPreference { voiceSource }
         PiperTts.prepareRuntime()
-        localTtsInstalled = PiperTts.installed()
+        localTts.installed = PiperTts.installed()
         Voice.installLocal(LocalTranscriber(), LocalSynthesizer())
         Voice.installSpeakingPreference { ttsVoiceSource }
         Voice.installStopHandler {
@@ -168,35 +168,41 @@ class SpeechController {
         SettingsStore.put(KEY_TTS_VOICE, ttsVoiceId.orEmpty())
     }
 
-    suspend fun installLocalAsr() = manageLocalModel { progress -> SenseVoiceAsr.install(progress) }
-    suspend fun installLocalTts() = manageLocalModel { progress -> PiperTts.install(progress) }
-    suspend fun removeLocalAsr() = manageLocalModel { _ -> cancelListening(); SenseVoiceAsr.remove() }
-    suspend fun removeLocalTts() = manageLocalModel { _ -> stopSpeaking(); PiperTts.remove() }
-    fun cancelLocalModelDownload() { localModelJob?.cancel() }
+    suspend fun installLocalAsr() = manageLocalModel(localAsr) { progress -> SenseVoiceAsr.install(progress) }
+    suspend fun installLocalTts() = manageLocalModel(localTts) { progress -> PiperTts.install(progress) }
+    suspend fun removeLocalAsr() = manageLocalModel(localAsr) { _ -> cancelListening(); SenseVoiceAsr.remove() }
+    suspend fun removeLocalTts() = manageLocalModel(localTts) { _ -> stopSpeaking(); PiperTts.remove() }
 
-    private suspend fun manageLocalModel(operation: suspend ((Long, Long) -> Unit) -> Unit) = coroutineScope {
-        if (localModelBusy) return@coroutineScope
-        localModelBusy = true
-        localModelError = null
-        localModelProgress = "准备中"
-        localModelJob = coroutineContext.job
+    fun cancelLocalAsrDownload() { localAsr.job?.cancel() }
+    fun cancelLocalTtsDownload() { localTts.job?.cancel() }
+
+    private suspend fun manageLocalModel(
+        state: LocalModelState,
+        operation: suspend ((Long, Long) -> Unit) -> Unit,
+    ) = coroutineScope {
+        if (state.busy) return@coroutineScope
+        state.busy = true
+        state.error = null
+        state.progress = "准备中"
+        state.job = coroutineContext.job
         try {
             operation { done, total ->
-                localModelProgress = if (total > 0) "${(done * 100 / total).coerceIn(0, 100)}%" else "准备中"
+                state.progress = if (total > 0) "${(done * 100 / total).coerceIn(0, 100)}%" else "准备中"
             }
-            localModelProgress = "完成"
+            state.progress = "完成"
         } catch (cancelled: CancellationException) {
-            localModelProgress = "已取消"
+            state.progress = "已取消"
             throw cancelled
         } catch (failure: Exception) {
-            localModelError = failure.message ?: "模型操作失败"
+            state.error = failure.message ?: "模型操作失败"
         } catch (failure: Throwable) {
-            localModelError = "离线运行库加载失败，请检查安装包"
+            state.error = "离线运行库加载失败，请检查安装包"
         } finally {
-            localAsrInstalled = SenseVoiceAsr.installed()
-            localTtsInstalled = PiperTts.installed()
-            localModelJob = null
-            localModelBusy = false
+            // 只刷这一个：另一路的安装状态跟这次操作无关，
+            // 一起刷会让"删 A 时 B 也一起变"这种错觉重新出现。
+            state.installed = if (state === localAsr) SenseVoiceAsr.installed() else PiperTts.installed()
+            state.job = null
+            state.busy = false
         }
     }
 
@@ -447,4 +453,19 @@ class SpeechController {
         const val KEY_TTS_PROVIDER = "ttsProvider"
         const val KEY_TTS_VOICE = "ttsVoice"
     }
+}
+
+/**
+ * 一个离线模型的下载状态。ASR 与 TTS 各持一份，互不干扰。
+ */
+class LocalModelState(initialInstalled: Boolean) {
+    var installed by mutableStateOf(initialInstalled)
+        internal set
+    var busy by mutableStateOf(false)
+        internal set
+    var progress by mutableStateOf("")
+        internal set
+    var error by mutableStateOf<String?>(null)
+        internal set
+    var job: Job? = null
 }

@@ -23,6 +23,13 @@ dependencies {
     debugImplementation(libs.compose.uiTooling)
 }
 
+// 测试签名：**上线前换成正式密钥**。仓库里放的是自签测试 keystore，
+// 密码写死在这里，方便任何人直接打出可安装的包。
+val releaseStoreFile = file("staragent-test.jks")
+val releaseStorePassword = "staragent-test"
+val releaseKeyAlias = "staragent"
+val releaseKeyPassword = "staragent-test"
+
 android {
     namespace = "com.starringbox.staragent"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -39,9 +46,22 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    signingConfigs {
+        create("release").apply {
+            storeFile = releaseStoreFile
+            storePassword = releaseStorePassword
+            keyAlias = releaseKeyAlias
+            keyPassword = releaseKeyPassword
+        }
+    }
     buildTypes {
+        // debug 和 release 都用同一把测试密钥，两个包可以互相覆盖安装。
+        debug {
+            signingConfig = signingConfigs.getByName("release")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
