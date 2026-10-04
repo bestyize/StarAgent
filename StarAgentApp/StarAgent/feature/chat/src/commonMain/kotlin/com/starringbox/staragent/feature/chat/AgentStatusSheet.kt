@@ -392,8 +392,8 @@ private fun SheetBody(agent: Agent, onPickModel: (String) -> Unit) {
             )
         }
         Switch(
-            checked = state.speakReplies,
-            onCheckedChange = { state.setReadingReplies(it) },
+            checked = state.speech.speakReplies,
+            onCheckedChange = { state.speech.setReadingReplies(it) },
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
                 checkedTrackColor = StarPalette.Indigo,
@@ -416,10 +416,10 @@ private fun SheetBody(agent: Agent, onPickModel: (String) -> Unit) {
             val enabled = when (source) {
                 VoiceSource.Device -> deviceInstalled
                 VoiceSource.Model -> modelReady
-                VoiceSource.Local -> state.localAsrSupported
+                VoiceSource.Local -> state.speech.localAsrSupported
                 null -> true
             }
-            val selected = state.voiceSource == source
+            val selected = state.speech.voiceSource == source
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -432,7 +432,7 @@ private fun SheetBody(agent: Agent, onPickModel: (String) -> Unit) {
                         }
                     )
                     .then(
-                        if (enabled) Modifier.clickable { state.selectVoiceSource(source) } else Modifier
+                        if (enabled) Modifier.clickable { state.speech.selectVoiceSource(source) } else Modifier
                     )
                     .padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center,
@@ -454,19 +454,19 @@ private fun SheetBody(agent: Agent, onPickModel: (String) -> Unit) {
         text = when {
             // 选中的那条其实用不了，先说这一条：它比下面那句笼统的"用不了语音"更具体，
             // 也直接说了该去哪修
-            state.voiceSource == VoiceSource.Model && !modelReady ->
+            state.speech.voiceSource == VoiceSource.Model && !modelReady ->
                 "云端识别还用不了：去「我的 → 语音」选一家服务商，并把它的 Key 填上。"
 
-            state.voiceSource == VoiceSource.Device && !deviceInstalled ->
+            state.speech.voiceSource == VoiceSource.Device && !deviceInstalled ->
                 "这台设备不支持系统识别，实际会走云端识别那一路。"
 
-            !state.canListen && !state.canSpeak ->
+            !state.speech.canListen && !state.speech.canSpeak ->
                 "现在还用不了语音：这台设备没有可用的识别与合成，也没配语音服务商。"
 
-            state.voiceSource == null ->
+            state.speech.voiceSource == null ->
                 "自动：优先用系统能力，它不要 Key 也不花钱；用不了时才走云端识别。"
 
-            else -> state.voiceSource?.hint.orEmpty()
+            else -> state.speech.voiceSource?.hint.orEmpty()
         },
         style = MaterialTheme.typography.bodySmall,
         color = StarPalette.TextFaint,
@@ -481,8 +481,8 @@ private fun SheetBody(agent: Agent, onPickModel: (String) -> Unit) {
  * 这里**不能写死"用设备自带"**——配了能合成的服务商之后那句话就是假的。
  */
 private fun readingEngineLabel(state: AppState): String {
-    val vendor = state.activeSpeechProvider()
-    val onCloud = vendor != null && vendor.canSynthesize && state.speechConfigured(vendor.id)
+    val vendor = state.speech.activeSpeechProvider()
+    val onCloud = vendor != null && vendor.canSynthesize && state.speech.speechConfigured(vendor.id)
     return if (onCloud) {
         "用 ${vendor.name} 的合成，按量计费"
     } else {

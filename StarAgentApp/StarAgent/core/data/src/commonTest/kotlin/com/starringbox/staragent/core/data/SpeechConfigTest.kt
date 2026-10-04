@@ -77,9 +77,9 @@ class SpeechConfigTest {
      *
      * **刻意不顺手选中它**：那会把"配好了但没选"和"配好了并且选着"混成一件事，
      * 而这两者的区别正是好几条用例要守的东西。选哪家由用例自己调
-     * [AppState.selectSpeechProvider] 说清楚。
+     * [SpeechController.selectSpeechProvider] 说清楚。
      */
-    private fun AppState.configureSpeech(id: String, key: String = "sk-speech") = setSpeechKey(id, key)
+    private fun AppState.configureSpeech(id: String, key: String = "sk-speech") = speech.setSpeechKey(id, key)
 
     // ── 预置 ────────────────────────────────────
 
@@ -89,11 +89,11 @@ class SpeechConfigTest {
 
         assertEquals(
             listOf("zhipu", "groq", "openai", "volc-ark", "mimo", "mimo-token-plan"),
-            state.speechProviders.map { it.id },
+            state.speech.speechProviders.map { it.id },
             "顺序是显式的：没选过时取第一家。新加一家要加在**末尾**，别动这个兜底",
         )
 
-        val groq = assertNotNull(state.speechProviders.firstOrNull { it.id == "groq" })
+        val groq = assertNotNull(state.speech.speechProviders.firstOrNull { it.id == "groq" })
         assertEquals("https://api.groq.com/openai/v1", groq.baseUrl)
         assertEquals("whisper-large-v3-turbo", groq.asrModel)
         assertNull(groq.ttsModel, "Groq 的合成模型没核实到，预置里应当留空而不是猜一个")
@@ -110,7 +110,7 @@ class SpeechConfigTest {
     fun everyOtherPresetIsOpenAiShaped() {
         val state = AppState()
 
-        state.speechProviders.filter { it.id !in setOf("volc-ark", "mimo", "mimo-token-plan") }.forEach { provider ->
+        state.speech.speechProviders.filter { it.id !in setOf("volc-ark", "mimo", "mimo-token-plan") }.forEach { provider ->
             assertEquals(
                 SpeechProtocol.OpenAi,
                 provider.protocol,
@@ -131,7 +131,7 @@ class SpeechConfigTest {
     @Test
     fun theArkPresetIsItsOwnProductLine() {
         val state = AppState()
-        val ark = assertNotNull(state.speechProviders.firstOrNull { it.id == "volc-ark" })
+        val ark = assertNotNull(state.speech.speechProviders.firstOrNull { it.id == "volc-ark" })
 
         assertEquals("https://openspeech.bytedance.com", ark.baseUrl, "语音在另一个域名上")
         assertEquals(SpeechProtocol.VolcArk, ark.protocol)
@@ -150,13 +150,13 @@ class SpeechConfigTest {
         val state = AppState()
 
         state.configureSpeech("volc-ark")
-        state.selectSpeechProvider("volc-ark")
-        assertEquals(SpeechProtocol.VolcArk, assertNotNull(state.asrEndpoint()).protocol)
-        assertEquals(SpeechProtocol.VolcArk, assertNotNull(state.ttsEndpoint()).protocol)
+        state.speech.selectSpeechProvider("volc-ark")
+        assertEquals(SpeechProtocol.VolcArk, assertNotNull(state.speech.asrEndpoint()).protocol)
+        assertEquals(SpeechProtocol.VolcArk, assertNotNull(state.speech.ttsEndpoint()).protocol)
 
         state.configureSpeech("openai")
-        state.selectSpeechProvider("openai")
-        assertEquals(SpeechProtocol.OpenAi, assertNotNull(state.asrEndpoint()).protocol)
+        state.speech.selectSpeechProvider("openai")
+        assertEquals(SpeechProtocol.OpenAi, assertNotNull(state.speech.asrEndpoint()).protocol)
     }
 
     /**
@@ -189,7 +189,7 @@ class SpeechConfigTest {
     @Test
     fun asrChoicesComeFromThePresetOnly() {
         val state = AppState()
-        val groq = assertNotNull(state.speechProviders.firstOrNull { it.id == "groq" })
+        val groq = assertNotNull(state.speech.speechProviders.firstOrNull { it.id == "groq" })
 
         assertEquals(
             listOf("whisper-large-v3-turbo", "whisper-large-v3"),
@@ -214,8 +214,8 @@ class SpeechConfigTest {
         state.configureChat("zhipu")
 
         assertTrue(state.providerById("zhipu")?.configured == true, "对话那边确实配好了")
-        assertTrue(state.speechKeyOf("zhipu").isBlank(), "语音这边不该跟着有 Key")
-        assertNull(state.asrEndpoint(), "对话的 Key 不该顺带把语音也配好")
+        assertTrue(state.speech.speechKeyOf("zhipu").isBlank(), "语音这边不该跟着有 Key")
+        assertNull(state.speech.asrEndpoint(), "对话的 Key 不该顺带把语音也配好")
     }
 
     @Test
@@ -223,7 +223,7 @@ class SpeechConfigTest {
         val state = AppState()
         state.configureSpeech("zhipu")
 
-        assertNotNull(state.asrEndpoint(), "语音这边配好了")
+        assertNotNull(state.speech.asrEndpoint(), "语音这边配好了")
         assertTrue(
             state.providerById("zhipu")?.configured == false,
             "对话那边不该被语音的 Key 顶成已配置",
@@ -239,39 +239,39 @@ class SpeechConfigTest {
         state.configureSpeech("groq")
 
         // 没选过时取第一家——这里的"第一"是预置清单的顺序，不是 providers 的插入顺序
-        assertEquals("glm-asr-2512", state.asrEndpoint()?.asrModel)
+        assertEquals("glm-asr-2512", state.speech.asrEndpoint()?.asrModel)
 
-        state.selectSpeechProvider("groq")
+        state.speech.selectSpeechProvider("groq")
 
-        assertEquals("whisper-large-v3-turbo", state.asrEndpoint()?.asrModel)
-        assertEquals("https://api.groq.com/openai/v1", state.asrEndpoint()?.baseUrl)
+        assertEquals("whisper-large-v3-turbo", state.speech.asrEndpoint()?.asrModel)
+        assertEquals("https://api.groq.com/openai/v1", state.speech.asrEndpoint()?.baseUrl)
     }
 
     @Test
     fun modelChoiceIsRememberedAndScopedToItsProvider() {
         val state = AppState()
         state.configureSpeech("groq")
-        state.selectSpeechProvider("groq")
-        state.selectAsrModel("whisper-large-v3")
+        state.speech.selectSpeechProvider("groq")
+        state.speech.selectAsrModel("whisper-large-v3")
 
-        assertEquals("whisper-large-v3", state.asrEndpoint()?.asrModel)
+        assertEquals("whisper-large-v3", state.speech.asrEndpoint()?.asrModel)
 
         // 选了一个这家没有的模型，退回预设而不是发一个 404 出去
-        state.selectAsrModel("distil-whisper-large-v3-en")
+        state.speech.selectAsrModel("distil-whisper-large-v3-en")
         assertEquals(
             "whisper-large-v3-turbo",
-            state.asrEndpoint()?.asrModel,
+            state.speech.asrEndpoint()?.asrModel,
             "候选里没有的模型应当退回预设",
         )
-        state.selectAsrModel("whisper-large-v3")
+        state.speech.selectAsrModel("whisper-large-v3")
 
         // 换家要把模型选择清掉：模型名是跟着服务商的，
         // whisper-large-v3 拿到智谱去就是个不存在的模型
         state.configureSpeech("zhipu")
-        state.selectSpeechProvider("zhipu")
+        state.speech.selectSpeechProvider("zhipu")
 
-        assertNull(state.asrModelId, "换服务商应当清掉上一家的模型选择")
-        assertEquals("glm-asr-2512", state.asrEndpoint()?.asrModel)
+        assertNull(state.speech.asrModelId, "换服务商应当清掉上一家的模型选择")
+        assertEquals("glm-asr-2512", state.speech.asrEndpoint()?.asrModel)
     }
 
     @Test
@@ -279,11 +279,11 @@ class SpeechConfigTest {
         val state = AppState()
         state.configureSpeech("zhipu")
         // 上一版存下来的可能是某个对话服务商的 id，或者一家已经删掉的
-        state.selectSpeechProvider("gone")
+        state.speech.selectSpeechProvider("gone")
 
         assertEquals(
             "glm-asr-2512",
-            state.asrEndpoint()?.asrModel,
+            state.speech.asrEndpoint()?.asrModel,
             "设置项失效应当退回第一家，而不是让语音直接哑掉",
         )
     }
@@ -291,9 +291,9 @@ class SpeechConfigTest {
     @Test
     fun withoutAnyKeyThereIsNoAsrEndpoint() {
         val state = AppState()
-        state.selectSpeechProvider("zhipu")
+        state.speech.selectSpeechProvider("zhipu")
 
-        assertNull(state.asrEndpoint(), "选了家但没填 Key，不该凑出一个发不出去的请求")
+        assertNull(state.speech.asrEndpoint(), "选了家但没填 Key，不该凑出一个发不出去的请求")
     }
 
     @Test
@@ -303,11 +303,11 @@ class SpeechConfigTest {
         state.configureSpeech("zhipu", key = "sk-zhipu")
 
         // 切回去不用重填——Key 是按家存的。共用一把的话，Groq 的 Key 拿到智谱去必然 401
-        state.selectSpeechProvider("groq")
-        assertEquals("sk-groq", state.asrEndpoint()?.apiKey)
+        state.speech.selectSpeechProvider("groq")
+        assertEquals("sk-groq", state.speech.asrEndpoint()?.apiKey)
 
-        state.selectSpeechProvider("zhipu")
-        assertEquals("sk-zhipu", state.asrEndpoint()?.apiKey)
+        state.speech.selectSpeechProvider("zhipu")
+        assertEquals("sk-zhipu", state.speech.asrEndpoint()?.apiKey)
     }
 
     // ── 朗读 ────────────────────────────────────
@@ -324,12 +324,12 @@ class SpeechConfigTest {
     fun aVendorWithoutSynthesisHandsReadingBackToTheDevice() {
         val state = AppState()
         state.configureSpeech("groq")
-        state.selectSpeechProvider("groq")
-        assertNull(state.ttsEndpoint(), "Groq 不做合成，朗读该交给设备")
+        state.speech.selectSpeechProvider("groq")
+        assertNull(state.speech.ttsEndpoint(), "Groq 不做合成，朗读该交给设备")
 
         state.configureSpeech("zhipu")
-        state.selectSpeechProvider("zhipu")
-        val tts = assertNotNull(state.ttsEndpoint())
+        state.speech.selectSpeechProvider("zhipu")
+        val tts = assertNotNull(state.speech.ttsEndpoint())
         assertEquals("glm-tts", tts.ttsModel)
         assertEquals("tongtong", tts.ttsVoice)
     }
@@ -337,9 +337,9 @@ class SpeechConfigTest {
     @Test
     fun synthesisAlsoNeedsTheKey() {
         val state = AppState()
-        state.selectSpeechProvider("openai")
+        state.speech.selectSpeechProvider("openai")
 
-        assertNull(state.ttsEndpoint(), "没填 Key 就不该凑出一个发不出去的请求")
+        assertNull(state.speech.ttsEndpoint(), "没填 Key 就不该凑出一个发不出去的请求")
     }
 
     // ── 跨重启 ──────────────────────────────────
@@ -348,17 +348,17 @@ class SpeechConfigTest {
     fun theChoiceAndTheKeySurviveARestart() {
         val first = AppState()
         first.configureSpeech("groq", key = "sk-groq")
-        first.selectSpeechProvider("groq")
-        first.selectAsrModel("whisper-large-v3")
+        first.speech.selectSpeechProvider("groq")
+        first.speech.selectAsrModel("whisper-large-v3")
 
         val restarted = AppState()
 
-        assertEquals("groq", restarted.speechProviderId, "选的服务商要跟着重启回来")
-        assertEquals("whisper-large-v3", restarted.asrModelId)
-        assertEquals("whisper-large-v3", restarted.asrEndpoint()?.asrModel)
+        assertEquals("groq", restarted.speech.speechProviderId, "选的服务商要跟着重启回来")
+        assertEquals("whisper-large-v3", restarted.speech.asrModelId)
+        assertEquals("whisper-large-v3", restarted.speech.asrEndpoint()?.asrModel)
         // Key 那条单独断一句：漏读一家的后果是"每次冷启都要重填"，
         // 而只断言 id 和模型名的话，Key 没落盘也看不出来
-        assertEquals("sk-groq", restarted.asrEndpoint()?.apiKey, "Key 也要跟着回来")
+        assertEquals("sk-groq", restarted.speech.asrEndpoint()?.apiKey, "Key 也要跟着回来")
     }
 
     // ── 那一档真的传到了 Voice ──────────────────
@@ -366,7 +366,7 @@ class SpeechConfigTest {
     /**
      * 「自动 / 系统能力 / 云端识别」必须真的传进 [Voice]。
      *
-     * 上一版这里断着：`AppState.selectVoiceSource` 只写了自己的字段和 SettingsStore，
+     * 上一版这里断着：`SpeechController.selectVoiceSource` 只写了自己的字段和 SettingsStore，
      * 而 `Voice.preference` 一直是个没人写的 `var`，于是 `pickTranscriber` 永远走
      * "设备优先、不可用才退回模型"那条分支——**界面上选什么都等于没选**，
      * 而界面显示得好好的（`asrSummary` 会说"大模型 · Groq"）。
@@ -378,7 +378,7 @@ class SpeechConfigTest {
     @Test
     fun theSpeechPreferenceActuallyReachesTheVoiceLayer() {
         val state = AppState()
-        state.selectVoiceSource(VoiceSource.Model)
+        state.speech.selectVoiceSource(VoiceSource.Model)
 
         // 只装设备那一路的替身。模型那路由 AppState 构造时装好了（真的 ModelTranscriber），
         // 而它没配 Key 就是 not ready——不用自己造。

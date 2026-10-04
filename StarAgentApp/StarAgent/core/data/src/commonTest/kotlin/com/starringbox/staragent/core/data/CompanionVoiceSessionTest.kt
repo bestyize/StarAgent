@@ -72,8 +72,8 @@ class CompanionVoiceSessionTest {
         runCurrent()
         assertEquals(listOf("我在这里。"), spoken)
         assertEquals(1, transcriber.starts, "capture must not overlap reply playback")
-        assertEquals(state.companion.id, state.speakingAgentId)
-        assertFalse(state.speakReplies, "entering voice must not change the global setting")
+        assertEquals(state.companion.id, state.speech.speakingAgentId)
+        assertFalse(state.speech.speakReplies, "entering voice must not change the global setting")
 
         releasePlayback.complete(Unit)
         advanceTimeBy(400)
@@ -150,10 +150,10 @@ class CompanionVoiceSessionTest {
         val provider = assertNotNull(state.providerById("deepseek"))
         state.updateProvider(provider.copy(apiKey = "test-key", models = listOf("test-model")))
         state.setAgentModel(state.companion.id, "deepseek:0")
-        state.selectVoiceSource(VoiceSource.Device)
-        state.selectTtsVoiceSource(VoiceSource.Device)
-        state.setReadingReplies(false)
-        state.setStreamingReplies(false)
+        state.speech.selectVoiceSource(VoiceSource.Device)
+        state.speech.selectTtsVoiceSource(VoiceSource.Device)
+        state.speech.setReadingReplies(false)
+        state.speech.setStreamingReplies(false)
         return state
     }
 

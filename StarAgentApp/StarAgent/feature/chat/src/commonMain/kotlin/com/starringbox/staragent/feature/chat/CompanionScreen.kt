@@ -105,14 +105,14 @@ fun CompanionScreen(navigator: Navigator) {
     var imageIndex by remember { mutableStateOf(0) }
     val busy = state.isBusy(agent.id) || turn?.isActive == true
     val configured = state.endpointFor(agent) != null
-    val phase = if (state.speakingAgentId == agent.id) CompanionPhase.Speaking
+    val phase = if (state.speech.speakingAgentId == agent.id) CompanionPhase.Speaking
         else if (!voiceMode && busy) CompanionPhase.Thinking else voice.phase
     val listState = rememberLazyListState()
     val clipboard = LocalClipboardManager.current
     val lastText = (messages.lastOrNull { it.body is MessageBody.Text }?.body as? MessageBody.Text)?.text.orEmpty()
 
     DisposableEffect(state) {
-        onDispose { voice.stop(); state.cancelListening(); state.stopSpeaking() }
+        onDispose { voice.stop(); state.speech.cancelListening(); state.speech.stopSpeaking() }
     }
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
@@ -131,7 +131,7 @@ fun CompanionScreen(navigator: Navigator) {
     }
     fun enterVoice() {
         dictationJob?.cancel()
-        state.cancelListening()
+        state.speech.cancelListening()
         dictating = false
         transcribing = false
         notice = null
@@ -281,7 +281,7 @@ fun CompanionScreen(navigator: Navigator) {
                     )
                 }
                 if (busy) {
-                    CompanionAction(StarIconGlyph.Pause, "停止回复", colors, onClick = { turn?.cancel(); state.stopSpeaking() })
+                    CompanionAction(StarIconGlyph.Pause, "停止回复", colors, onClick = { turn?.cancel(); state.speech.stopSpeaking() })
                 } else if (draft.isNotBlank() || attachments.isNotEmpty()) {
                     CompanionAction(StarIconGlyph.Send, "发送消息", colors, accent = true,
                         enabled = configured && !dictating && !transcribing, onClick = {
@@ -305,11 +305,11 @@ fun CompanionScreen(navigator: Navigator) {
                                     if (dictating) {
                                         dictating = false
                                         transcribing = true
-                                        when (val result = state.stopListening()) {
+                                        when (val result = state.speech.stopListening()) {
                                             is SpeechOutcome.Ok -> draft = result.value
                                             is SpeechOutcome.Failed -> notice = result.message
                                         }
-                                    } else when (val result = state.startListening()) {
+                                    } else when (val result = state.speech.startListening()) {
                                         is SpeechOutcome.Ok -> dictating = true
                                         is SpeechOutcome.Failed -> notice = result.message
                                     }
@@ -390,18 +390,18 @@ private fun CompanionMessage(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("复制", color = colors.muted, fontSize = 11.sp,
                     modifier = Modifier.clickable(onClick = onCopy).padding(end = 18.dp, top = 6.dp, bottom = 6.dp))
-                if (state.canSpeak) Text(if (readJob?.isActive == true) "停止朗读" else "听她说", color = colors.muted, fontSize = 11.sp,
+                if (state.speech.canSpeak) Text(if (readJob?.isActive == true) "停止朗读" else "听她说", color = colors.muted, fontSize = 11.sp,
                     modifier = Modifier.clickable {
                         state.companionVoice.stop()
                         if (readJob?.isActive == true) {
                             readJob?.cancel()
-                            state.stopSpeaking()
+                            state.speech.stopSpeaking()
                         } else {
                             readError = null
                             readJob = scope.launch {
                                 try {
-                                    state.stopSpeaking()
-                                    val result = state.speak(body.text)
+                                    state.speech.stopSpeaking()
+                                    val result = state.speech.speak(body.text)
                                     if (result is SpeechOutcome.Failed) readError = result.message
                                 } finally { readJob = null }
                             }

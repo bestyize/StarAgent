@@ -99,12 +99,12 @@ fun GroupChatScreen(navigator: Navigator, groupId: String) {
 
     // 播报跟随数据层的回复会话，页面只展示失败，避免完成后重复念一遍。
     val readReplyAloud: () -> Unit = {
-        state.speechError?.let { notice = DockNotice(it, isError = true) }
+        state.speech.speechError?.let { notice = DockNotice(it, isError = true) }
     }
 
     // 离开这一页就别再念了。同单聊页，理由见 ChatScreen。
     DisposableEffect(state) {
-        onDispose { state.stopSpeaking() }
+        onDispose { state.speech.stopSpeaking() }
     }
 
     // 按住说话。转写成功直接发到群里，群里照样按轮流/点名去讨论。
@@ -221,7 +221,7 @@ fun GroupChatScreen(navigator: Navigator, groupId: String) {
                 },
                 onStop = { turn?.cancel() },
                 mentions = members,
-                canVoice = state.canListen,
+                canVoice = state.speech.canListen,
                 voiceMode = voice.mode,
                 recognizing = voice.phase == HoldPhase.Transcribing,
                 onVoiceModeChange = {

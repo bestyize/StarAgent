@@ -38,8 +38,8 @@ class CompanionVoiceSession internal constructor(private val state: AppState) {
         if (active) return
         error = when {
             state.endpointFor(state.companion) == null -> "先配置一个对话模型，就可以和她交流了。"
-            !state.canListen -> "请先在语音设置中配置语音识别。"
-            !state.canSpeak -> "请先在语音设置中配置回复朗读。"
+            !state.speech.canListen -> "请先在语音设置中配置语音识别。"
+            !state.speech.canSpeak -> "请先在语音设置中配置回复朗读。"
             else -> null
         }
         if (error != null) return
@@ -60,12 +60,12 @@ class CompanionVoiceSession internal constructor(private val state: AppState) {
                         continue
                     }
                     submitRequested = false
-                    when (val started = state.startListening()) {
+                    when (val started = state.speech.startListening()) {
                         is SpeechOutcome.Failed -> { pauseWith(started.message); continue }
                         is SpeechOutcome.Ok -> Unit
                     }
                     currentCoroutineContext().ensureActive()
-                    if (muted) { state.cancelListening(); continue }
+                    if (muted) { state.speech.cancelListening(); continue }
                     phase = CompanionPhase.Listening
                     // Endpoint detection is provided by the selected transcriber. Manual send
                     // remains available, and a time cap prevents unbounded recording buffers.
@@ -76,9 +76,9 @@ class CompanionVoiceSession internal constructor(private val state: AppState) {
                         elapsed += 100
                     }
                     inputLevel = 0f
-                    if (muted) { state.cancelListening(); continue }
+                    if (muted) { state.speech.cancelListening(); continue }
                     phase = CompanionPhase.Transcribing
-                    when (val heard = state.stopListening()) {
+                    when (val heard = state.speech.stopListening()) {
                         is SpeechOutcome.Failed -> if (!muted) pauseWith(heard.message)
                         is SpeechOutcome.Ok -> {
                             currentCoroutineContext().ensureActive()
@@ -87,7 +87,7 @@ class CompanionVoiceSession internal constructor(private val state: AppState) {
                             state.sendCompanionVoice(heard.value)
                             currentCoroutineContext().ensureActive()
                             val last = state.messagesOf(BuiltInCompanion.ID).lastOrNull()?.body
-                            val failure = state.speechError ?: (last as? MessageBody.Notice)
+                            val failure = state.speech.speechError ?: (last as? MessageBody.Notice)
                                 ?.takeIf { it.isError }?.text
                             if (failure != null) pauseWith(failure)
                             // Playback has drained before another recording is allowed.
@@ -104,8 +104,8 @@ class CompanionVoiceSession internal constructor(private val state: AppState) {
                 }
             } finally {
                 if (current == generation) {
-                    state.cancelListening()
-                    state.stopSpeaking()
+                    state.speech.cancelListening()
+                    state.speech.stopSpeaking()
                     active = false
                     phase = CompanionPhase.Idle
                     inputLevel = 0f
@@ -118,7 +118,7 @@ class CompanionVoiceSession internal constructor(private val state: AppState) {
         muted = value
         if (!value) error = null
         if (value && (phase == CompanionPhase.Listening || phase == CompanionPhase.Transcribing)) {
-            state.cancelListening()
+            state.speech.cancelListening()
             inputLevel = 0f
         }
     }
@@ -132,8 +132,8 @@ class CompanionVoiceSession internal constructor(private val state: AppState) {
         active = false
         job?.cancel()
         job = null
-        state.cancelListening()
-        state.stopSpeaking()
+        state.speech.cancelListening()
+        state.speech.stopSpeaking()
         phase = CompanionPhase.Idle
         inputLevel = 0f
     }
@@ -142,6 +142,6 @@ class CompanionVoiceSession internal constructor(private val state: AppState) {
         error = message
         muted = true
         phase = CompanionPhase.Paused
-        state.cancelListening()
+        state.speech.cancelListening()
     }
 }

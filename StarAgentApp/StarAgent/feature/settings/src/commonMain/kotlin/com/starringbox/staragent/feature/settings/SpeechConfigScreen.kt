@@ -51,8 +51,8 @@ fun SpeechConfigScreen(navigator: Navigator) {
     // 「这台设备装了系统识别没有」。用 installed 而不是 ready：
     // 权限还没申请时 ready 就是 false，拿它禁选项等于永远没机会授权。
     val deviceInstalled = Voice.deviceListenInstalled
-    val localAsrSupported = state.localAsrSupported
-    val localAsrInstalled = state.localAsrInstalled
+    val localAsrSupported = state.speech.localAsrSupported
+    val localAsrInstalled = state.speech.localAsrInstalled
 
     // 「云端识别」那条现在能不能用。
     //
@@ -61,12 +61,12 @@ fun SpeechConfigScreen(navigator: Navigator) {
     // 而这两样恰好就是"选了它能不能出声"，拿它当开关正合适。
     val modelReady = Voice.modelListenReady
 
-    val active = state.activeSpeechProvider()
+    val active = state.speech.activeSpeechProvider()
 
     Column(Modifier.fillMaxSize()) {
         StarTopBar(
             title = "语音配置",
-            subtitle = state.asrSummary,
+            subtitle = state.speech.asrSummary,
             onBack = { navigator.pop() },
         )
 
@@ -78,7 +78,7 @@ fun SpeechConfigScreen(navigator: Navigator) {
             item { SourcePicker(state, deviceInstalled, modelReady, localAsrSupported, localAsrInstalled) }
 
             // 依据识别方式，仅露出当前选中类别的详细选项
-            when (state.voiceSource) {
+            when (state.speech.voiceSource) {
                 VoiceSource.Device -> {
                     item { SpeechSectionLabel("系统识别") }
                     item {
@@ -110,9 +110,9 @@ fun SpeechConfigScreen(navigator: Navigator) {
                     item {
                         StarCard(modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(14.dp)) {
-                                ProviderGrid(state.speechProviders, active?.id) { provider ->
-                                    state.selectSpeechProvider(provider.id)
-                                    state.selectVoiceSource(VoiceSource.Model)
+                                ProviderGrid(state.speech.speechProviders, active?.id) { provider ->
+                                    state.speech.selectSpeechProvider(provider.id)
+                                    state.speech.selectVoiceSource(VoiceSource.Model)
                                 }
 
                                 Spacer(Modifier.height(10.dp))
@@ -155,8 +155,8 @@ fun SpeechConfigScreen(navigator: Navigator) {
                     item {
                         StarCard(modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(14.dp)) {
-                                ProviderGrid(state.speechProviders, active?.id) { provider ->
-                                    state.selectSpeechProvider(provider.id)
+                                ProviderGrid(state.speech.speechProviders, active?.id) { provider ->
+                                    state.speech.selectSpeechProvider(provider.id)
                                 }
                             }
                         }
@@ -182,7 +182,7 @@ fun SpeechConfigScreen(navigator: Navigator) {
 /**
  * 自动、系统、云端和离线识别来源。
  *
- * 和对话页状态面板里那个三选写同一份 `state.voiceSource`——两处入口、一份状态，
+ * 和对话页状态面板里那个三选写同一份 `state.speech.voiceSource`——两处入口、一份状态，
  * 面板是聊天中的快捷切换，这一页是完整配置。
  */
 @Composable
@@ -207,7 +207,7 @@ private fun SourcePicker(
                         VoiceSource.Local -> localSupported
                         null -> true
                     }
-                    val selected = state.voiceSource == source
+                    val selected = state.speech.voiceSource == source
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -221,7 +221,7 @@ private fun SourcePicker(
                             )
                             .then(
                                 if (enabled) {
-                                    Modifier.clickable { state.selectVoiceSource(source) }
+                                    Modifier.clickable { state.speech.selectVoiceSource(source) }
                                 } else {
                                     Modifier
                                 }
@@ -270,20 +270,20 @@ private fun sourceHint(
 ): String {
     // 规则 1：选中的那条其实用不了
     when {
-        state.voiceSource == VoiceSource.Device && !deviceInstalled ->
+        state.speech.voiceSource == VoiceSource.Device && !deviceInstalled ->
             return "这台设备不支持系统识别，实际会走云端识别那一路。"
 
-        state.voiceSource == VoiceSource.Model && !modelReady ->
+        state.speech.voiceSource == VoiceSource.Model && !modelReady ->
             return "云端识别还用不了：在下面选一家服务商，并把它的 API Key 填上。"
 
-        state.voiceSource == VoiceSource.Local && !localSupported ->
+        state.speech.voiceSource == VoiceSource.Local && !localSupported ->
             return "这台设备暂不支持离线识别。"
 
-        state.voiceSource == VoiceSource.Local && !localInstalled ->
+        state.speech.voiceSource == VoiceSource.Local && !localInstalled ->
             return "离线识别模型还没下载，可在下面的离线模型卡片中下载。"
     }
 
-    val current = when (state.voiceSource) {
+    val current = when (state.speech.voiceSource) {
         VoiceSource.Device -> VoiceSource.Device.hint
         VoiceSource.Model -> VoiceSource.Model.hint
         VoiceSource.Local -> if (localInstalled) VoiceSource.Local.hint else "离线识别需要先下载模型。"
@@ -298,7 +298,7 @@ private fun sourceHint(
     // 规则 2：灰着的那条为什么灰。
     // 系统识别那条的理由上面两句「自动」里已经说了（有没有系统识别，两种都说），
     // 所以这里只补云端那条。
-    if (!modelReady && state.voiceSource != VoiceSource.Model) {
+    if (!modelReady && state.speech.voiceSource != VoiceSource.Model) {
         return "$current 要用「云端识别」得先在下面选一家服务商并填上 Key。"
     }
 
@@ -373,7 +373,7 @@ private fun VendorChip(
 @Composable
 private fun ApiKeyCard(state: AppState, provider: SpeechProvider) {
     // 换家时草稿要跟着换成那家的 Key（remember 的 key 就是 provider.id）
-    val saved = state.speechKeyOf(provider.id)
+    val saved = state.speech.speechKeyOf(provider.id)
     val draft = remember(provider.id) { mutableStateOf(saved) }
     val dirty = draft.value.trim() != saved
 
@@ -394,7 +394,7 @@ private fun ApiKeyCard(state: AppState, provider: SpeechProvider) {
                     color = StarPalette.TextFaint,
                     modifier = Modifier.weight(1f),
                 )
-                SaveButton(enabled = dirty, onClick = { state.setSpeechKey(provider.id, draft.value) })
+                SaveButton(enabled = dirty, onClick = { state.speech.setSpeechKey(provider.id, draft.value) })
             }
         }
     }
@@ -424,12 +424,12 @@ private fun masked(key: String): String =
 @Composable
 private fun ReadingSettings(state: AppState) {
     val scope = rememberCoroutineScope()
-    val source = state.ttsVoiceSource
-    val inheritedTtsProvider = state.activeTtsProvider()
+    val source = state.speech.ttsVoiceSource
+    val inheritedTtsProvider = state.speech.activeTtsProvider()
     val ttsProvider = inheritedTtsProvider?.takeIf { it.canSynthesize }
-    val voiceDraft = remember(state.ttsVoiceId) { mutableStateOf(state.ttsVoiceId.orEmpty()) }
+    val voiceDraft = remember(state.speech.ttsVoiceId) { mutableStateOf(state.speech.ttsVoiceId.orEmpty()) }
     val testMessage = remember { mutableStateOf<String?>(null) }
-    val speakReplies = state.speakReplies
+    val speakReplies = state.speech.speakReplies
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         StarCard(modifier = Modifier.fillMaxWidth()) {
@@ -440,8 +440,8 @@ private fun ReadingSettings(state: AppState) {
                     listOf(null, VoiceSource.Device, VoiceSource.Model, VoiceSource.Local).forEach { option ->
                         val enabled = when (option) {
                             null, VoiceSource.Device -> true
-                            VoiceSource.Model -> state.speechProviders.any { it.canSynthesize }
-                            VoiceSource.Local -> state.localTtsSupported
+                            VoiceSource.Model -> state.speech.speechProviders.any { it.canSynthesize }
+                            VoiceSource.Local -> state.speech.localTtsSupported
                         }
                         val selected = source == option
                         Box(
@@ -455,7 +455,7 @@ private fun ReadingSettings(state: AppState) {
                                         else -> StarPalette.SurfaceSunken
                                     },
                                 )
-                                .then(if (enabled) Modifier.clickable { state.selectTtsVoiceSource(option) } else Modifier)
+                                .then(if (enabled) Modifier.clickable { state.speech.selectTtsVoiceSource(option) } else Modifier)
                                 .padding(vertical = 10.dp, horizontal = 3.dp),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -475,7 +475,7 @@ private fun ReadingSettings(state: AppState) {
                 }
                 Spacer(Modifier.height(8.dp))
                 val note = when {
-                    source == VoiceSource.Local && !state.localTtsInstalled -> "离线朗读模型尚未下载，可在离线模型卡片中下载。"
+                    source == VoiceSource.Local && !state.speech.localTtsInstalled -> "离线朗读模型尚未下载，可在离线模型卡片中下载。"
                     source == VoiceSource.Model -> "朗读使用单独选择的云端服务商和 API Key。"
                     source == VoiceSource.Device -> "使用这台设备提供的朗读声音。"
                     source == VoiceSource.Local -> "在本机离线朗读。"
@@ -486,16 +486,16 @@ private fun ReadingSettings(state: AppState) {
         }
 
         when {
-            source == VoiceSource.Local || (source == null && state.voiceSource == VoiceSource.Local) -> {
+            source == VoiceSource.Local || (source == null && state.speech.voiceSource == VoiceSource.Local) -> {
                 LocalSpeechCard(state, showAsr = false, showTts = true)
             }
-            source == VoiceSource.Model || (source == null && (state.voiceSource == VoiceSource.Model || state.voiceSource == null)) -> {
+            source == VoiceSource.Model || (source == null && (state.speech.voiceSource == VoiceSource.Model || state.speech.voiceSource == null)) -> {
                 StarCard(modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp)) {
                         Text("云端朗读服务商", style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
                         Spacer(Modifier.height(8.dp))
-                        ProviderGrid(state.speechProviders.filter { it.canSynthesize }, state.ttsProviderId) { provider ->
-                            state.selectTtsProvider(provider.id)
+                        ProviderGrid(state.speech.speechProviders.filter { it.canSynthesize }, state.speech.ttsProviderId) { provider ->
+                            state.speech.selectTtsProvider(provider.id)
                         }
                         Spacer(Modifier.height(8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -506,12 +506,12 @@ private fun ReadingSettings(state: AppState) {
                                 color = StarPalette.TextMuted,
                             )
                             ActionLabel(
-                                text = if (state.ttsProviderId == null) "已选择" else "使用",
-                                enabled = state.ttsProviderId != null,
-                                onClick = { state.selectTtsProvider(null) },
+                                text = if (state.speech.ttsProviderId == null) "已选择" else "使用",
+                                enabled = state.speech.ttsProviderId != null,
+                                onClick = { state.speech.selectTtsProvider(null) },
                             )
                         }
-                        if (state.ttsProviderId == null && inheritedTtsProvider?.canSynthesize != true) {
+                        if (state.speech.ttsProviderId == null && inheritedTtsProvider?.canSynthesize != true) {
                             Spacer(Modifier.height(6.dp))
                             Text(
                                 "当前识别服务商没有云端朗读，可在上方选择一家。",
@@ -562,8 +562,8 @@ private fun ReadingSettings(state: AppState) {
                             color = StarPalette.TextFaint,
                         )
                         SaveButton(
-                            enabled = voiceDraft.value != state.ttsVoiceId.orEmpty(),
-                            onClick = { state.selectTtsVoice(voiceDraft.value.trim().ifBlank { null }) },
+                            enabled = voiceDraft.value != state.speech.ttsVoiceId.orEmpty(),
+                            onClick = { state.speech.selectTtsVoice(voiceDraft.value.trim().ifBlank { null }) },
                         )
                     }
                 }
@@ -577,7 +577,7 @@ private fun ReadingSettings(state: AppState) {
                         Text("朗读回复", style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
                         Text("收到回复后自动读出来", style = MaterialTheme.typography.bodySmall, color = StarPalette.TextFaint)
                     }
-                    Switch(checked = speakReplies, onCheckedChange = state::setReadingReplies)
+                    Switch(checked = speakReplies, onCheckedChange = state.speech::setReadingReplies)
                 }
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -589,13 +589,13 @@ private fun ReadingSettings(state: AppState) {
                             color = StarPalette.TextFaint,
                         )
                     }
-                    Switch(checked = state.streamReplies, onCheckedChange = state::setStreamingReplies)
+                    Switch(checked = state.speech.streamReplies, onCheckedChange = state.speech::setStreamingReplies)
                 }
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     ActionLabel("试音", enabled = true) {
                         scope.launch {
-                            testMessage.value = when (val result = state.speak("你好，我是 StarAgent。")) {
+                            testMessage.value = when (val result = state.speech.speak("你好，我是 StarAgent。")) {
                                 is SpeechOutcome.Ok -> "已播放试音。"
                                 is SpeechOutcome.Failed -> result.message
                             }
@@ -617,8 +617,8 @@ private fun SpeechTestCard(state: AppState) {
     val resultText = remember { mutableStateOf<String?>(null) }
     DisposableEffect(state) {
         onDispose {
-            if (listening.value) state.cancelListening()
-            state.stopSpeaking()
+            if (listening.value) state.speech.cancelListening()
+            state.speech.stopSpeaking()
         }
     }
 
@@ -634,12 +634,12 @@ private fun SpeechTestCard(state: AppState) {
                     scope.launch {
                         if (!listening.value) {
                             resultText.value = null
-                            when (val result = state.startListening()) {
+                            when (val result = state.speech.startListening()) {
                                 is SpeechOutcome.Ok -> listening.value = true
                                 is SpeechOutcome.Failed -> resultText.value = result.message
                             }
                         } else {
-                            when (val result = state.stopListening()) {
+                            when (val result = state.speech.stopListening()) {
                                 is SpeechOutcome.Ok -> resultText.value = result.value.ifBlank { "没有识别到内容。" }
                                 is SpeechOutcome.Failed -> resultText.value = result.message
                             }
@@ -661,13 +661,13 @@ private fun AsrModelPicker(state: AppState, provider: SpeechProvider) {
     StarCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
             provider.asrChoices.forEach { model ->
-                val chosen = state.activeAsrModel(provider) == model
+                val chosen = state.speech.activeAsrModel(provider) == model
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
                         .background(if (chosen) StarPalette.Indigo.copy(alpha = 0.12f) else Color.Transparent)
-                        .clickable { state.selectAsrModel(model) }
+                        .clickable { state.speech.selectAsrModel(model) }
                         .padding(horizontal = 10.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

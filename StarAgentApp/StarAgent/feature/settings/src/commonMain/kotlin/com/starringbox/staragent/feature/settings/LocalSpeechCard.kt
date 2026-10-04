@@ -55,11 +55,11 @@ internal fun LocalSpeechCard(
             if (showAsr) {
                 LocalModelRow(
                     title = "SenseVoice 中英文识别 · 约 240 MB",
-                    supported = state.localAsrSupported,
-                    installed = state.localAsrInstalled,
-                    busy = state.localModelBusy,
-                    onInstall = { scope.launch { state.installLocalAsr() } },
-                    onRemove = { scope.launch { state.removeLocalAsr() } },
+                    supported = state.speech.localAsrSupported,
+                    installed = state.speech.localAsrInstalled,
+                    busy = state.speech.localModelBusy,
+                    onInstall = { scope.launch { state.speech.installLocalAsr() } },
+                    onRemove = { scope.launch { state.speech.removeLocalAsr() } },
                 )
             }
             if (showAsr && showTts) {
@@ -68,26 +68,26 @@ internal fun LocalSpeechCard(
             if (showTts) {
                 LocalModelRow(
                     title = "Piper 中文超文音色 · 约 21 MB",
-                    supported = state.localTtsSupported,
-                    installed = state.localTtsInstalled,
-                    busy = state.localModelBusy,
-                    onInstall = { scope.launch { state.installLocalTts() } },
-                    onRemove = { scope.launch { state.removeLocalTts() } },
+                    supported = state.speech.localTtsSupported,
+                    installed = state.speech.localTtsInstalled,
+                    busy = state.speech.localModelBusy,
+                    onInstall = { scope.launch { state.speech.installLocalTts() } },
+                    onRemove = { scope.launch { state.speech.removeLocalTts() } },
                 )
             }
-            if (state.localModelBusy) {
+            if (state.speech.localModelBusy) {
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = state.localModelProgress.ifBlank { "正在准备…" },
+                        text = state.speech.localModelProgress.ifBlank { "正在准备…" },
                         style = MaterialTheme.typography.bodySmall,
                         color = StarPalette.TextMuted,
                         modifier = Modifier.weight(1f),
                     )
-                    ActionLabel("取消", enabled = true, onClick = state::cancelLocalModelDownload)
+                    ActionLabel("取消", enabled = true, onClick = state.speech::cancelLocalModelDownload)
                 }
             }
-            state.localModelError?.let { error ->
+            state.speech.localModelError?.let { error ->
                 Spacer(Modifier.height(8.dp))
                 Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }

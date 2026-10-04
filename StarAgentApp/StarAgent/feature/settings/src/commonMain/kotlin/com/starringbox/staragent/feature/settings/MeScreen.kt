@@ -363,8 +363,8 @@ private fun ProviderTile(provider: ModelProvider, onClick: () -> Unit) {
  */
 @Composable
 private fun SpeechModule(state: AppState, navigator: Navigator) {
-    val active = state.activeSpeechProvider()
-    val configured = active != null && state.speechConfigured(active.id)
+    val active = state.speech.activeSpeechProvider()
+    val configured = active != null && state.speech.speechConfigured(active.id)
 
     ModuleHeader(
         glyph = StarIconGlyph.Mic,
@@ -380,9 +380,9 @@ private fun SpeechModule(state: AppState, navigator: Navigator) {
         StarCard(modifier = Modifier.fillMaxWidth()) {
             SettingsRow(
                 glyph = StarIconGlyph.Mic,
-                title = state.asrSummary,
+                title = state.speech.asrSummary,
                 subtitle = speechSubtitle(state),
-                tint = if (state.canListen) StarPalette.Indigo else StarPalette.TextFaint,
+                tint = if (state.speech.canListen) StarPalette.Indigo else StarPalette.TextFaint,
                 onClick = { navigator.push(Route.SpeechConfig) },
             )
         }
@@ -397,8 +397,8 @@ private fun SpeechModule(state: AppState, navigator: Navigator) {
  * 一句"还用不了"会让一个配好了 Key 的人反复回去检查 Key。
  */
 private fun speechSubtitle(state: AppState): String = when {
-    state.canListen -> "麦克风按钮已经可用"
-    state.asrEndpoint() == null && !Voice.deviceListenInstalled ->
+    state.speech.canListen -> "麦克风按钮已经可用"
+    state.speech.asrEndpoint() == null && !Voice.deviceListenInstalled ->
         // 刻意不列有哪些家：加一家就要回来改一句文案，而漏改的后果是"明明有却不告诉用户"
         "还没配语音服务商：点进去选一家并填上 Key"
     !Voice.canRecord && !Voice.deviceListenInstalled -> "这台机器没有可用的麦克风，录不了音"

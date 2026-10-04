@@ -132,7 +132,7 @@ internal fun rememberVoiceHold(
             runtime.startJob?.cancel()
             runtime.startJob = null
             runtime.live = false
-            state.cancelListening()
+            state.speech.cancelListening()
         }
     }
 
@@ -144,7 +144,7 @@ internal fun rememberVoiceHold(
             phase = HoldPhase.Recording
             runtime.live = false
             runtime.startJob = scope.launch {
-                val started = state.startListening()
+                val started = state.speech.startListening()
                 when (started) {
                     is SpeechOutcome.Ok -> runtime.live = true
                     is SpeechOutcome.Failed -> {
@@ -176,12 +176,12 @@ internal fun rememberVoiceHold(
 
                     HoldOutcome.Cancel -> {
                         phase = HoldPhase.Idle
-                        state.cancelListening()
+                        state.speech.cancelListening()
                     }
 
                     HoldOutcome.TooShort -> {
                         phase = HoldPhase.Idle
-                        state.cancelListening()
+                        state.speech.cancelListening()
                         problem("说话时间太短")
                     }
 
@@ -190,7 +190,7 @@ internal fun rememberVoiceHold(
                         // 实测有三秒左右。这段时间必须留在"识别中"上：一是让用户知道按了有反应，
                         // 二是挡住第二次按压——识别器只有一个回调位，中途再按会把这次结果丢掉。
                         phase = HoldPhase.Transcribing
-                        val result = state.stopListening()
+                        val result = state.speech.stopListening()
                         phase = HoldPhase.Idle
                         when (result) {
                             is SpeechOutcome.Ok -> heard(result.value)

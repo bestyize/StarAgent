@@ -162,7 +162,7 @@ class ReplySpeechIntegrationTest {
             .map { (it.body as MessageBody.Text).text }
         assertEquals(failedReplies, completedDespiteSpeechError)
         assertEquals(0, failedPlayer.frameCount)
-        assertTrue(failedState.speechError?.contains("测试合成失败") == true)
+        assertTrue(failedState.speech.speechError?.contains("测试合成失败") == true)
     }
 
     @Test
@@ -188,7 +188,7 @@ class ReplySpeechIntegrationTest {
         finishGateReached.await()
         player.firstPcm.await()
         val framesAtStop = player.frameCount
-        state.stopSpeaking()
+        state.speech.stopSpeaking()
         releaseFinish.complete(Unit)
         sending.await()
 
@@ -202,15 +202,15 @@ class ReplySpeechIntegrationTest {
         val state = AppState(stream = stream)
         val provider = assertNotNull(state.providerById("deepseek"))
         state.updateProvider(provider.copy(apiKey = "test-chat-key", models = listOf("integration-model")))
-        state.setSpeechKey("mimo", "test-speech-key")
-        state.selectSpeechProvider("mimo")
-        state.selectAsrModel("mimo-v2.5-asr")
-        state.selectTtsProvider("mimo")
-        state.selectTtsVoice("mimo-default")
-        state.selectVoiceSource(VoiceSource.Model)
-        state.selectTtsVoiceSource(VoiceSource.Local)
-        state.setReadingReplies(true)
-        state.setStreamingReplies(true)
+        state.speech.setSpeechKey("mimo", "test-speech-key")
+        state.speech.selectSpeechProvider("mimo")
+        state.speech.selectAsrModel("mimo-v2.5-asr")
+        state.speech.selectTtsProvider("mimo")
+        state.speech.selectTtsVoice("mimo-default")
+        state.speech.selectVoiceSource(VoiceSource.Model)
+        state.speech.selectTtsVoiceSource(VoiceSource.Local)
+        state.speech.setReadingReplies(true)
+        state.speech.setStreamingReplies(true)
         return state
     }
 

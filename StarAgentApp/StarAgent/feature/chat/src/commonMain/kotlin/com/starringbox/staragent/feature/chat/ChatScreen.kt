@@ -117,13 +117,13 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
 
     // 播报跟随数据层的回复会话，页面只展示失败，避免完成后重复念一遍。
     val readReplyAloud: () -> Unit = {
-        state.speechError?.let { notice = DockNotice(it, isError = true) }
+        state.speech.speechError?.let { notice = DockNotice(it, isError = true) }
     }
 
     // 离开这一页就别再念了。朗读是跟着这条会话走的，人都走了还在响很突兀；
     // 而且朗读是后台在播，不主动停的话它会一直念完为止。
     DisposableEffect(state) {
-        onDispose { state.stopSpeaking() }
+        onDispose { state.speech.stopSpeaking() }
     }
 
     // 按住说话。转写成功直接发出去——"语音对话"不该还要再点一次发送。
@@ -226,7 +226,7 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
                     }
                 },
                 onStop = { turn?.cancel() },
-                canVoice = state.canListen,
+                canVoice = state.speech.canListen,
                 voiceMode = voice.mode,
                 recognizing = voice.phase == HoldPhase.Transcribing,
                 onVoiceModeChange = {
