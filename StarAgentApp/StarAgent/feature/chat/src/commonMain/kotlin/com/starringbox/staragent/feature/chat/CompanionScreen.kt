@@ -69,7 +69,7 @@ import com.starringbox.staragent.core.model.MediaAsset
 import com.starringbox.staragent.core.model.MessageBody
 import com.starringbox.staragent.core.platform.media.MediaPickers
 import com.starringbox.staragent.core.platform.media.MediaRules
-import com.starringbox.staragent.core.platform.voice.SpeechOutcome
+import com.starringbox.staragent.core.speech.SpeechOutcome
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin

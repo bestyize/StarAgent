@@ -1,4 +1,4 @@
-package com.starringbox.staragent.core.platform.voice
+package com.starringbox.staragent.core.speech
 
 /**
  * 一段语音。录到的和要播的是同一个类型——两者都只是"一段音频字节 + 格式"。

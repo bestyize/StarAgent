@@ -1,6 +1,7 @@
-package com.starringbox.staragent.core.llm
+package com.starringbox.staragent.core.speech.cloud
 
-import com.starringbox.staragent.core.platform.voice.Wav
+import com.starringbox.staragent.core.llm.LlmHttpException
+import com.starringbox.staragent.core.speech.Wav
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.test.Test

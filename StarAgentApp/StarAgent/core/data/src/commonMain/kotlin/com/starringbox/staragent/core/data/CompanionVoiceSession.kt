@@ -5,7 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.starringbox.staragent.core.model.BuiltInCompanion
 import com.starringbox.staragent.core.model.MessageBody
-import com.starringbox.staragent.core.platform.voice.SpeechOutcome
+import com.starringbox.staragent.core.speech.SpeechOutcome
 import com.starringbox.staragent.core.platform.voice.Voice
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope

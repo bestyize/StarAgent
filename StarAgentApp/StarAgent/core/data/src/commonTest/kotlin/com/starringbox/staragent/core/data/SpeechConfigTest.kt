@@ -2,10 +2,10 @@ package com.starringbox.staragent.core.data
 
 import com.starringbox.staragent.core.model.SpeechProtocol
 import com.starringbox.staragent.core.platform.storage.LocalStores
-import com.starringbox.staragent.core.platform.voice.SpeechOutcome
-import com.starringbox.staragent.core.platform.voice.Transcriber
+import com.starringbox.staragent.core.speech.SpeechOutcome
+import com.starringbox.staragent.core.speech.Transcriber
 import com.starringbox.staragent.core.platform.voice.Voice
-import com.starringbox.staragent.core.platform.voice.VoiceSource
+import com.starringbox.staragent.core.speech.VoiceSource
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test

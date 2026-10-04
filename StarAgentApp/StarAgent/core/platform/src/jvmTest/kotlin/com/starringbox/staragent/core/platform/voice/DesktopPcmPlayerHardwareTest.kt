@@ -1,5 +1,6 @@
 package com.starringbox.staragent.core.platform.voice
 
+import com.starringbox.staragent.core.speech.PcmAudioChunk
 import kotlin.test.Test
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers

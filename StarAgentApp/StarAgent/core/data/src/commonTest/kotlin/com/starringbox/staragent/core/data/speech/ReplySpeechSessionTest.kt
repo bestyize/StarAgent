@@ -1,7 +1,7 @@
 package com.starringbox.staragent.core.data.speech
 
-import com.starringbox.staragent.core.platform.voice.PcmAudioChunk
-import com.starringbox.staragent.core.platform.voice.SpeechOutcome
+import com.starringbox.staragent.core.speech.PcmAudioChunk
+import com.starringbox.staragent.core.speech.SpeechOutcome
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive

@@ -1,6 +1,6 @@
 package com.starringbox.staragent.core.speech.local.asr.vad
 
-import com.starringbox.staragent.core.platform.voice.Wav
+import com.starringbox.staragent.core.speech.Wav
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertContentEquals

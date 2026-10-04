@@ -1,6 +1,6 @@
 package com.starringbox.staragent.feature.chat
 
-import com.starringbox.staragent.core.platform.voice.VoiceRules
+import com.starringbox.staragent.core.speech.VoiceRules
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

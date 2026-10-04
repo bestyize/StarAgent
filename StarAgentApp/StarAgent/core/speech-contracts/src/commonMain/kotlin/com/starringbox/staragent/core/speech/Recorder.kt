@@ -1,7 +1,7 @@
-package com.starringbox.staragent.core.platform.voice
+package com.starringbox.staragent.core.speech
 
 /**
- * 录音。设备能力，由各端入口经 [DeviceVoice.install] 注入。
+ * 录音。设备能力，由各端入口经 core:platform 的 `DeviceVoice.install` 注入。
  *
  * 用 interface + 注册表而不是 `expect/actual`：两端的实现都持有自己的原生会话
  * （桌面的 `TargetDataLine`、Android 的 `AudioRecord`），而且要处理权限和"没有麦克风"
@@ -39,7 +39,7 @@ private object NoRecorder : Recorder {
 object Recorders {
     private var installed: Recorder = NoRecorder
 
-    /** 由 [DeviceVoice.install] 调用一次——业务代码不该直接碰这里。 */
+    /** 由 `DeviceVoice.install` 调用一次——业务代码不该直接碰这里。 */
     fun install(recorder: Recorder) {
         installed = recorder
     }

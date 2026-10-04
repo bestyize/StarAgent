@@ -45,6 +45,8 @@ kotlin {
             // api：MediaAsset 出现在 pickImage / save 的公开签名里
             api(project(":core:model"))
             api(project(":core:tools"))
+            // api：Voice 的公开签名里有 SpeechOutcome / Transcriber 等契约类型
+            api(project(":core:speech-contracts"))
             implementation(libs.kotlinx.coroutines.core)
         }
         commonTest.dependencies {

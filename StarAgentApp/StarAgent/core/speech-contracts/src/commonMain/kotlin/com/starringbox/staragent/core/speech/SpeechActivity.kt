@@ -1,4 +1,4 @@
-package com.starringbox.staragent.core.platform.voice
+package com.starringbox.staragent.core.speech
 
 import kotlin.concurrent.Volatile
 import kotlin.math.sqrt

@@ -1,7 +1,7 @@
-package com.starringbox.staragent.core.platform.voice
+package com.starringbox.staragent.core.speech
 
 /**
- * 播放一段音频。设备能力，由各端入口经 [DeviceVoice.install] 注入。
+ * 播放一段音频。设备能力，由各端入口经 core:platform 的 `DeviceVoice.install` 注入。
  *
  * 为什么需要它：**走服务商的那条合成链路只能拿到音频字节，得有人把它放出来**。
  * 桌面和 Android 都没有"给一段 wav 就能出声"的通用库（JDK 连 MP3 解码都没有，
@@ -28,7 +28,7 @@ private object NoPlayer : Player {
 object Players {
     private var installed: Player = NoPlayer
 
-    /** 由 [DeviceVoice.install] 调用一次——业务代码不该直接碰这里。 */
+    /** 由 `DeviceVoice.install` 调用一次——业务代码不该直接碰这里。 */
     fun install(player: Player) {
         installed = player
     }

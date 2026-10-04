@@ -1,5 +1,7 @@
 package com.starringbox.staragent.core.platform.voice
 
+import com.starringbox.staragent.core.speech.PcmAudioChunk
+import com.starringbox.staragent.core.speech.PcmPlayer
 import javax.sound.sampled.AudioFormat
 import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.DataLine

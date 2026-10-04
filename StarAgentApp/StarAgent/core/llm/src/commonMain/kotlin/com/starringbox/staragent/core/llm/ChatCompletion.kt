@@ -298,7 +298,7 @@ internal fun buildAnthropicMessages(history: List<LlmTurn>): JsonArray =
 class LlmHttpException(val userMessage: String) : Exception(userMessage)
 
 /** 非 2xx 一律翻成用户能看懂的话；语音那边也走这里，两处文案才一致。 */
-internal suspend fun ensureSuccess(response: HttpResponse) {
+suspend fun ensureSuccess(response: HttpResponse) {
     if (response.status.isSuccess()) return
     val raw = runCatching { response.bodyAsText() }.getOrNull().orEmpty()
     throw LlmHttpException(httpErrorMessage(response.status.value, raw))
@@ -479,7 +479,7 @@ internal fun JsonElement?.asTextOrNull(): String? {
     return primitive.content
 }
 
-internal fun httpErrorMessage(status: Int, raw: String): String {
+fun httpErrorMessage(status: Int, raw: String): String {
     val detail = runCatching {
         Json.parseToJsonElement(raw)
             .jsonObject["error"]
@@ -498,7 +498,7 @@ internal fun httpErrorMessage(status: Int, raw: String): String {
     return if (detail.isNullOrBlank()) base else "$base：$detail"
 }
 
-internal fun describeConnectionFailure(t: Throwable): String {
+fun describeConnectionFailure(t: Throwable): String {
     val name = t::class.simpleName ?: "未知错误"
     val detail = t.message?.takeIf { it.isNotBlank() }
     return if (detail == null) "连接失败（$name）" else "连接失败：$detail"

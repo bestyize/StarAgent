@@ -1,5 +1,8 @@
 package com.starringbox.staragent.core.platform.voice
 
+import com.starringbox.staragent.core.speech.SpeechOutcome
+import com.starringbox.staragent.core.speech.Synthesizer
+import com.starringbox.staragent.core.speech.Transcriber
 import android.Manifest
 import android.content.Context
 import android.content.Intent

@@ -1,5 +1,9 @@
 package com.starringbox.staragent.core.platform.voice
 
+import com.starringbox.staragent.core.speech.Player
+import com.starringbox.staragent.core.speech.Recorder
+import com.starringbox.staragent.core.speech.VoiceClip
+import com.starringbox.staragent.core.speech.Wav
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned

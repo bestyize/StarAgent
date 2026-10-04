@@ -1,5 +1,10 @@
 package com.starringbox.staragent.core.platform.voice
 
+import com.starringbox.staragent.core.speech.Player
+import com.starringbox.staragent.core.speech.Recorder
+import com.starringbox.staragent.core.speech.SpeechActivity
+import com.starringbox.staragent.core.speech.VoiceClip
+import com.starringbox.staragent.core.speech.Wav
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import javax.sound.sampled.AudioFormat

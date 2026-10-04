@@ -30,7 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.starringbox.staragent.core.platform.voice.SpeechOutcome
+import com.starringbox.staragent.core.speech.SpeechOutcome
 import com.starringbox.staragent.core.data.AppState
 import com.starringbox.staragent.core.data.LocalAppState
 import com.starringbox.staragent.core.designsystem.component.StarCard
@@ -40,7 +40,7 @@ import com.starringbox.staragent.core.designsystem.navigation.Navigator
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.model.SpeechProvider
 import com.starringbox.staragent.core.platform.voice.Voice
-import com.starringbox.staragent.core.platform.voice.VoiceSource
+import com.starringbox.staragent.core.speech.VoiceSource
 import kotlinx.coroutines.launch
 
 /** 语音配置：独立选择识别来源、朗读来源和各自需要的服务商。 */

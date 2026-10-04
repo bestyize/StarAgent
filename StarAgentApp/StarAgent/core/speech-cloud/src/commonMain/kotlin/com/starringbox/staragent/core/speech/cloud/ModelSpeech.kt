@@ -1,17 +1,21 @@
-package com.starringbox.staragent.core.llm
+package com.starringbox.staragent.core.speech.cloud
 
+import com.starringbox.staragent.core.llm.LlmHttpException
+import com.starringbox.staragent.core.llm.describeConnectionFailure
+import com.starringbox.staragent.core.llm.ensureSuccess
+import com.starringbox.staragent.core.llm.httpClient
 import com.starringbox.staragent.core.model.SpeechProtocol
-import com.starringbox.staragent.core.platform.voice.Players
-import com.starringbox.staragent.core.platform.voice.PcmAudioChunk
-import com.starringbox.staragent.core.platform.voice.PcmPlayers
-import com.starringbox.staragent.core.platform.voice.Recorders
-import com.starringbox.staragent.core.platform.voice.SpeechOutcome
-import com.starringbox.staragent.core.platform.voice.StreamingSynthesizer
-import com.starringbox.staragent.core.platform.voice.Synthesizer
-import com.starringbox.staragent.core.platform.voice.Transcriber
-import com.starringbox.staragent.core.platform.voice.VoiceClip
-import com.starringbox.staragent.core.platform.voice.VoiceRules
-import com.starringbox.staragent.core.platform.voice.Wav
+import com.starringbox.staragent.core.speech.Players
+import com.starringbox.staragent.core.speech.PcmAudioChunk
+import com.starringbox.staragent.core.speech.PcmPlayers
+import com.starringbox.staragent.core.speech.Recorders
+import com.starringbox.staragent.core.speech.SpeechOutcome
+import com.starringbox.staragent.core.speech.StreamingSynthesizer
+import com.starringbox.staragent.core.speech.Synthesizer
+import com.starringbox.staragent.core.speech.Transcriber
+import com.starringbox.staragent.core.speech.VoiceClip
+import com.starringbox.staragent.core.speech.VoiceRules
+import com.starringbox.staragent.core.speech.Wav
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.header
@@ -45,7 +49,7 @@ import kotlinx.serialization.json.put
 /**
  * 一次语音请求所需的全部信息。
  *
- * 比 [LlmEndpoint] 简单：协议只有两种，而且**由服务商定死、不需要用户选**——
+ * 比 [com.starringbox.staragent.core.llm.LlmEndpoint] 简单：协议只有两种，而且**由服务商定死、不需要用户选**——
  * 用户看到的永远是"哪一家"，形状是那一家自己的事。见 [SpeechProtocol]。
  */
 data class SpeechEndpoint(

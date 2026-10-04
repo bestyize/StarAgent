@@ -1,5 +1,9 @@
 package com.starringbox.staragent.core.platform.voice
 
+import com.starringbox.staragent.core.speech.PcmPlayers
+import com.starringbox.staragent.core.speech.Players
+import com.starringbox.staragent.core.speech.Recorders
+
 /**
  * 桌面（JVM）：只装录音和播放。
  *

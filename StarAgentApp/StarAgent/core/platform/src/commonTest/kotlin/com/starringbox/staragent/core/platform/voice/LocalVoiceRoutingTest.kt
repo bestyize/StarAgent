@@ -1,5 +1,9 @@
 package com.starringbox.staragent.core.platform.voice
 
+import com.starringbox.staragent.core.speech.SpeechOutcome
+import com.starringbox.staragent.core.speech.Synthesizer
+import com.starringbox.staragent.core.speech.Transcriber
+import com.starringbox.staragent.core.speech.VoiceSource
 import kotlin.test.*
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.runCurrent

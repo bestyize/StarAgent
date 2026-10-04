@@ -1,6 +1,6 @@
 package com.starringbox.staragent.core.speech.local
 
-import com.starringbox.staragent.core.platform.voice.Wav
+import com.starringbox.staragent.core.speech.Wav
 import com.starringbox.staragent.core.speech.local.asr.client.SenseVoiceAsr
 import com.starringbox.staragent.core.speech.local.tts.client.PiperTts
 import com.starringbox.staragent.core.speech.local.tts.model.TtsResult

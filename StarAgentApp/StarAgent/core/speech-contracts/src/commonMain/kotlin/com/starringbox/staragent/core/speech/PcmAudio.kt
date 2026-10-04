@@ -1,4 +1,4 @@
-package com.starringbox.staragent.core.platform.voice
+package com.starringbox.staragent.core.speech
 
 /** 带明确格式的 PCM16LE，禁止将 24k 音频按录音的 16k 播放。 */
 data class PcmAudioChunk(val pcm16: ByteArray, val sampleRate: Int, val channels: Int = 1) {

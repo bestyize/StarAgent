@@ -61,7 +61,7 @@ import com.starringbox.staragent.core.model.Author
 import com.starringbox.staragent.core.model.ChatMessage
 import com.starringbox.staragent.core.model.MessageBody
 import com.starringbox.staragent.core.model.TaskDraft
-import com.starringbox.staragent.core.platform.voice.SpeechOutcome
+import com.starringbox.staragent.core.speech.SpeechOutcome
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 

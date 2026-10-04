@@ -1,6 +1,9 @@
-package com.starringbox.staragent.core.llm
+package com.starringbox.staragent.core.speech.cloud
 
-import com.starringbox.staragent.core.platform.voice.PcmAudioChunk
+import com.starringbox.staragent.core.llm.LlmHttpException
+import com.starringbox.staragent.core.llm.ensureSuccess
+import com.starringbox.staragent.core.llm.httpClient
+import com.starringbox.staragent.core.speech.PcmAudioChunk
 import io.ktor.client.HttpClient
 import io.ktor.client.request.header
 import io.ktor.client.request.preparePost

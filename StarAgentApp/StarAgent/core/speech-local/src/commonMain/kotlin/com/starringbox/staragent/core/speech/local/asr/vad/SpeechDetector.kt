@@ -1,6 +1,6 @@
 package com.starringbox.staragent.core.speech.local.asr.vad
 
-import com.starringbox.staragent.core.platform.voice.Wav
+import com.starringbox.staragent.core.speech.Wav
 
 /** Streaming voice activity detection on 16 kHz mono samples in [-1, 1]. Not thread-safe. */
 interface SpeechDetector : AutoCloseable {

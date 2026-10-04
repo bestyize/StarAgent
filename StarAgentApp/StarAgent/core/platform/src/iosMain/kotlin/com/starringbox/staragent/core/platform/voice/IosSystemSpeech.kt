@@ -1,5 +1,8 @@
 package com.starringbox.staragent.core.platform.voice
 
+import com.starringbox.staragent.core.speech.SpeechOutcome
+import com.starringbox.staragent.core.speech.Synthesizer
+import com.starringbox.staragent.core.speech.Transcriber
 import kotlin.coroutines.resume
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.suspendCancellableCoroutine

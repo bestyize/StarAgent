@@ -1,4 +1,4 @@
-package com.starringbox.staragent.core.platform.voice
+package com.starringbox.staragent.core.speech
 
 import kotlin.test.Test
 import kotlin.test.assertFalse

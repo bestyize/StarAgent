@@ -5,8 +5,8 @@ import com.starringbox.staragent.core.speech.local.LocalSynthesizer
 import com.starringbox.staragent.core.speech.local.asr.client.SenseVoiceAsr
 import com.starringbox.staragent.core.speech.local.tts.client.PiperTts
 import com.starringbox.staragent.core.speech.local.asr.vad.filterSpeechWav
-import com.starringbox.staragent.core.platform.voice.VoiceClip
-import com.starringbox.staragent.core.platform.voice.Wav
+import com.starringbox.staragent.core.speech.VoiceClip
+import com.starringbox.staragent.core.speech.Wav
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.job
 import kotlinx.coroutines.Job
@@ -16,7 +16,7 @@ import com.starringbox.staragent.core.data.speech.ReplySpeechSession
 import com.starringbox.staragent.core.data.extensions.*
 import com.starringbox.staragent.core.runtime.*
 import com.starringbox.staragent.core.runtime.extensions.*
-import com.starringbox.staragent.core.platform.voice.PcmPlayers
+import com.starringbox.staragent.core.speech.PcmPlayers
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -34,9 +34,9 @@ import com.starringbox.staragent.core.llm.ChatStreamEvent
 import com.starringbox.staragent.core.llm.LlmEndpoint
 import com.starringbox.staragent.core.llm.LlmRole
 import com.starringbox.staragent.core.llm.LlmTurn
-import com.starringbox.staragent.core.llm.ModelSynthesizer
-import com.starringbox.staragent.core.llm.ModelTranscriber
-import com.starringbox.staragent.core.llm.SpeechEndpoint
+import com.starringbox.staragent.core.speech.cloud.ModelSynthesizer
+import com.starringbox.staragent.core.speech.cloud.ModelTranscriber
+import com.starringbox.staragent.core.speech.cloud.SpeechEndpoint
 import com.starringbox.staragent.core.model.MediaAsset
 import com.starringbox.staragent.core.model.Artifact
 import com.starringbox.staragent.core.platform.notify.Notifiers
@@ -49,9 +49,9 @@ import com.starringbox.staragent.core.platform.schedule.TaskSchedulers
 import com.starringbox.staragent.core.platform.schedule.TaskSchedulerStatus
 import com.starringbox.staragent.core.platform.schedule.WakeupTrigger
 import com.starringbox.staragent.core.platform.storage.LocalStores
-import com.starringbox.staragent.core.platform.voice.SpeechOutcome
+import com.starringbox.staragent.core.speech.SpeechOutcome
 import com.starringbox.staragent.core.platform.voice.Voice
-import com.starringbox.staragent.core.platform.voice.VoiceSource
+import com.starringbox.staragent.core.speech.VoiceSource
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.BuiltInCompanion
 import com.starringbox.staragent.core.model.AgentGroup

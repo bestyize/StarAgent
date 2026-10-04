@@ -1,4 +1,4 @@
-package com.starringbox.staragent.core.llm
+package com.starringbox.staragent.core.speech.cloud
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

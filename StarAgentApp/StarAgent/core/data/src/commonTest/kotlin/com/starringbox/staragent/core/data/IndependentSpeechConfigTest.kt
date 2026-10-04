@@ -2,7 +2,7 @@ package com.starringbox.staragent.core.data
 
 import com.starringbox.staragent.core.platform.storage.LocalStores
 import com.starringbox.staragent.core.platform.voice.Voice
-import com.starringbox.staragent.core.platform.voice.VoiceSource
+import com.starringbox.staragent.core.speech.VoiceSource
 import kotlin.test.*
 
 class IndependentSpeechConfigTest {

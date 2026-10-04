@@ -1,15 +1,15 @@
-package com.starringbox.staragent.core.llm
+package com.starringbox.staragent.core.speech.cloud
 
 import com.starringbox.staragent.core.model.SpeechProtocol
-import com.starringbox.staragent.core.platform.voice.PcmAudioChunk
-import com.starringbox.staragent.core.platform.voice.PcmPlayers
-import com.starringbox.staragent.core.platform.voice.Player
-import com.starringbox.staragent.core.platform.voice.Players
-import com.starringbox.staragent.core.platform.voice.Recorder
-import com.starringbox.staragent.core.platform.voice.Recorders
-import com.starringbox.staragent.core.platform.voice.SpeechOutcome
-import com.starringbox.staragent.core.platform.voice.VoiceClip
-import com.starringbox.staragent.core.platform.voice.Wav
+import com.starringbox.staragent.core.speech.PcmAudioChunk
+import com.starringbox.staragent.core.speech.PcmPlayers
+import com.starringbox.staragent.core.speech.Player
+import com.starringbox.staragent.core.speech.Players
+import com.starringbox.staragent.core.speech.Recorder
+import com.starringbox.staragent.core.speech.Recorders
+import com.starringbox.staragent.core.speech.SpeechOutcome
+import com.starringbox.staragent.core.speech.VoiceClip
+import com.starringbox.staragent.core.speech.Wav
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable

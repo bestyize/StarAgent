@@ -56,7 +56,11 @@ include(":shared")
 include(":core:model")
 include(":core:designsystem")
 include(":core:platform")
+// speech-contracts 语音契约：识别/合成/录放接口、PCM/WAV 与准入规则（纯 Kotlin）
+include(":core:speech-contracts")
 include(":core:speech-local")
+// speech-cloud 云端语音：OpenAI 兼容 / 火山 / MiMo 的识别与合成
+include(":core:speech-cloud")
 include(":core:llm")
 // llm-contracts 模型契约，运行时无需依赖 HTTP、语音或平台实现
 include(":core:llm-contracts")

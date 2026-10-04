@@ -18,7 +18,7 @@ kotlin {
     applyDefaultHierarchyTemplate()
     sourceSets {
         commonMain.dependencies {
-            api(project(":core:platform"))
+            api(project(":core:speech-contracts"))
             implementation(libs.kotlinx.coroutines.core)
         }
         val jvmSharedMain by creating { dependsOn(commonMain.get()) }
@@ -41,7 +41,8 @@ kotlin {
             }
             val arch = when (targetArch) {
                 "amd64", "x86_64", "x64" -> "x64"
-                "aarch64", "arm64" -> "arm64"
+                // sherpa-onnx 的产物命名不统一：Windows 叫 arm64，macOS / Linux 叫 aarch64。
+                "aarch64", "arm64" -> if (os == "win") "arm64" else "aarch64"
                 else -> null
             }
             if (os != null && arch != null) {

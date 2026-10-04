@@ -1,6 +1,6 @@
 package com.starringbox.staragent.core.speech.local
 
-import com.starringbox.staragent.core.platform.voice.*
+import com.starringbox.staragent.core.speech.*
 import com.starringbox.staragent.core.speech.local.asr.client.SenseVoiceAsr
 import com.starringbox.staragent.core.speech.local.asr.vad.filterSpeechWav
 import com.starringbox.staragent.core.speech.local.asr.vad.hasSpokenContent

@@ -36,11 +36,13 @@ StarAgent/
 ├── core/                    核心层：不含业务界面，被所有功能模块依赖
 │   ├── model/               领域模型（纯 Kotlin，不依赖 Compose）
 │   ├── designsystem/        主题、图标、通用组件、导航契约
-│   ├── platform/            平台能力层：本地存储 / 选图保存 / 语音
+│   ├── platform/            平台能力层：本地存储 / 选图保存 / 设备语音
 │   │                        （内部分包，三端实现各在自己的源集里）
 │   ├── llm/                 模型接入：协议实现 + 流式解析 + 工具 wire 渲染（不依赖 Compose）
 │   ├── llm-contracts/       模型请求、对话、响应事件（没有网络或平台实现）
 │   ├── agent-runtime/       无 I/O 循环规则、Kotlin 执行宿主与扩展装配
+│   ├── speech-contracts/    语音契约：识别 / 合成 / 录放接口、PCM / WAV、准入规则（纯 Kotlin）
+│   ├── speech-cloud/        云端语音：OpenAI 兼容 / 火山方舟 / 小米 MiMo
 │   ├── speech-local/        SenseVoice / Piper / Silero 离线语音与模型管理
 │   ├── tools/               工具执行层：契约、注册表、内置工具（只依赖 core:model）
 │   ├── data/                应用状态、模型服务配置、对话流、移动产品装配与展示
@@ -76,7 +78,8 @@ StarAgent/
                     │      core:data     │  状态 / 模型配置 / 对话流 / Agent 循环
                     │     core:tools     │  工具契约 / 注册表 / 内置工具
                     │      core:llm      │  协议实现 + 流式解析 + 工具 wire 渲染
-                    │    core:platform   │  存储 / 选图保存 / 语音
+                    │    core:platform   │  存储 / 选图保存 / 设备语音
+                    │    core:speech-*   │  语音契约 / 云端语音 / 离线语音
                     │     core:model     │  领域模型（零平台依赖）
                     └────────────────────┘
 ```
@@ -88,7 +91,8 @@ StarAgent/
 
 - **功能模块之间互不依赖。** 需要跨模块跳转时，走 `core:designsystem` 里的 [Route](core/designsystem/src/commonMain/kotlin/com/starringbox/staragent/core/designsystem/navigation/Navigation.kt) 与 `Navigator`，不直接引用对方的界面。
 - **只有 push / pop 才做转场动画**，Tab 之间是平级切换、不加动画。方向随 `NavTarget` 一起交给界面，不要分别去读「当前路由」和「上一次动作」——两次读取之间状态可能已经变了，动画会选错方向。转场也不用淡入淡出：整屏页面叠加时两边都是半透明，会看到重影。
-- **`core:model` 与 `core:llm` 不依赖 Compose。** 协议层保持纯粹，将来可以独立复用或搬到服务端。
+- **`core:model` 与 `core:llm` 不依赖 Compose，`core:llm` 也不依赖 `core:platform`。** 协议层保持纯粹，将来可以独立复用或搬到服务端。
+- **语音三路实现只经由 `core:speech-contracts` 对齐。** 设备实现在 `core:platform`，云端在 `core:speech-cloud`，离线在 `core:speech-local`，彼此互不依赖。
 - **`core:designsystem` 不含业务逻辑。** 只有主题、图标、通用组件和导航契约。
 - **界面层只读 `AppState` / 调它的方法**，不自己持有业务状态，也不直接发网络请求。
 

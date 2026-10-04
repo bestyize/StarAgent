@@ -2,11 +2,11 @@ package com.starringbox.staragent.core.data
 
 import com.starringbox.staragent.core.llm.ChatStreamEvent
 import com.starringbox.staragent.core.platform.storage.LocalStores
-import com.starringbox.staragent.core.platform.voice.SpeechOutcome
-import com.starringbox.staragent.core.platform.voice.Synthesizer
-import com.starringbox.staragent.core.platform.voice.Transcriber
+import com.starringbox.staragent.core.speech.SpeechOutcome
+import com.starringbox.staragent.core.speech.Synthesizer
+import com.starringbox.staragent.core.speech.Transcriber
 import com.starringbox.staragent.core.platform.voice.Voice
-import com.starringbox.staragent.core.platform.voice.VoiceSource
+import com.starringbox.staragent.core.speech.VoiceSource
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flow

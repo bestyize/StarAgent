@@ -37,7 +37,7 @@ Piper 的实际输出采样率由引擎提供。流式输出转换到平台的 `
 常规测试无需下载模型或配置密钥：
 
 ```powershell
-.\gradlew.bat :core:speech-local:jvmTest :core:platform:jvmTest :core:llm:jvmTest :core:data:jvmTest
+.\gradlew.bat :core:speech-contracts:jvmTest :core:speech-local:jvmTest :core:speech-cloud:jvmTest :core:platform:jvmTest :core:data:jvmTest
 ```
 
 已安装模型的端到端推理测试和桌面静音硬件测试是显式开启的检查：

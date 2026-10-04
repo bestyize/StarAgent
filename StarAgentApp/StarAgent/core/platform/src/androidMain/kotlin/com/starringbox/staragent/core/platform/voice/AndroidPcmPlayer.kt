@@ -1,5 +1,7 @@
 package com.starringbox.staragent.core.platform.voice
 
+import com.starringbox.staragent.core.speech.PcmAudioChunk
+import com.starringbox.staragent.core.speech.PcmPlayer
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack

@@ -1,4 +1,4 @@
-package com.starringbox.staragent.core.platform.voice
+package com.starringbox.staragent.core.speech
 
 /** 一次语音操作的结果。失败一律带上可以直接展示给用户的理由。 */
 sealed interface SpeechOutcome<out T> {

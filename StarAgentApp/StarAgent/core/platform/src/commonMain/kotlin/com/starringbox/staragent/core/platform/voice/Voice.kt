@@ -1,5 +1,14 @@
 package com.starringbox.staragent.core.platform.voice
 
+import com.starringbox.staragent.core.speech.PcmAudioChunk
+import com.starringbox.staragent.core.speech.PcmPlayers
+import com.starringbox.staragent.core.speech.Recorders
+import com.starringbox.staragent.core.speech.SpeechOutcome
+import com.starringbox.staragent.core.speech.StreamingSynthesizer
+import com.starringbox.staragent.core.speech.Synthesizer
+import com.starringbox.staragent.core.speech.Transcriber
+import com.starringbox.staragent.core.speech.VoiceSource
+
 /**
  * 语音能力的统一入口。
  *

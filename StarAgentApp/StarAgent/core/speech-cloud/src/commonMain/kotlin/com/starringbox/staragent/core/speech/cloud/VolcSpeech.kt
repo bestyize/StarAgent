@@ -1,5 +1,8 @@
-package com.starringbox.staragent.core.llm
+package com.starringbox.staragent.core.speech.cloud
 
+import com.starringbox.staragent.core.llm.LlmHttpException
+import com.starringbox.staragent.core.llm.httpClient
+import com.starringbox.staragent.core.llm.httpErrorMessage
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.header
 import io.ktor.client.request.post
