@@ -1,4 +1,4 @@
-package com.starringbox.staragent.common.apptheme
+package com.starringbox.staragent.core.designsystem.theme
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color

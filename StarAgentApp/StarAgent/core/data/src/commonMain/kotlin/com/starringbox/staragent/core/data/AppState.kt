@@ -104,11 +104,48 @@ class AppState(
     val memories = mutableStateListOf<MemoryItem>()
     val skills = mutableStateListOf<Skill>()
     val channels = mutableStateListOf<Channel>()
-    val providers = mutableStateListOf<ModelProvider>()
     val groups = mutableStateListOf<AgentGroup>()
     val userInputPort = AppUserInputPort(this)
     val companionVoice = CompanionVoiceSession(this)
     val companion: Agent get() = requireNotNull(agent(BuiltInCompanion.ID))
+
+    // ── 模型服务（转发到 [models]）──────────
+
+    val providers: MutableList<ModelProvider> get() = models.providers
+    val defaultModelId: String get() = models.defaultModelId
+    val responseMode: ResponseMode get() = models.responseMode
+    val executionPolicy: ExecutionPolicy get() = models.executionPolicy
+    fun providerById(id: String): ModelProvider? = models.providerById(id)
+    fun modelKey(providerId: String, index: Int): String = models.modelKey(providerId, index)
+    fun resolveModel(modelId: String): Pair<ModelProvider, String>? = models.resolveModel(modelId)
+    fun modelLabel(modelId: String): String = models.modelLabel(modelId)
+    fun configuredProviders(): List<ModelProvider> = models.configuredProviders()
+    fun endpointFor(agent: Agent): LlmEndpoint? = models.endpointFor(agent)
+    fun endpointFor(agent: Agent, systemPrompt: String, toolsAvailable: Boolean = true): LlmEndpoint? =
+        models.endpointFor(agent, systemPrompt, toolsAvailable)
+    fun updateProvider(updated: ModelProvider) = models.updateProvider(updated)
+    fun addCustomProvider(
+        name: String,
+        protocol: LlmProtocol,
+        openAiBaseUrl: String,
+        anthropicBaseUrl: String,
+        models: List<String>,
+        apiKey: String,
+    ): ModelProvider =
+        this.models.addCustomProvider(name, protocol, openAiBaseUrl, anthropicBaseUrl, models, apiKey)
+    fun removeProvider(id: String) = models.removeProvider(id)
+    fun setDefaultModel(modelId: String) = models.setDefaultModel(modelId)
+    fun selectResponseMode(mode: ResponseMode) = models.selectResponseMode(mode)
+    fun selectExecutionPolicy(policy: ExecutionPolicy) = models.selectExecutionPolicy(policy)
+    fun setAgentModel(agentId: String, modelId: String) = models.setAgentModel(agentId, modelId)
+
+    /**
+     * 这个智能体能用哪些工具。由已注册的 [extensions] 按需提供，
+     * 动态连接的 MCP 工具也由 McpExtension 贡献，未装配该扩展时不暴露其工具。
+     */
+    internal fun registryFor(agent: Agent): ToolRegistry {
+        return extensionSet.registryFor(agent)
+    }
 
     /** 平台与业务扩展集合，各扩展独立声明工具与 Prompt 贡献。 */
     private val extensionSet = AgentExtensions(extensionFactory(this))
@@ -125,18 +162,21 @@ class AppState(
     private val conversations = mutableStateMapOf<String, SnapshotStateList<ChatMessage>>()
     private val busy = mutableStateMapOf<String, Boolean>()
 
-    var responseMode by mutableStateOf(ResponseMode.Standard)
-        private set
-
-    /** 工具执行权限策略：Auto（自动）或 OnDemand（按需二次确认）。 */
-    var executionPolicy by mutableStateOf(ExecutionPolicy.Auto)
-        private set
-
     /** 语音：引擎偏好、服务商与 Key、离线模型、听写与回复朗读。 */
     val speech = SpeechController()
 
-    var defaultModelId by mutableStateOf("")
-        private set
+    /** 模型服务：服务商、Key、模型、默认模型、回复模式与执行策略。 */
+    val models = ModelConfigController(
+        systemPromptFor = { agent -> systemPromptFor(agent, toolsAvailable = true) },
+        registryFor = { agent -> registryFor(agent) },
+        newId = { prefix -> nextId(prefix) },
+        onAgentModelChanged = { agentId, modelId ->
+            val index = agents.indexOfFirst { it.id == agentId }
+            if (index >= 0) agents[index] = agents[index].copy(modelId = modelId)
+            persistState()
+        },
+    )
+
     var searchQuery by mutableStateOf("")
 
     private var idSeq = 0
@@ -254,8 +294,7 @@ class AppState(
         }
 
         // 兜底默认模型取第一家的第一个；没有服务商时留空，交给 SettingsStore 里用户自己的选择
-        providers.firstOrNull()?.let { defaultModelId = modelKey(it.id, 0) }
-        restoreSettings()
+        models.restore()
         companionDarkMode = SettingsStore.get("companionDarkMode")?.toBooleanStrictOrNull()
         // Upgrade old saves additively; never replace any existing agents or companion edits.
         if (agent(BuiltInCompanion.ID) == null) {
@@ -517,146 +556,6 @@ class AppState(
         is MessageBody.MemoryNote -> body.text
         is MessageBody.Skipped -> body.reason.ifBlank { "跳过了本轮" }
         is MessageBody.Question -> "提问 · ${body.question}"
-    }
-
-    // ── 模型服务 ────────────────────────────────
-
-    fun providerById(id: String): ModelProvider? = providers.firstOrNull { it.id == id }
-
-    fun modelKey(providerId: String, index: Int): String = "$providerId:$index"
-
-    /** 把 "provider:index" 解析回服务商与该服务商下的模型名。 */
-    fun resolveModel(modelId: String): Pair<ModelProvider, String>? {
-        val separator = modelId.lastIndexOf(':')
-        if (separator <= 0) return null
-        val provider = providerById(modelId.substring(0, separator)) ?: return null
-        val index = modelId.substring(separator + 1).toIntOrNull() ?: return null
-        val model = provider.models.getOrNull(index) ?: return null
-        return provider to model
-    }
-
-    fun modelLabel(modelId: String): String = resolveModel(modelId)?.second ?: modelId
-
-    fun configuredProviders(): List<ModelProvider> = providers.filter { it.configured }
-
-    /** 这个智能体当前能不能真正对话——不能的话界面要给出明确的去配置入口。 */
-    fun endpointFor(agent: Agent): LlmEndpoint? =
-        endpointFor(agent, systemPromptFor(agent, toolsAvailable = true), toolsAvailable = true)
-
-    /**
-     * 同上，但由调用方给系统提示。群聊走这条：模型与 Key 的解析完全一样，
-     * 只是提示里要写群上下文而不是单聊人设。
-     *
-     * [toolsAvailable] 决定这次请求带不带工具定义。**现在是三个调用点全传 true**
-     * ——单聊、群聊、定时执行都走工具循环了。这个开关留着，是给降级路径
-     * （服务商拒收 `tools` 字段时退回文本块协议）用的，那个还没做；
-     * 传 false 时提示与请求**两头**都不带工具，两套指令才不会同时给出去。
-     */
-    fun endpointFor(
-        agent: Agent,
-        systemPrompt: String,
-        toolsAvailable: Boolean = true,
-    ): LlmEndpoint? {
-        val (provider, model) = resolveModel(agent.modelId) ?: return null
-        if (!provider.configured) return null
-        // 地址按当前协议取：同一家两种协议的路径往往不同
-        val baseUrl = provider.baseUrlFor(provider.protocol) ?: return null
-        return LlmEndpoint(
-            protocol = provider.protocol,
-            baseUrl = baseUrl,
-            apiKey = provider.apiKey,
-            model = model,
-            systemPrompt = systemPrompt,
-            tools = if (toolsAvailable) registryFor(agent).definitions() else emptyList(),
-        )
-    }
-
-    /**
-     * 这个智能体能用哪些工具。由已注册的 [extensions] 按需提供，
-     * 动态连接的 MCP 工具也由 McpExtension 贡献，未装配该扩展时不暴露其工具。
-     */
-    internal fun registryFor(agent: Agent): ToolRegistry {
-        return extensionSet.registryFor(agent)
-    }
-
-    fun updateProvider(updated: ModelProvider) {
-        val index = providers.indexOfFirst { it.id == updated.id }
-        if (index < 0) return
-        providers[index] = updated
-        persistProvider(updated)
-
-        // 换掉模型列表后，原先选中的模型可能已经不存在了，回退到第一个可用的。
-        if (resolveModel(defaultModelId) == null) {
-            setDefaultModel(modelKey(updated.id, 0))
-        }
-    }
-
-    /** 新增一个自定义服务商。两种协议的地址分开填，用不到的那个可以留空。 */
-    fun addCustomProvider(
-        name: String,
-        protocol: LlmProtocol,
-        openAiBaseUrl: String,
-        anthropicBaseUrl: String,
-        models: List<String>,
-        apiKey: String,
-    ): ModelProvider {
-        val provider = ModelProvider(
-            id = nextId("custom"),
-            name = name.trim(),
-            protocol = protocol,
-            openAiBaseUrl = openAiBaseUrl.trim(),
-            anthropicBaseUrl = anthropicBaseUrl.trim(),
-            models = models,
-            apiKey = apiKey.trim(),
-            builtIn = false,
-        )
-        providers.add(provider)
-        persistProvider(provider)
-
-        val ids = readCustomIds()
-        writeCustomIds(ids + provider.id)
-        return provider
-    }
-
-    fun removeProvider(id: String) {
-        val provider = providerById(id) ?: return
-        if (provider.builtIn) return
-
-        providers.removeAll { it.id == id }
-        writeCustomIds(readCustomIds().filterNot { it == id })
-        listOf(
-            keyOf(id), modelsOf(id), "custom:$id:name", "custom:$id:protocol",
-            "custom:$id:baseUrl", "custom:$id:models", "custom:$id:key",
-        ).forEach { SettingsStore.remove(it) }
-
-        if (resolveModel(defaultModelId) == null) {
-            // 内置服务商删不掉，这里本该不会为空；但"删一个服务商"不该变成崩溃，
-            // 没有可选的就把默认模型留空。
-            providers.firstOrNull()?.let { setDefaultModel(modelKey(it.id, 0)) }
-        }
-    }
-
-    fun setDefaultModel(modelId: String) {
-        defaultModelId = modelId
-        SettingsStore.put(KEY_DEFAULT_MODEL, modelId)
-    }
-
-    /** 注意：不能叫 setResponseMode——那会跟属性自带的 setter 撞 JVM 签名。 */
-    fun selectResponseMode(mode: ResponseMode) {
-        responseMode = mode
-        SettingsStore.put(KEY_RESPONSE_MODE, mode.name)
-    }
-
-    /** 切换执行权限策略。自动 vs 按需。 */
-    fun selectExecutionPolicy(policy: ExecutionPolicy) {
-        executionPolicy = policy
-        SettingsStore.put(KEY_EXECUTION_POLICY, policy.name)
-    }
-
-    fun setAgentModel(agentId: String, modelId: String) {
-        val index = agents.indexOfFirst { it.id == agentId }
-        if (index >= 0) agents[index] = agents[index].copy(modelId = modelId)
-        persistState()
     }
 
     // ── 对话 ────────────────────────────────────
@@ -1696,7 +1595,7 @@ class AppState(
             append(agent.persona.trim().trimEnd('。', '！', '!', '.')).append("。")
         }
         append(
-            when (responseMode) {
+            when (models.responseMode) {
                 ResponseMode.Fast -> "回答尽量简短直接，先给结论，不要客套。"
                 ResponseMode.Standard -> "回答先给结论，再给必要的依据。"
                 ResponseMode.Deep -> "回答前充分思考，给出推理过程与依据，必要时分点展开。"
@@ -1717,104 +1616,7 @@ class AppState(
 
     // ── 持久化 ──────────────────────────────────
 
-    private fun keyOf(id: String) = "apikey:$id"
-    private fun modelsOf(id: String) = "models:$id"
 
-    private fun persistProvider(provider: ModelProvider) {
-        SettingsStore.put(keyOf(provider.id), provider.apiKey)
-        SettingsStore.put(modelsOf(provider.id), encodeList(provider.models))
-        if (!provider.builtIn) {
-            SettingsStore.put("custom:${provider.id}:name", provider.name)
-            SettingsStore.put("custom:${provider.id}:protocol", provider.protocol.name)
-            SettingsStore.put("custom:${provider.id}:openAiBaseUrl", provider.openAiBaseUrl)
-            SettingsStore.put("custom:${provider.id}:anthropicBaseUrl", provider.anthropicBaseUrl)
-            SettingsStore.put("custom:${provider.id}:models", encodeList(provider.models))
-            SettingsStore.put("custom:${provider.id}:key", provider.apiKey)
-        }
-    }
-
-    private fun restoreSettings() {
-        SettingsStore.get(KEY_RESPONSE_MODE)
-            ?.let { saved -> ResponseMode.entries.firstOrNull { it.name == saved } }
-            ?.let { responseMode = it }
-
-        SettingsStore.get(KEY_EXECUTION_POLICY)
-            ?.let { saved -> ExecutionPolicy.entries.firstOrNull { it.name == saved } }
-            ?.let { executionPolicy = it }
-
-        // 预置模型清单更新后，要把本地缓存的那份丢掉，否则用户永远看不到新模型。
-        // API Key 必须保留——只重置模型名。
-        val savedSeedVersion = SettingsStore.get(KEY_SEED_VERSION)?.toIntOrNull() ?: 0
-        val presetsOutdated = savedSeedVersion < SEED_VERSION
-
-        providers.indices.forEach { index ->
-            val provider = providers[index]
-            val savedKey = SettingsStore.get(keyOf(provider.id)).orEmpty()
-            val savedModels = if (presetsOutdated) {
-                emptyList()
-            } else {
-                decodeList(SettingsStore.get(modelsOf(provider.id)))
-            }
-            providers[index] = provider.copy(
-                apiKey = savedKey,
-                models = savedModels.ifEmpty { provider.models },
-            )
-        }
-
-        SettingsStore.put(KEY_SEED_VERSION, SEED_VERSION.toString())
-
-        readCustomIds().forEach { id ->
-            if (providerById(id) != null) return@forEach
-            val name = SettingsStore.get("custom:$id:name") ?: return@forEach
-            val protocol = SettingsStore.get("custom:$id:protocol")
-                ?.let { saved -> LlmProtocol.entries.firstOrNull { it.name == saved } }
-                ?: LlmProtocol.OpenAi
-            val openAiBaseUrl = SettingsStore.get("custom:$id:openAiBaseUrl").orEmpty()
-            val anthropicBaseUrl = SettingsStore.get("custom:$id:anthropicBaseUrl").orEmpty()
-            val models = decodeList(SettingsStore.get("custom:$id:models"))
-            val apiKey = SettingsStore.get("custom:$id:key").orEmpty()
-            providers.add(
-                ModelProvider(
-                    id = id,
-                    name = name,
-                    protocol = protocol,
-                    openAiBaseUrl = openAiBaseUrl,
-                    anthropicBaseUrl = anthropicBaseUrl,
-                    models = models,
-                    apiKey = apiKey,
-                    builtIn = false,
-                )
-            )
-        }
-
-        val savedDefault = SettingsStore.get(KEY_DEFAULT_MODEL)
-        if (savedDefault != null && resolveModel(savedDefault) != null) {
-            defaultModelId = savedDefault
-        }
-    }
-
-    private fun readCustomIds(): List<String> = decodeList(SettingsStore.get(KEY_CUSTOM_IDS))
-
-    private fun writeCustomIds(ids: List<String>) {
-        SettingsStore.put(KEY_CUSTOM_IDS, encodeList(ids))
-    }
-
-    /**
-     * 列表按 JSON 数组存。用分隔符拼字符串看着更省事，
-     * 但模型名里会出现什么字符不由我们决定，JSON 是唯一不会被撑坏的写法。
-     */
-    private fun encodeList(values: List<String>): String =
-        buildJsonArray { values.forEach { add(it) } }.toString()
-
-    private fun decodeList(raw: String?): List<String> {
-        if (raw.isNullOrBlank()) return emptyList()
-        return runCatching {
-            Json.parseToJsonElement(raw)
-                .jsonArray
-                .mapNotNull { (it as? JsonPrimitive)?.content }
-                .filter { it.isNotBlank() }
-        }.getOrDefault(emptyList())
-    }
 
     private companion object {
         /**
@@ -1840,7 +1642,6 @@ class AppState(
         const val KEY_DEFAULT_MODEL = "defaultModel"
         const val KEY_RESPONSE_MODE = "responseMode"
         const val KEY_EXECUTION_POLICY = "executionPolicy"
-        const val KEY_CUSTOM_IDS = "customIds"
         const val KEY_SEED_VERSION = "seedVersion"
 
         /**

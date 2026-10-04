@@ -43,7 +43,7 @@ import com.starringbox.staragent.core.designsystem.icon.StarIcon
 import com.starringbox.staragent.core.designsystem.icon.StarIconGlyph
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.designsystem.theme.avatarGradient
-import com.starringbox.staragent.common.apptheme.LocalColor
+import com.starringbox.staragent.core.designsystem.theme.LocalColor
 
 /** 智能体头像：渐变底 + 字形，颜色按序号稳定取用。 */
 @Composable

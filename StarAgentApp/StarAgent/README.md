@@ -47,6 +47,8 @@ StarAgent/
 │   ├── tools/               工具执行层：契约、注册表、内置工具（只依赖 core:model）
 │   ├── tool-host/           工具端口的各端实现：Android 无障碍设备操作、桌面命令与 MCP、权限
 │   ├── data/                应用状态、模型服务配置、对话流、移动产品装配与展示
+│   │   ├── speech/          语音控制器：引擎、服务商与 Key、离线模型、朗读
+│   │   └── ModelConfigController.kt  模型服务：服务商、Key、模型、默认模型、回复模式
 │   └── bootstrap/           装配层：启动时把各端的平台能力一次装起来
 │
 ├── feature/                 功能层：一个模块 = 一块完整功能
@@ -98,7 +100,7 @@ StarAgent/
 - **语音三路实现只经由 `core:speech-contracts` 对齐。** 设备实现在 `core:platform`，云端在 `core:speech-cloud`，离线在 `core:speech-local`，彼此互不依赖。
 - **`core:designsystem` 不含业务逻辑。** 只有主题、图标、通用组件和导航契约。
 - **界面层只读 `AppState` / 调它的方法**，不自己持有业务状态，也不直接发网络请求。
-  按领域拆出的状态挂在 `AppState` 下面，界面同样只经由它访问：语音（引擎偏好、服务商与 Key、离线模型、听写与朗读）在 `state.speech`（[SpeechController](core/data/src/commonMain/kotlin/com/starringbox/staragent/core/data/speech/SpeechController.kt)）。
+  按领域拆出的状态挂在 `AppState` 下面，界面同样只经由它访问：语音（引擎偏好、服务商与 Key、离线模型、听写与朗读）在 `state.speech`（[SpeechController](core/data/src/commonMain/kotlin/com/starringbox/staragent/core/data/speech/SpeechController.kt)），模型服务（服务商、Key、模型、默认模型、回复模式、执行策略）在 `state.models`（[ModelConfigController](core/data/src/commonMain/kotlin/com/starringbox/staragent/core/data/ModelConfigController.kt)）。`AppState` 上的 `endpointFor` / `providers` 等仍然转发过去，`Seed` 和 `CompanionVoiceSession` 这类内部调用方不用改。
 
 新增一个功能时：在 `feature/` 下建模块 → 在 `settings.gradle.kts` 注册 → 若需新页面，在 `Route` 里加一个目的地 → 在 `shared/App.kt` 的 `RouteHost` 里接上。
 

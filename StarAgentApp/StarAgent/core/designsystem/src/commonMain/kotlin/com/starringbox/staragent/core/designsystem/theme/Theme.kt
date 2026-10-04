@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-import com.starringbox.staragent.common.apptheme.LocalColor
+import com.starringbox.staragent.core.designsystem.theme.LocalColor
 
 /** 星环的视觉基色。取名自"星环"意象：深靛蓝作主色，青色作副色。 */
 object StarPalette {

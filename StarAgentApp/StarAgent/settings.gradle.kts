@@ -79,8 +79,6 @@ include(":core:agent-runtime")
 include(":samples:headless")
 
 // ── 公共层 ─────────────────────────────────────
-include(":common:apptheme")
-
 // ── 功能层 ─────────────────────────────────────
 // agents   智能体：列表、创建、配置
 // chat     对话：消息流、任务草稿卡片、产物卡片、输入坞
