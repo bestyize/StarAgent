@@ -33,6 +33,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(project(":core:platform"))
+            implementation(project(":core:tool-host"))
             implementation(project(":core:speech-local"))
         }
         androidMain.dependencies {

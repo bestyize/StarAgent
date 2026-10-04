@@ -70,6 +70,8 @@ include(":core:data")
 include(":core:bootstrap")
 // tools  工具执行：契约 + 注册表 + 内置工具（只依赖 core:model）
 include(":core:tools")
+// tool-host 工具宿主适配：设备操作 / 命令 / MCP / 权限的各端实现（依赖 core:tools）
+include(":core:tool-host")
 // agent-runtime 通用 Agent 运行时（无 Compose / UI 依赖）
 include(":core:agent-runtime")
 

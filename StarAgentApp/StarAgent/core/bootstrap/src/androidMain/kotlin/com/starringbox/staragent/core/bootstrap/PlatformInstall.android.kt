@@ -5,7 +5,7 @@ import com.starringbox.staragent.core.speech.local.LocalSpeechContext
 import androidx.activity.result.ActivityResultCaller
 import com.starringbox.staragent.core.data.AndroidAppContext
 import com.starringbox.staragent.core.data.AppStates
-import com.starringbox.staragent.core.platform.device.AndroidAccessibilityController
+import com.starringbox.staragent.core.toolhost.device.AndroidAccessibilityController
 import com.starringbox.staragent.core.platform.installAndroidBrowser
 import com.starringbox.staragent.core.platform.media.AndroidMediaPicker
 import com.starringbox.staragent.core.platform.media.AndroidMediaSaver
@@ -13,7 +13,7 @@ import com.starringbox.staragent.core.platform.media.MediaPickers
 import com.starringbox.staragent.core.platform.media.MediaSavers
 import com.starringbox.staragent.core.platform.notify.AndroidNotifier
 import com.starringbox.staragent.core.platform.notify.Notifiers
-import com.starringbox.staragent.core.platform.permissions.installAndroidPermissions
+import com.starringbox.staragent.core.toolhost.permissions.installAndroidPermissions
 import com.starringbox.staragent.core.platform.schedule.AndroidTaskScheduler
 import com.starringbox.staragent.core.platform.schedule.TaskSchedulers
 import com.starringbox.staragent.core.platform.schedule.WakeupTrigger

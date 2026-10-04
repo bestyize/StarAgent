@@ -31,6 +31,7 @@ kotlin {
             // core:data 用的是 implementation，传不过来，所以这里得显式写一条——
             // 和 feature:chat 里那条注释是同一个坑。
             implementation(project(":core:platform"))
+            implementation(project(":core:tool-host"))
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)

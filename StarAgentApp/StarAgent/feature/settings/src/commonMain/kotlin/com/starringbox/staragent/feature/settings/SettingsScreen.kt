@@ -41,7 +41,7 @@ import com.starringbox.staragent.core.designsystem.navigation.Navigator
 import com.starringbox.staragent.core.designsystem.navigation.Route
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.model.ExecutionPolicy
-import com.starringbox.staragent.core.platform.permissions.PermissionRequests
+import com.starringbox.staragent.core.toolhost.permissions.PermissionRequests
 import com.starringbox.staragent.core.platform.storage.LocalStores
 import com.starringbox.staragent.core.tools.ports.PermissionCapability
 import com.starringbox.staragent.core.tools.ports.PermissionStatus

@@ -27,10 +27,10 @@ import com.starringbox.staragent.core.model.MediaAsset
 import com.starringbox.staragent.core.model.Artifact
 import com.starringbox.staragent.core.platform.notify.Notifiers
 import com.starringbox.staragent.core.platform.notify.NotificationTarget
-import com.starringbox.staragent.core.platform.platformCommandPort
-import com.starringbox.staragent.core.platform.platformMcpManager
-import com.starringbox.staragent.core.platform.platformDevicePort
-import com.starringbox.staragent.core.platform.permissions.PermissionRequests
+import com.starringbox.staragent.core.toolhost.platformCommandPort
+import com.starringbox.staragent.core.toolhost.platformMcpManager
+import com.starringbox.staragent.core.toolhost.platformDevicePort
+import com.starringbox.staragent.core.toolhost.permissions.PermissionRequests
 import com.starringbox.staragent.core.platform.schedule.TaskSchedulers
 import com.starringbox.staragent.core.platform.schedule.TaskSchedulerStatus
 import com.starringbox.staragent.core.platform.schedule.WakeupTrigger

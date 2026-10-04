@@ -6,25 +6,27 @@ plugins {
 }
 
 /**
- * 平台能力层：**本地存储、选图/保存、语音**。
+ * 平台能力层：**本地存储、选图/保存、设备语音、通知、定时唤醒**。
  *
- * 这三样原本是三个模块（core:storage / core:media / core:voice），合成一个，
- * 因为它们是同一种东西——"这台设备能做什么"，只是领域不同：
+ * 这些是同一种东西——"这台设备能做什么"，只是领域不同：
  *
- * - `core.platform.storage` 按名字读写文本与字节
- * - `core.platform.media`   选图与保存
- * - `core.platform.voice`   录音、播放、语音识别、语音合成
+ * - `core.platform.storage`  按名字读写文本与字节
+ * - `core.platform.media`    选图与保存
+ * - `core.platform.voice`    设备录放、系统识别与合成、三路语音的选取
+ * - `core.platform.notify`   系统通知
+ * - `core.platform.schedule` 后台定时唤醒
  *
- * **包名保留了三段**，没有拍平成一个 `core.platform.*`：领域边界还在，
- * 只是不再用 Gradle 模块去切分——每多一个模块就多一份构建文件，
- * 而这三样是同时长出来的、也总是一起被各端入口装进去的。
+ * **包名按领域分段**，没有拍平成一个 `core.platform.*`：领域边界还在，
+ * 只是不再用 Gradle 模块去切分——它们总是一起被各端入口装进去的。
+ *
+ * 工具端口（设备操作 / 命令 / MCP / 权限）的各端实现不在这里，在 core:tool-host：
+ * 这一层不认识 core:tools。
  *
  * 各端的实现放在各自的源集里（androidMain / jvmMain / iosMain），
  * commonMain 只有契约与规则。每一类都照"接口 + 私有兜底 + 注册表"的形状写，
  * 具体理由见 `Recorder.kt` 的注释。
  *
- * `core:model` 是唯一的依赖：`MediaAsset` 是领域类型，住在那边，
- * 所以这里不再是"最底层"——它上面是 model，下面是各端。
+ * 依赖只有 `core:model`（`MediaAsset` 是领域类型，住在那边）与 `core:speech-contracts`。
  */
 kotlin {
     jvm()
@@ -44,7 +46,6 @@ kotlin {
         commonMain.dependencies {
             // api：MediaAsset 出现在 pickImage / save 的公开签名里
             api(project(":core:model"))
-            api(project(":core:tools"))
             // api：Voice 的公开签名里有 SpeechOutcome / Transcriber 等契约类型
             api(project(":core:speech-contracts"))
             implementation(libs.kotlinx.coroutines.core)
