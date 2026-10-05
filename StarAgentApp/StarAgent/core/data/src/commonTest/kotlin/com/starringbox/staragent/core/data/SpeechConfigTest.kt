@@ -88,7 +88,7 @@ class SpeechConfigTest {
         val state = AppState()
 
         assertEquals(
-            listOf("zhipu", "groq", "openai", "volc-ark", "mimo", "mimo-token-plan"),
+            listOf("zhipu", "groq", "openai", "volc-ark", "mimo", "mimo-token-plan", "edge-tts"),
             state.speech.speechProviders.map { it.id },
             "顺序是显式的：没选过时取第一家。新加一家要加在**末尾**，别动这个兜底",
         )
@@ -110,13 +110,32 @@ class SpeechConfigTest {
     fun everyOtherPresetIsOpenAiShaped() {
         val state = AppState()
 
-        state.speech.speechProviders.filter { it.id !in setOf("volc-ark", "mimo", "mimo-token-plan") }.forEach { provider ->
+        state.speech.speechProviders.filter {
+            it.id !in setOf("volc-ark", "mimo", "mimo-token-plan", "edge-tts")
+        }.forEach { provider ->
             assertEquals(
                 SpeechProtocol.OpenAi,
                 provider.protocol,
                 "${provider.id} 走的是 OpenAI 那套（/audio/transcriptions 与 /audio/speech）",
             )
         }
+    }
+
+    @Test
+    fun edgeTtsIsTtsOnlyAndNeedsNoKey() {
+        val state = AppState()
+        val edge = assertNotNull(state.speech.speechProviders.firstOrNull { it.id == "edge-tts" })
+        assertFalse(edge.canTranscribe)
+        assertTrue(edge.canSynthesize)
+        assertFalse(edge.requiresApiKey)
+
+        state.speech.selectSpeechProvider("edge-tts")
+        assertNull(state.speech.asrEndpoint())
+
+        state.speech.selectTtsProvider("edge-tts")
+        val tts = assertNotNull(state.speech.ttsEndpoint())
+        assertEquals("edge-tts", tts.ttsModel)
+        assertEquals("zh-CN-XiaoxiaoNeural", tts.ttsVoice)
     }
 
     /**

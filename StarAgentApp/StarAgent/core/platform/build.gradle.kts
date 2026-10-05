@@ -66,7 +66,10 @@ kotlin {
             // 快照就不互通，重组会**静默**失效（不报编译错），表现为朗读按钮一直不出现。
             implementation(libs.compose.runtime)
         }
-        // jvmMain：纯 JDK（javax.sound.sampled），不需要额外依赖
+        jvmMain.dependencies {
+            // Edge TTS 的公开服务只返回 CBR MP3；JDK 自带的采样系统不解码 MP3。
+            implementation("javazoom:jlayer:1.0.1")
+        }
         // iosMain：用 Kotlin/Native 自带的 platform.* klib，不需要额外依赖
     }
 }

@@ -4,8 +4,7 @@ package com.starringbox.staragent.core.speech
  * 播放一段音频。设备能力，由各端入口经 core:platform 的 `DeviceVoice.install` 注入。
  *
  * 为什么需要它：**走服务商的那条合成链路只能拿到音频字节，得有人把它放出来**。
- * 桌面和 Android 都没有"给一段 wav 就能出声"的通用库（JDK 连 MP3 解码都没有，
- * 所以整条链路统一用 PCM/WAV）。
+ * 常规链路统一用 PCM/WAV；Edge TTS 的公开端点固定返回 MP3，播放实现按 MIME 分派。
  */
 interface Player {
     /** 这个平台现在能不能放。桌面没有音频输出设备时应当是 false。 */

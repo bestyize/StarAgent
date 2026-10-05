@@ -27,6 +27,9 @@ enum class SpeechProtocol {
      * 凭据也不通用——拿方舟的 Key 去填旧接口只会得到鉴权失败。
      */
     VolcArk,
+
+    /** Microsoft Edge 大声朗读：免费、只做合成，不提供语音识别。 */
+    EdgeTts,
 }
 
 /**
@@ -74,11 +77,22 @@ data class SpeechProvider(
     val ttsVoice: String? = null,
 ) {
     /** 可选的识别模型全集，预设的排最前。 */
-    val asrChoices: List<String> get() = (listOf(asrModel) + asrModels).distinct()
+    val canTranscribe: Boolean get() = protocol != SpeechProtocol.EdgeTts
+
+    /** Edge TTS 没有用户 API Key，它的动态鉴权完全封装在独立库里。 */
+    val requiresApiKey: Boolean get() = protocol != SpeechProtocol.EdgeTts
+
+    val asrChoices: List<String> get() =
+        if (canTranscribe) (listOf(asrModel) + asrModels).distinct() else emptyList()
 
     /** 这家能不能合成。不能就退回设备自带（决定见 [ttsModel]）。 */
     val canSynthesize: Boolean get() = ttsModel != null
 
     /** 界面上那句话：这家能做什么。 */
-    val capabilityLabel: String get() = if (canSynthesize) "识别 · 朗读" else "仅识别"
+    val capabilityLabel: String
+        get() = when {
+            canTranscribe && canSynthesize -> "识别 · 朗读"
+            canSynthesize -> "仅朗读"
+            else -> "仅识别"
+        }
 }

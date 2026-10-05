@@ -110,7 +110,7 @@ fun SpeechConfigScreen(navigator: Navigator) {
                     item {
                         StarCard(modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(14.dp)) {
-                                ProviderGrid(state.speech.speechProviders, active?.id) { provider ->
+                                ProviderGrid(state.speech.speechProviders.filter { it.canTranscribe }, active?.id) { provider ->
                                     state.speech.selectSpeechProvider(provider.id)
                                     state.speech.selectVoiceSource(VoiceSource.Model)
                                 }
@@ -155,7 +155,7 @@ fun SpeechConfigScreen(navigator: Navigator) {
                     item {
                         StarCard(modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(14.dp)) {
-                                ProviderGrid(state.speech.speechProviders, active?.id) { provider ->
+                                ProviderGrid(state.speech.speechProviders.filter { it.canTranscribe }, active?.id) { provider ->
                                     state.speech.selectSpeechProvider(provider.id)
                                 }
                             }
@@ -372,6 +372,21 @@ private fun VendorChip(
  */
 @Composable
 private fun ApiKeyCard(state: AppState, provider: SpeechProvider) {
+    if (!provider.requiresApiKey) {
+        StarCard(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp)) {
+                Text("免 API Key", style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Edge TTS 使用服务内置的短期鉴权参数，不需要在这里填写凭据。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = StarPalette.TextMuted,
+                )
+            }
+        }
+        return
+    }
+
     // 换家时草稿要跟着换成那家的 Key（remember 的 key 就是 provider.id）
     val saved = state.speech.speechKeyOf(provider.id)
     val draft = remember(provider.id) { mutableStateOf(saved) }
@@ -476,7 +491,7 @@ private fun ReadingSettings(state: AppState) {
                 Spacer(Modifier.height(8.dp))
                 val note = when {
                     source == VoiceSource.Local && !state.speech.localTtsInstalled -> "离线朗读模型尚未下载，可在离线模型卡片中下载。"
-                    source == VoiceSource.Model -> "朗读使用单独选择的云端服务商和 API Key。"
+                    source == VoiceSource.Model -> "朗读使用单独选择的云端服务商；免费服务无需 API Key。"
                     source == VoiceSource.Device -> "使用这台设备提供的朗读声音。"
                     source == VoiceSource.Local -> "在本机离线朗读。"
                     else -> "跟随识别方式选择朗读来源。"

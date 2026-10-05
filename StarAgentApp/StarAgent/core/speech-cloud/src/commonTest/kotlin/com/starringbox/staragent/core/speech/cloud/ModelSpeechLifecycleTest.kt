@@ -149,6 +149,35 @@ class ModelSpeechLifecycleTest {
             PcmPlayers.install(null)
         }
     }
+
+    @Test
+    fun edgeSynthesisHandsCbrMp3ToThePlayer() = runTest {
+        var played: VoiceClip? = null
+        Players.install(object : Player {
+            override val available = true
+            override suspend fun play(clip: VoiceClip): Boolean {
+                played = clip
+                return true
+            }
+            override fun stop() = Unit
+        })
+        PcmPlayers.install(null)
+        val synthesizer = ModelSynthesizer(
+            synthesizeRequest = { _, _, _ -> ByteArray(6_000) { 1 } },
+            endpoint = { endpoint(SpeechProtocol.EdgeTts, ttsModel = "edge-tts") },
+        )
+
+        try {
+            assertFalse(synthesizer.streamReady, "Edge 的公开端点返回 MP3，不走 PCM 流式播放")
+            assertIs<SpeechOutcome.Ok<Unit>>(synthesizer.speak("你好"))
+            assertEquals("audio/mpeg", played?.mimeType)
+            assertEquals(1_000L, played?.durationMillis, "48kbps CBR 的字节数可以直接换算时长")
+        } finally {
+            synthesizer.stop()
+            Players.install(UnavailablePlayer)
+            PcmPlayers.install(null)
+        }
+    }
 }
 
 private fun endpoint(

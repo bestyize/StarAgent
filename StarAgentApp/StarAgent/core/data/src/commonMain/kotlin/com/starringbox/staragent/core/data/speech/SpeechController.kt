@@ -149,8 +149,10 @@ class SpeechController(
      * 设置项失效不该让语音直接哑掉。
      */
     fun activeSpeechProvider(): SpeechProvider? =
-        speechProviderId?.let { id -> speechProviders.firstOrNull { it.id == id } }
-            ?: speechProviders.firstOrNull()
+        speechProviderId
+            ?.let { id -> speechProviders.firstOrNull { it.id == id } }
+            ?.takeIf { it.canTranscribe }
+            ?: speechProviders.firstOrNull { it.canTranscribe }
 
     fun activeTtsProvider(): SpeechProvider? =
         ttsProviderId?.let { id -> speechProviders.firstOrNull { it.id == id } }
@@ -232,6 +234,9 @@ class SpeechController(
 
     fun speechConfigured(providerId: String): Boolean = speechKeyOf(providerId).isNotBlank()
 
+    private fun speechReady(provider: SpeechProvider): Boolean =
+        if (provider.requiresApiKey) speechConfigured(provider.id) else true
+
     /**
      * 写这家的 Key。传空串等于清掉配置。
      *
@@ -265,6 +270,7 @@ class SpeechController(
      */
     fun asrEndpoint(): SpeechEndpoint? {
         val provider = activeSpeechProvider() ?: return null
+        if (!provider.canTranscribe) return null
         val key = speechKeyOf(provider.id)
         if (key.isBlank()) return null
         return SpeechEndpoint(
@@ -286,8 +292,8 @@ class SpeechController(
     fun ttsEndpoint(): SpeechEndpoint? {
         val provider = activeTtsProvider() ?: return null
         val model = provider.ttsModel ?: return null
-        val key = speechKeyOf(provider.id)
-        if (key.isBlank()) return null
+        val key = if (provider.requiresApiKey) speechKeyOf(provider.id) else ""
+        if (provider.requiresApiKey && key.isBlank()) return null
         return SpeechEndpoint(
             baseUrl = provider.baseUrl.trimEnd('/'),
             apiKey = key,
@@ -353,19 +359,20 @@ class SpeechController(
         get() {
             val device = Voice.deviceListenInstalled
             val provider = activeSpeechProvider()
-            val configured = provider != null && speechConfigured(provider.id)
+            val configured = provider != null && speechReady(provider) && provider.canTranscribe
             return when {
                 voiceSource == VoiceSource.Local && localAsrInstalled -> "离线 · SenseVoice"
                 voiceSource == VoiceSource.Local -> "离线 · 请先下载识别模型"
                 voiceSource == VoiceSource.Device && device -> "系统能力"
                 voiceSource == VoiceSource.Device -> "系统能力 · 这台设备不支持"
                 // 「云端识别」是用户点名要的，没配好就得直说是哪一步没做
-                voiceSource == VoiceSource.Model && configured -> provider!!.name
+                voiceSource == VoiceSource.Model && configured -> provider.name
                 voiceSource == VoiceSource.Model && provider == null -> "云端识别 · 还没选服务商"
-                voiceSource == VoiceSource.Model -> "云端识别 · 还没填 Key"
+                voiceSource == VoiceSource.Model && provider?.requiresApiKey == true -> "云端识别 · 还没填 Key"
+                voiceSource == VoiceSource.Model -> "云端识别 · 当前服务商不支持识别"
                 device -> "自动 · 优先系统能力"
                 localAsrInstalled -> "自动 · 离线 SenseVoice"
-                configured -> "自动 · ${provider!!.name}"
+                configured -> "自动 · ${provider.name}"
                 else -> "还没有可用的识别"
             }
         }

@@ -8,8 +8,8 @@ import kotlin.math.sqrt
  * 两个平台的录音器拿到的都是裸 PCM，而各家识别接口要的是"一个音频文件"。
  * 自己补 44 字节的头，比为了转格式引一个音频库划算得多。
  *
- * 统一用 PCM/WAV 还有个好处：播放侧两个平台都能直接放，
- * **不用引 MP3 解码器**（JDK 和 Android 的 framework 都不带）。
+ * 语音识别和大多数云端合成统一用 PCM/WAV。Edge TTS 公开端点固定返回 MP3，
+ * 那一条由播放实现按 MIME 处理，不改变这里 WAV 契约的用途。
  */
 object Wav {
 

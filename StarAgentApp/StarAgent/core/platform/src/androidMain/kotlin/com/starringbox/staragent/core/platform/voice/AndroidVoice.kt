@@ -162,7 +162,8 @@ class AndroidVoicePlayer(private val context: Context) : Player {
     override suspend fun play(clip: VoiceClip): Boolean = withContext(Dispatchers.IO) {
         stop()
         runCatching {
-            val file = File(context.cacheDir, "staragent-reply.wav")
+            val extension = if (clip.mimeType == "audio/mpeg") "mp3" else "wav"
+            val file = File(context.cacheDir, "staragent-reply.$extension")
             file.writeBytes(clip.bytes)
 
             val player = MediaPlayer()

@@ -5,6 +5,7 @@ import com.starringbox.staragent.core.speech.Recorder
 import com.starringbox.staragent.core.speech.SpeechActivity
 import com.starringbox.staragent.core.speech.VoiceClip
 import com.starringbox.staragent.core.speech.Wav
+import javazoom.jl.player.Player as JLayerPlayer
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import javax.sound.sampled.AudioFormat
@@ -114,8 +115,8 @@ class DesktopVoiceRecorder : Recorder {
 /**
  * 桌面播放。
  *
- * 整条链路统一用 PCM/WAV 就是为了这里：JDK 不带 MP3 解码，
- * 但 wav 可以直接交给 `Clip`，不用引任何第三方库。
+ * WAV 直接交给 `Clip`。Edge TTS 公开端点只返回 CBR MP3，而 JDK 不带 MP3 解码，
+ * 所以这一条用 JLayer 解出音频设备能直接接受的采样流。
  */
 class DesktopVoicePlayer : Player {
 
@@ -124,11 +125,37 @@ class DesktopVoicePlayer : Player {
     }
 
     private var playing: Clip? = null
+    private var mp3Player: JLayerPlayer? = null
+    private var mp3Thread: Thread? = null
 
     override val available: Boolean get() = hasOutput
 
     override suspend fun play(clip: VoiceClip): Boolean = withContext(Dispatchers.IO) {
         stop()
+        if (clip.mimeType == "audio/mpeg") {
+            return@withContext runCatching {
+                val opened = JLayerPlayer(ByteArrayInputStream(clip.bytes))
+                val worker = Thread {
+                    try {
+                        opened.play()
+                    } finally {
+                        synchronized(this@DesktopVoicePlayer) {
+                            if (mp3Player === opened) {
+                                mp3Player = null
+                                mp3Thread = null
+                            }
+                        }
+                    }
+                }
+                worker.isDaemon = true
+                synchronized(this@DesktopVoicePlayer) {
+                    mp3Player = opened
+                    mp3Thread = worker
+                }
+                worker.start()
+                true
+            }.getOrDefault(false)
+        }
         runCatching {
             val stream = AudioSystem.getAudioInputStream(ByteArrayInputStream(clip.bytes))
             val opened = AudioSystem.getClip()
@@ -140,6 +167,16 @@ class DesktopVoicePlayer : Player {
     }
 
     override fun stop() {
+        val activeMp3: JLayerPlayer?
+        val activeThread: Thread?
+        synchronized(this) {
+            activeMp3 = mp3Player
+            activeThread = mp3Thread
+            mp3Player = null
+            mp3Thread = null
+        }
+        runCatching { activeMp3?.close() }
+        activeThread?.interrupt()
         runCatching {
             playing?.stop()
             playing?.close()

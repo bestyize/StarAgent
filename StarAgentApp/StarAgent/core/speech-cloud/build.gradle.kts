@@ -28,6 +28,7 @@ kotlin {
             api(project(":core:speech-contracts"))
             api(project(":core:model"))
             implementation(project(":core:llm"))
+            implementation("com.starringbox.edge:edge-tts:0.1.0")
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.websockets)
             implementation(libs.kotlinx.serialization.json)

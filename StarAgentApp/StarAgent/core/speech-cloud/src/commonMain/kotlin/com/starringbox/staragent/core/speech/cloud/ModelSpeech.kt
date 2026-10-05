@@ -5,6 +5,10 @@ import com.starringbox.staragent.core.llm.describeConnectionFailure
 import com.starringbox.staragent.core.llm.ensureSuccess
 import com.starringbox.staragent.core.llm.httpClient
 import com.starringbox.staragent.core.model.SpeechProtocol
+import com.starringbox.edge.tts.EdgeTtsClient
+import com.starringbox.edge.tts.EdgeTtsConfig
+import com.starringbox.edge.tts.EdgeTtsException
+import com.starringbox.edge.tts.EdgeTtsOutputFormat
 import com.starringbox.staragent.core.speech.Players
 import com.starringbox.staragent.core.speech.PcmAudioChunk
 import com.starringbox.staragent.core.speech.PcmPlayers
@@ -155,6 +159,7 @@ class ModelTranscriber(
                 }
             )
             SpeechProtocol.VolcArk -> transcribeVolcArk(speech, model, clip)
+            SpeechProtocol.EdgeTts -> SpeechOutcome.Failed("Microsoft Edge TTS 不支持语音识别")
         }
     } catch (cancellation: CancellationException) {
         throw cancellation
@@ -350,7 +355,9 @@ class ModelSynthesizer(
         get() = endpoint()?.ttsModel != null && Players.available
 
     override val streamReady: Boolean
-        get() = endpoint()?.let { it.protocol == SpeechProtocol.MiMo && it.ttsModel == MIMO_STREAM_TTS_MODEL } == true
+        get() = endpoint()?.let {
+            it.protocol == SpeechProtocol.MiMo && it.ttsModel == MIMO_STREAM_TTS_MODEL
+        } == true
 
     override suspend fun speak(text: String): SpeechOutcome<Unit> {
         val trimmed = text.trim()
@@ -365,7 +372,7 @@ class ModelSynthesizer(
                 currentCoroutineContext().ensureActive()
                 if (bytes.isEmpty()) return@exclusiveRequest SpeechOutcome.Failed("合成出来是空的")
 
-                val clip = VoiceClip(bytes, Wav.MIME_TYPE, Wav.durationMillis(bytes))
+                val clip = synthesizedClip(speech, bytes)
                 val played = Players.play(clip)
                 currentCoroutineContext().ensureActive()
                 if (played) SpeechOutcome.Ok(Unit) else SpeechOutcome.Failed("音频没能播放出来")
@@ -373,6 +380,8 @@ class ModelSynthesizer(
                 throw cancellation
             } catch (http: LlmHttpException) {
                 SpeechOutcome.Failed(http.userMessage)
+            } catch (edge: EdgeTtsException) {
+                SpeechOutcome.Failed(edge.message ?: "Edge TTS 合成失败")
             } catch (t: Throwable) {
                 SpeechOutcome.Failed(describeConnectionFailure(t))
             }
@@ -404,6 +413,8 @@ class ModelSynthesizer(
                 throw cancellation
             } catch (http: LlmHttpException) {
                 SpeechOutcome.Failed(http.userMessage)
+            } catch (edge: EdgeTtsException) {
+                SpeechOutcome.Failed(edge.message ?: "Edge TTS 合成失败")
             } catch (t: Throwable) {
                 SpeechOutcome.Failed(describeConnectionFailure(t))
             }
@@ -432,7 +443,7 @@ class ModelSynthesizer(
         }
     }
 
-    /** OpenAI and VolcArk retain their existing one-shot request paths. */
+    /** One-shot protocol branches. Edge TTS produces CBR MP3; the others produce WAV. */
     private suspend fun synthesize(speech: SpeechEndpoint, model: String, text: String): ByteArray =
         when (speech.protocol) {
             SpeechProtocol.OpenAi -> {
@@ -452,11 +463,34 @@ class ModelSynthesizer(
                 voice = speech.ttsVoice,
                 text = text,
             )
+            SpeechProtocol.EdgeTts -> synthesizeWithEdgeTts(speech, text)
         }
 
     private companion object {
         const val MIMO_STREAM_TTS_MODEL = "mimo-v2.5-tts"
     }
 }
+
+private suspend fun synthesizeWithEdgeTts(endpoint: SpeechEndpoint, text: String): ByteArray {
+    val client = EdgeTtsClient(edgeTtsConfig(endpoint))
+    return try {
+        client.synthesizeToBytes(text = text)
+    } finally {
+        client.close()
+    }
+}
+
+private fun edgeTtsConfig(endpoint: SpeechEndpoint) = EdgeTtsConfig(
+    voice = endpoint.ttsVoice?.takeIf { it.isNotBlank() } ?: "zh-CN-XiaoxiaoNeural",
+    outputFormat = EdgeTtsOutputFormat.Audio24KhZ48KbpsMonoMp3,
+)
+
+private fun synthesizedClip(speech: SpeechEndpoint, bytes: ByteArray): VoiceClip =
+    if (speech.protocol == SpeechProtocol.EdgeTts) {
+        // The selected Edge output is 48 kbps CBR MP3, so byte count gives a stable duration.
+        VoiceClip(bytes, "audio/mpeg", bytes.size.toLong() * 1_000 / 6_000)
+    } else {
+        VoiceClip(bytes, Wav.MIME_TYPE, Wav.durationMillis(bytes))
+    }
 
 private fun String.hasSpokenContent(): Boolean = any { it.isLetterOrDigit() }

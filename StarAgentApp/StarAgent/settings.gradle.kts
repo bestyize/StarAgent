@@ -38,6 +38,15 @@ dependencyResolutionManagement {
     }
 }
 
+// edge-tts 是独立发布的 Kotlin Multiplatform 库。开发时用同仓库的独立构建替换
+// 坐标依赖，应用代码只依赖它的公共 API，不依赖项目路径。
+includeBuild("../edge-tts") {
+    dependencySubstitution {
+        substitute(module("com.starringbox.edge:edge-tts"))
+            .using(project(":"))
+    }
+}
+
 plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }

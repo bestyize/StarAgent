@@ -323,6 +323,16 @@ internal object Seed {
             ttsModel = "mimo-v2.5-tts",
             ttsVoice = "mimo_default",
         ),
+        SpeechProvider(
+            id = "edge-tts",
+            name = "Microsoft Edge TTS",
+            baseUrl = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud",
+            protocol = SpeechProtocol.EdgeTts,
+            // Edge 只有合成协议。这两个占位值不会进入识别请求或用户界面。
+            asrModel = "unsupported",
+            ttsModel = "edge-tts",
+            ttsVoice = "zh-CN-XiaoxiaoNeural",
+        ),
     )
 
     /** 首次启动的演示内容：智能体、任务、记忆、技能与示例对话。 */
