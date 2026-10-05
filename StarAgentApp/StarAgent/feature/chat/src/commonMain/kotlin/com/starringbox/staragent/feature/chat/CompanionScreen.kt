@@ -114,15 +114,18 @@ fun CompanionScreen(navigator: Navigator) {
     DisposableEffect(state) {
         onDispose { voice.stop(); state.speech.cancelListening(); state.speech.stopSpeaking() }
     }
+    // 倒序列表索引 0 就是最新那条（在底部）。瞬时贴底，不用逐帧动画——
+    // 长会话里动画要遍历路径上所有项，正是卡顿的来源。往回翻看时不硬拽回来。
     LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+        if (messages.isEmpty()) return@LaunchedEffect
+        val layout = listState.layoutInfo
+        if (layout.totalItemsCount == 0 || layout.visibleItemsInfo.any { it.index == 0 }) {
+            listState.scrollToItem(0)
+        }
     }
     LaunchedEffect(lastText) {
-        val layout = listState.layoutInfo
-        if (lastText.isNotBlank() && messages.isNotEmpty() &&
-            (layout.visibleItemsInfo.lastOrNull()?.index ?: 0) >= layout.totalItemsCount - 2) {
-            listState.scrollToItem(messages.lastIndex)
-        }
+        if (lastText.isBlank() || messages.isEmpty()) return@LaunchedEffect
+        if (listState.layoutInfo.visibleItemsInfo.any { it.index == 0 }) listState.scrollToItem(0)
     }
 
     fun leaveVoice() {
@@ -190,13 +193,9 @@ fun CompanionScreen(navigator: Navigator) {
                 state = listState, modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(horizontal = 22.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
+                // 倒序渲染：索引 0 是最新一条，落在列表底部，开屏即在最新处。
+                reverseLayout = true,
             ) {
-                items(messages, key = { it.id }) { message ->
-                    CompanionMessage(message, colors,
-                        onCopy = { clipboard.setText(AnnotatedString(message.copyableText())) },
-                        onImage = { index -> viewing = message.body as? MessageBody.Image; imageIndex = index },
-                        onArtifact = { navigator.push(Route.ArtifactPreview(it)) })
-                }
                 if (busy && (messages.lastOrNull()?.body as? MessageBody.Text)?.text.isNullOrBlank()) {
                     item(key = "companion-thinking") {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -205,6 +204,12 @@ fun CompanionScreen(navigator: Navigator) {
                             Text("让我想一想…", color = colors.muted, fontSize = 13.sp)
                         }
                     }
+                }
+                items(messages.asReversed(), key = { it.id }) { message ->
+                    CompanionMessage(message, colors,
+                        onCopy = { clipboard.setText(AnnotatedString(message.copyableText())) },
+                        onImage = { index -> viewing = message.body as? MessageBody.Image; imageIndex = index },
+                        onArtifact = { navigator.push(Route.ArtifactPreview(it)) })
                 }
             }
         }

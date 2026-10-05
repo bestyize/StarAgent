@@ -101,16 +101,22 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
     val streamingText = (messages.lastOrNull()?.body as? MessageBody.Text)?.text.orEmpty()
     val waitingFirstToken = busy && streamingText.isBlank()
 
+    // 新消息进来时贴底。倒序列表索引 0 就是最新那条（在底部），
+    // 用 scrollToItem（瞬时）而非 animateScrollToItem（逐帧动画）——
+    // 长会话里动画要遍历路径上所有项，正是卡顿的来源。
+    // 只有用户正贴着底部时才跟随，往回翻看历史时不硬拽回来。
     LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+        if (messages.isEmpty()) return@LaunchedEffect
+        val info = listState.layoutInfo
+        if (info.totalItemsCount == 0 || info.visibleItemsInfo.any { it.index == 0 }) {
+            listState.scrollToItem(0)
+        }
     }
 
-    // 内容增长时跟着滚，但用户自己往回翻了就别硬拽回来。
+    // 流式回复时条数不变、只有最新那条在变长。同样只在贴底时跟随。
     LaunchedEffect(streamingText) {
         if (streamingText.isEmpty() || messages.isEmpty()) return@LaunchedEffect
-        val info = listState.layoutInfo
-        val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: return@LaunchedEffect
-        if (lastVisible >= info.totalItemsCount - 2) listState.scrollToItem(messages.lastIndex)
+        if (listState.layoutInfo.visibleItemsInfo.any { it.index == 0 }) listState.scrollToItem(0)
     }
 
 
@@ -152,8 +158,14 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
+                // 倒序渲染：索引 0 是最新一条，落在列表底部。开屏即在最新处，
+                // 不必先铺最老一条再滚到底；长会话也只组合靠近底部的少量项。
+                reverseLayout = true,
             ) {
-                items(messages, key = { it.id }) { message ->
+                if (waitingFirstToken) {
+                    item(key = "thinking") { ThinkingRow() }
+                }
+                items(messages.asReversed(), key = { it.id }) { message ->
                     MessageRow(
                         message = message,
                         onConfirmDraft = { draft -> state.confirmDraft(agentId, draft) },
@@ -165,9 +177,6 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
                         },
                         onOpenArtifact = { id -> navigator.push(Route.ArtifactPreview(id)) },
                     )
-                }
-                if (waitingFirstToken) {
-                    item(key = "thinking") { ThinkingRow() }
                 }
             }
 
