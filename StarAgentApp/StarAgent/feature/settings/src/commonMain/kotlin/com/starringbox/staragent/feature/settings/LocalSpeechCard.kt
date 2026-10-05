@@ -13,7 +13,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -22,7 +21,6 @@ import com.starringbox.staragent.core.data.AppState
 import com.starringbox.staragent.core.data.speech.LocalModelState
 import com.starringbox.staragent.core.designsystem.component.StarCard
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
-import kotlinx.coroutines.launch
 
 @Composable
 internal fun LocalSpeechCard(
@@ -30,7 +28,6 @@ internal fun LocalSpeechCard(
     showAsr: Boolean = true,
     showTts: Boolean = true,
 ) {
-    val scope = rememberCoroutineScope()
 
     StarCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
@@ -58,8 +55,8 @@ internal fun LocalSpeechCard(
                     title = "SenseVoice 中英文识别 · 约 240 MB",
                     supported = state.speech.localAsrSupported,
                     model = state.speech.localAsr,
-                    onInstall = { scope.launch { state.speech.installLocalAsr() } },
-                    onRemove = { scope.launch { state.speech.removeLocalAsr() } },
+                    onInstall = { state.speech.installLocalAsr() },
+                    onRemove = { state.speech.removeLocalAsr() },
                     onCancel = state.speech::cancelLocalAsrDownload,
                 )
             }
@@ -71,8 +68,8 @@ internal fun LocalSpeechCard(
                     title = "Piper 中文超文音色 · 约 21 MB",
                     supported = state.speech.localTtsSupported,
                     model = state.speech.localTts,
-                    onInstall = { scope.launch { state.speech.installLocalTts() } },
-                    onRemove = { scope.launch { state.speech.removeLocalTts() } },
+                    onInstall = { state.speech.installLocalTts() },
+                    onRemove = { state.speech.removeLocalTts() },
                     onCancel = state.speech::cancelLocalTtsDownload,
                 )
             }
@@ -102,6 +99,7 @@ private fun LocalModelRow(
                     text = when {
                         installed -> "已下载"
                         busy -> "下载中"
+                        model.pausedAt != null -> "已暂停 · ${model.pausedAt}"
                         supported -> "尚未下载"
                         else -> "这台设备暂不支持"
                     },
@@ -111,7 +109,11 @@ private fun LocalModelRow(
             }
             when {
                 installed -> ActionLabel("删除", enabled = !busy, onClick = onRemove)
-                supported -> ActionLabel("下载", enabled = !busy, onClick = onInstall)
+                supported -> ActionLabel(
+                    if (model.pausedAt != null) "继续下载" else "下载",
+                    enabled = !busy,
+                    onClick = onInstall,
+                )
             }
         }
         // 进度与错误只挂在这一行上，另一路下载时不会跟着一起闪。

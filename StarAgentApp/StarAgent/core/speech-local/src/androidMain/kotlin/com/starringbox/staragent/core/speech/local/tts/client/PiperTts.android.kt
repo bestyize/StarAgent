@@ -1,5 +1,7 @@
 package com.starringbox.staragent.core.speech.local.tts.client
 
+import com.starringbox.staragent.core.speech.local.downloadVerified
+import com.starringbox.staragent.core.speech.local.verifiedFile
 import com.starringbox.staragent.core.speech.local.LocalSpeechContext
 import com.starringbox.staragent.core.speech.local.tts.model.TtsResult
 import com.starringbox.staragent.core.speech.local.tts.model.SpeechAudioChunk
@@ -164,7 +166,7 @@ actual object PiperTts {
         check(installed()) { "请先在声音设置中下载 Piper 中文语音模型" }
         val dir = directory()
         if (!verified) {
-            check(files.all { valid(File(dir, it.name), it.size, it.sha256) }) {
+            check(files.all { verifiedFile(File(dir, it.name), it.size, it.sha256) }) {
                 "Piper 模型校验失败，请删除后重新下载"
             }
             verified = true
@@ -192,59 +194,10 @@ actual object PiperTts {
 
     private suspend fun download(
         target: File, spec: ModelFile, progress: (Long, Long) -> Unit, offset: Long, total: Long,
-    ) {
-        if (valid(target, spec.size, spec.sha256)) { progress(offset + spec.size, total); return }
-        val temp = File(target.parentFile, "${target.name}.part")
-        val connection = URL("$BASE&FilePath=${spec.name}").openConnection() as HttpURLConnection
-        val disconnectWatcher = CoroutineScope(currentCoroutineContext()).launch(
-            context = Dispatchers.IO,
-            start = CoroutineStart.UNDISPATCHED,
-        ) {
-            try { awaitCancellation() } finally { connection.disconnect() }
-        }
-        try {
-            connection.connectTimeout = 15_000
-            connection.readTimeout = 30_000
-            connection.instanceFollowRedirects = true
-            check(connection.responseCode == 200) { "Piper 文件下载失败：${spec.name}（HTTP ${connection.responseCode}）" }
-            var received = 0L
-            connection.inputStream.use { input ->
-                temp.outputStream().buffered().use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        currentCoroutineContext().ensureActive()
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        received += count
-                        check(received <= spec.size) { "Piper 文件大小不符：${spec.name}" }
-                        output.write(buffer, 0, count)
-                        progress(offset + received, total)
-                    }
-                }
-            }
-            check(valid(temp, spec.size, spec.sha256)) { "Piper 文件 SHA-256 校验失败：${spec.name}" }
-            if (target.exists()) check(target.delete()) { "无法替换旧 Piper 文件" }
-            check(temp.renameTo(target)) { "无法保存 Piper 文件：${spec.name}" }
-        } finally {
-            disconnectWatcher.cancel()
-            connection.disconnect()
-            if (temp.exists()) temp.delete()
-        }
+    ) = downloadVerified("$BASE&FilePath=${spec.name}", target, spec.size, spec.sha256, "Piper 文件 ${spec.name}") { done ->
+        progress(offset + done, total)
     }
 
-    private fun valid(file: File, size: Long, sha256: String): Boolean {
-        if (!file.isFile || file.length() != size) return false
-        val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().buffered().use { input ->
-            val buffer = ByteArray(64 * 1024)
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                digest.update(buffer, 0, count)
-            }
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) } == sha256
-    }
 
     private fun floatSamplesToWav(samples: FloatArray, sampleRate: Int): ByteArray {
         require(samples.isNotEmpty() && sampleRate > 0) { "Piper 没有生成有效音频" }

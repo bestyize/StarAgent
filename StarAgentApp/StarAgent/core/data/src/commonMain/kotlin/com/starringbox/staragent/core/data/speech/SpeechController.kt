@@ -27,8 +27,10 @@ import com.starringbox.staragent.core.speech.local.tts.client.PiperTts
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 
 /**
@@ -36,7 +38,13 @@ import kotlinx.coroutines.withContext
  *
  * 构造时把三路后端装进 [Voice] 并从 [SettingsStore] 还原偏好；设备那一路由各端入口装。
  */
-class SpeechController {
+class SpeechController(
+    /**
+     * 离线模型的下载、删除跑在这里，不跟着页面走：离开语音配置页下载照常继续。
+     * 测试可以传入自己的 scope 来等待下载结束。
+     */
+    private val backgroundScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+) {
 
     /** 语音引擎偏好。null = 自动：优先设备能力（不要 Key、不花钱）。 */
     var voiceSource by mutableStateOf<VoiceSource?>(null)
@@ -168,29 +176,42 @@ class SpeechController {
         SettingsStore.put(KEY_TTS_VOICE, ttsVoiceId.orEmpty())
     }
 
-    suspend fun installLocalAsr() = manageLocalModel(localAsr) { progress -> SenseVoiceAsr.install(progress) }
-    suspend fun installLocalTts() = manageLocalModel(localTts) { progress -> PiperTts.install(progress) }
-    suspend fun removeLocalAsr() = manageLocalModel(localAsr) { _ -> cancelListening(); SenseVoiceAsr.remove() }
-    suspend fun removeLocalTts() = manageLocalModel(localTts) { _ -> stopSpeaking(); PiperTts.remove() }
+    // 下载中途取消或失败，下好的部分会留在磁盘上，再点一次「下载」从断点接着下。
+    fun installLocalAsr() = manageLocalModel(localAsr) { progress -> SenseVoiceAsr.install(progress) }
+    fun installLocalTts() = manageLocalModel(localTts) { progress -> PiperTts.install(progress) }
+    fun removeLocalAsr() = manageLocalModel(localAsr) { _ -> cancelListening(); SenseVoiceAsr.remove() }
+    fun removeLocalTts() = manageLocalModel(localTts) { _ -> stopSpeaking(); PiperTts.remove() }
 
     fun cancelLocalAsrDownload() { localAsr.job?.cancel() }
     fun cancelLocalTtsDownload() { localTts.job?.cancel() }
 
-    private suspend fun manageLocalModel(
+    private fun manageLocalModel(
         state: LocalModelState,
         operation: suspend ((Long, Long) -> Unit) -> Unit,
-    ) = coroutineScope {
-        if (state.busy) return@coroutineScope
+    ): Job? {
+        // 只在主线程上调用，所以检查和置位之间不会有第二次点击插进来。
+        if (state.busy) return null
         state.busy = true
         state.error = null
+        state.pausedAt = null
         state.progress = "准备中"
-        state.job = coroutineContext.job
+        val job = backgroundScope.launch { runLocalModel(state, operation) }
+        state.job = job
+        return job
+    }
+
+    private suspend fun runLocalModel(
+        state: LocalModelState,
+        operation: suspend ((Long, Long) -> Unit) -> Unit,
+    ) {
         try {
             operation { done, total ->
                 state.progress = if (total > 0) "${(done * 100 / total).coerceIn(0, 100)}%" else "准备中"
             }
             state.progress = "完成"
         } catch (cancelled: CancellationException) {
+            // 下好的部分还在磁盘上，记下停在哪，界面据此显示「继续下载」。
+            state.pausedAt = state.progress.takeIf { it.endsWith("%") }
             state.progress = "已取消"
             throw cancelled
         } catch (failure: Exception) {
@@ -466,6 +487,9 @@ class LocalModelState(initialInstalled: Boolean) {
     var progress by mutableStateOf("")
         internal set
     var error by mutableStateOf<String?>(null)
+        internal set
+    /** 取消下载时停在的进度（如 "30%"）；没有暂停过为 null。重启应用后不保留，但断点文件还在。 */
+    var pausedAt by mutableStateOf<String?>(null)
         internal set
     var job: Job? = null
 }

@@ -1,5 +1,8 @@
 package com.starringbox.staragent.core.speech.local.asr.client
 
+import com.starringbox.staragent.core.speech.local.downloadVerified
+import com.starringbox.staragent.core.speech.local.verifiedFile
+import com.starringbox.staragent.core.speech.local.partialFileOf
 import com.starringbox.staragent.core.speech.local.LocalSpeechContext
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.k2fsa.sherpa.onnx.OfflineModelConfig
@@ -67,6 +70,7 @@ actual object SenseVoiceAsr {
             listOf(MODEL, TOKENS).forEach { name ->
                 val file = File(dir, name)
                 check(!file.exists() || file.delete()) { "无法删除 $name" }
+                partialFileOf(file).delete()
             }
         }
     }
@@ -81,7 +85,7 @@ actual object SenseVoiceAsr {
             check(installed()) { "请先在声音设置中下载 SenseVoice 模型" }
             val dir = directory()
             if (!verified) {
-                check(valid(File(dir, MODEL), MODEL_SIZE, MODEL_SHA) && valid(File(dir, TOKENS), TOKENS_SIZE, TOKENS_SHA)) {
+                check(verifiedFile(File(dir, MODEL), MODEL_SIZE, MODEL_SHA) && verifiedFile(File(dir, TOKENS), TOKENS_SIZE, TOKENS_SHA)) {
                     "SenseVoice 模型校验失败，请删除后重新下载"
                 }
                 verified = true
@@ -111,58 +115,9 @@ actual object SenseVoiceAsr {
 
     private suspend fun download(
         target: File, size: Long, sha: String, progress: (Long, Long) -> Unit, offset: Long, total: Long,
-    ) {
-        if (valid(target, size, sha)) { progress(offset + size, total); return }
-        val temp = File(target.parentFile, "${target.name}.part")
-        val connection = URL("$BASE&FilePath=${target.name}").openConnection() as HttpURLConnection
-        val disconnectWatcher = CoroutineScope(currentCoroutineContext()).launch(
-            context = Dispatchers.IO,
-            start = CoroutineStart.UNDISPATCHED,
-        ) {
-            try { awaitCancellation() } finally { connection.disconnect() }
-        }
-        try {
-            connection.connectTimeout = 15_000
-            connection.readTimeout = 30_000
-            connection.instanceFollowRedirects = true
-            check(connection.responseCode == 200) { "模型下载失败（HTTP ${connection.responseCode}）" }
-            var received = 0L
-            connection.inputStream.use { input ->
-                temp.outputStream().buffered().use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        currentCoroutineContext().ensureActive()
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        received += count
-                        check(received <= size) { "模型文件大小不符" }
-                        output.write(buffer, 0, count)
-                        progress(offset + received, total)
-                    }
-                }
-            }
-            check(valid(temp, size, sha)) { "模型 SHA-256 校验失败" }
-            if (target.exists()) check(target.delete()) { "无法替换旧模型" }
-            check(temp.renameTo(target)) { "无法保存模型" }
-        } finally {
-            disconnectWatcher.cancel()
-            connection.disconnect()
-            if (temp.exists()) temp.delete()
-        }
+    ) = downloadVerified("$BASE&FilePath=${target.name}", target, size, sha, "SenseVoice 模型") { done ->
+        progress(offset + done, total)
     }
 
-    private fun valid(file: File, size: Long, sha: String): Boolean {
-        if (!file.isFile || file.length() != size) return false
-        val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().buffered().use { input ->
-            val buffer = ByteArray(64 * 1024)
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                digest.update(buffer, 0, count)
-            }
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) } == sha
-    }
 
 }
