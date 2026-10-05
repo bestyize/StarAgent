@@ -105,6 +105,9 @@ class SpeechController(
     var edgeTtsVoices by mutableStateOf(Seed.edgeTtsVoices())
         private set
 
+    /** MiMo publishes a finite preset catalog, so this one is entirely local. */
+    val mimoVoices: List<SpeechVoiceOption> = Seed.mimoVoices()
+
     /** 语音侧的 Key，按服务商分开存。理由见 [setSpeechKey]。snapshot map，界面跟着它刷新。 */
     private val speechKeys = mutableStateMapOf<String, String>()
 

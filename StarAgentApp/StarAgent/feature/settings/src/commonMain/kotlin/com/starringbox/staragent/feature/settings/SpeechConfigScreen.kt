@@ -41,6 +41,7 @@ import com.starringbox.staragent.core.designsystem.component.StarTopBar
 import com.starringbox.staragent.core.designsystem.navigation.Navigator
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.model.SpeechProvider
+import com.starringbox.staragent.core.model.SpeechProtocol
 import com.starringbox.staragent.core.model.SpeechVoiceOption
 import com.starringbox.staragent.core.platform.voice.Voice
 import com.starringbox.staragent.core.speech.VoiceSource
@@ -445,6 +446,12 @@ private fun ReadingSettings(state: AppState) {
     val source = state.speech.ttsVoiceSource
     val inheritedTtsProvider = state.speech.activeTtsProvider()
     val ttsProvider = inheritedTtsProvider?.takeIf { it.canSynthesize }
+    val voiceCatalog = when (ttsProvider?.protocol) {
+        SpeechProtocol.EdgeTts -> state.speech.edgeTtsVoices
+        SpeechProtocol.MiMo -> state.speech.mimoVoices
+        else -> emptyList()
+    }
+    val usesVoicePicker = voiceCatalog.isNotEmpty()
     val voiceDraft = remember(state.speech.ttsVoiceId) { mutableStateOf(state.speech.ttsVoiceId.orEmpty()) }
     val showVoicePicker = remember { mutableStateOf(false) }
     val testMessage = remember { mutableStateOf<String?>(null) }
@@ -571,9 +578,9 @@ private fun ReadingSettings(state: AppState) {
                 Column(Modifier.padding(14.dp)) {
                     Text("音色", style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
                     Spacer(Modifier.height(8.dp))
-                    if (ttsProvider?.requiresApiKey == false) {
+                    if (usesVoicePicker && ttsProvider != null) {
                         val selectedId = state.speech.ttsVoiceId ?: ttsProvider.ttsVoice.orEmpty()
-                        val selectedVoice = state.speech.edgeTtsVoices.firstOrNull { it.id == selectedId }
+                        val selectedVoice = voiceCatalog.firstOrNull { it.id == selectedId }
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -585,7 +592,7 @@ private fun ReadingSettings(state: AppState) {
                         ) {
                             Column(Modifier.weight(1f)) {
                                 Text(
-                                    selectedVoice?.displayName ?: selectedId.ifBlank { "晓晓 · 温暖自然" },
+                                    selectedVoice?.displayName ?: selectedId.ifBlank { "默认音色" },
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = StarPalette.Text,
                                     maxLines = 1,
@@ -602,7 +609,11 @@ private fun ReadingSettings(state: AppState) {
                         }
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "从 Edge TTS 音色列表中选择，试音会立即使用当前音色。",
+                            if (ttsProvider.protocol == SpeechProtocol.EdgeTts) {
+                                "从 Edge TTS 音色列表中选择，试音会立即使用当前音色。"
+                            } else {
+                                "从 MiMo 预置精品音色中选择，试音会立即使用当前音色。"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = StarPalette.TextFaint,
                         )
@@ -632,9 +643,15 @@ private fun ReadingSettings(state: AppState) {
             }
         }
 
-        if (showVoicePicker.value && ttsProvider?.requiresApiKey == false) {
-            EdgeTtsVoicePickerDialog(
-                voices = state.speech.edgeTtsVoices,
+        if (showVoicePicker.value && usesVoicePicker && ttsProvider != null) {
+            SpeechVoicePickerDialog(
+                title = if (ttsProvider.protocol == SpeechProtocol.EdgeTts) "选择 Edge TTS 音色" else "选择 MiMo 音色",
+                description = if (ttsProvider.protocol == SpeechProtocol.EdgeTts) {
+                    "共 ${voiceCatalog.size} 个音色，可按名称、语言或性别搜索。"
+                } else {
+                    "MiMo-V2.5-TTS 预置精品音色，默认音色会跟随部署集群。"
+                },
+                voices = voiceCatalog,
                 selectedId = state.speech.ttsVoiceId ?: ttsProvider.ttsVoice.orEmpty(),
                 onDismiss = { showVoicePicker.value = false },
                 onSelect = { voice ->
@@ -685,7 +702,9 @@ private fun ReadingSettings(state: AppState) {
 }
 
 @Composable
-private fun EdgeTtsVoicePickerDialog(
+private fun SpeechVoicePickerDialog(
+    title: String,
+    description: String,
     voices: List<SpeechVoiceOption>,
     selectedId: String,
     onDismiss: () -> Unit,
@@ -704,10 +723,10 @@ private fun EdgeTtsVoicePickerDialog(
     Dialog(onDismissRequest = onDismiss) {
         StarCard(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
-                Text("选择 Edge TTS 音色", style = MaterialTheme.typography.titleMedium, color = StarPalette.Text)
+                Text(title, style = MaterialTheme.typography.titleMedium, color = StarPalette.Text)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "共 ${voices.size} 个音色，可按名称、语言或性别搜索。",
+                    description,
                     style = MaterialTheme.typography.bodySmall,
                     color = StarPalette.TextFaint,
                 )

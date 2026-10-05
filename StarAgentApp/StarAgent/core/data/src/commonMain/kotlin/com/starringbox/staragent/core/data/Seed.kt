@@ -359,6 +359,19 @@ internal object Seed {
         SpeechVoiceOption("ko-KR-SunHiNeural", "SunHi · 韩语", "ko-KR", "Female"),
     )
 
+    /** MiMo-V2.5-TTS's published preset catalog. IDs intentionally match the official names. */
+    fun mimoVoices(): List<SpeechVoiceOption> = listOf(
+        SpeechVoiceOption("mimo_default", "MiMo-默认 · 跟随部署集群", "多语言", "默认"),
+        SpeechVoiceOption("冰糖", "冰糖", "中文", "女性"),
+        SpeechVoiceOption("茉莉", "茉莉", "中文", "女性"),
+        SpeechVoiceOption("苏打", "苏打", "中文", "男性"),
+        SpeechVoiceOption("白桦", "白桦", "中文", "男性"),
+        SpeechVoiceOption("Mia", "Mia", "英文", "女性"),
+        SpeechVoiceOption("Chloe", "Chloe", "英文", "女性"),
+        SpeechVoiceOption("Milo", "Milo", "英文", "男性"),
+        SpeechVoiceOption("Dean", "Dean", "英文", "男性"),
+    )
+
     /** 首次启动的演示内容：智能体、任务、记忆、技能与示例对话。 */
     fun populateDemo(state: AppState) {
         state.skills.addAll(

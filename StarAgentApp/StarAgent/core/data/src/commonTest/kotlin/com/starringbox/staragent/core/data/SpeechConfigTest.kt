@@ -138,6 +138,22 @@ class SpeechConfigTest {
         assertEquals("zh-CN-XiaoxiaoNeural", tts.ttsVoice)
     }
 
+    @Test
+    fun mimoPublishedVoicesAreSelectableAndReachTheEndpoint() {
+        val state = AppState()
+        assertEquals(
+            listOf("mimo_default", "冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean"),
+            state.speech.mimoVoices.map { it.id },
+        )
+
+        state.configureSpeech("mimo")
+        state.speech.selectTtsProvider("mimo")
+        state.speech.selectTtsVoice("Chloe")
+
+        assertEquals("Chloe", state.speech.ttsEndpoint()?.ttsVoice)
+        assertEquals("mimo-v2.5-tts", state.speech.ttsEndpoint()?.ttsModel)
+    }
+
     /**
      * 火山方舟这一家：**语音和对话是两条产品线**，而且语音那边还分 Agent Plan 与普通控制台两套凭据。
      *
