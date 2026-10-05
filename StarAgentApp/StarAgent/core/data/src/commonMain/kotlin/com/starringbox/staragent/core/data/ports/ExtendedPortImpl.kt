@@ -7,9 +7,8 @@ import com.starringbox.staragent.core.model.SkillSource
 import com.starringbox.staragent.core.model.Skill
 import com.starringbox.staragent.core.platform.storage.LocalStores
 import com.starringbox.staragent.core.tools.ports.*
-import io.ktor.client.request.get
-import io.ktor.client.statement.bodyAsText
-import com.starringbox.staragent.core.llm.httpClient
+import com.starringbox.searx.SearchRequest
+import com.starringbox.searx.Searx
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -205,19 +204,26 @@ class AppSkillPort(
     }
 }
 
-class AppSearchPort : SearchPort {
+/**
+ * 搜索端口。
+ *
+ * 实际的元搜索（并发查多个引擎、去重、交错取结果）在独立的 `searx-kmp` 库里，
+ * 这里只负责把它的 [com.starringbox.searx.SearchResult] 映射成工具层的 [SearchItem]。
+ *
+ * 库的 `Searx` 会自己兜住单个引擎的失败（一个挂了跳过它，用剩下的继续），
+ * 只有**所有引擎都抛异常**时才把异常抛出来——这里收成一条失败结果给模型看。
+ *
+ * [searx] 留了构造参数这道缝：测试可以塞一个假的 `Searx`（用假引擎），不发真实请求。
+ */
+class AppSearchPort(
+    private val searx: Searx = Searx(),
+    private val language: String = "",
+) : SearchPort {
     override suspend fun search(query: String, limit: Int): SearchResult = runCatching {
-        val url = "https://html.duckduckgo.com/html/?q=" + encode(query)
-        val html = httpClient().get(url).bodyAsText()
-        val items = Regex("(?is)<a[^>]+class=\\\"result__a\\\"[^>]*href=\\\"([^\\\"]+)\\\"[^>]*>(.*?)</a>")
-            .findAll(html).take(limit).map { m ->
-                SearchItem(strip(m.groupValues[2]), m.groupValues[1], "")
-            }.toList()
+        val items = searx.search(SearchRequest(query, limit, language))
+            .map { SearchItem(it.title, it.url, it.snippet) }
         SearchResult(true, items)
     }.getOrElse { SearchResult(false, emptyList(), "搜索失败：${it.message ?: "网络错误"}") }
-
-    private fun encode(value: String) = value.trim().replace(" ", "+")
-    private fun strip(value: String) = value.replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ").trim()
 }
 
 class AppBrowserPort(private val web: WebPort) : BrowserPort {

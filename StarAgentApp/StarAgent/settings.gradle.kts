@@ -47,6 +47,14 @@ includeBuild("../edge-tts") {
     }
 }
 
+// searx-kmp 同样是独立发布的 KMP 元搜索库，接法与 edge-tts 一致。
+includeBuild("../searx-kmp") {
+    dependencySubstitution {
+        substitute(module("com.starringbox.searx:searx-kmp"))
+            .using(project(":"))
+    }
+}
+
 plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }

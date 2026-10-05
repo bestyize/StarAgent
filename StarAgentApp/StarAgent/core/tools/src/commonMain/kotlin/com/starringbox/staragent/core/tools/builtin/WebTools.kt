@@ -14,8 +14,10 @@ import kotlinx.serialization.json.putJsonObject
 /**
  * 取一个网页的正文。
  *
- * 一期**只做 fetch，不做 search**：搜索需要一个后端（等于又一把 Key），
- * 而 fetch 是纯 HTTP，用户直接把地址给出来就行。搜索留待后端定了再说。
+ * 这个工具**只做 fetch**：用户给出地址、或模型已经知道要看的页面，才用它。
+ * 搜索是另一条路——见 [WebSearchTool]（host.search，实现在 core:data 里，
+ * 底下是 searx-kmp 元搜索，不需要 API Key）。两者分开，是因为
+ * "知道地址去取"和"不知道地址去找"是两种意图。
  *
  * 输出的 [ToolResult.externalContext] **必须为真**——网页正文里可能写着
  * "用户喜欢简洁回答"这类句子，不挡住的话会被当成事实写进记忆，

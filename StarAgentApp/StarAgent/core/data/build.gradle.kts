@@ -40,6 +40,8 @@ kotlin {
             // 只有这里的 WebPort 实现要发请求，所以 HTTP 依赖只出现在这一侧。
             implementation(project(":core:tools"))
             implementation(project(":core:tool-host"))
+            // 元搜索：AppSearchPort 只调它的公共 API（Searx.search），协议细节都在库里。
+            implementation("com.starringbox.searx:searx-kmp:0.1.0")
             implementation(libs.ktor.client.core)
             implementation(libs.compose.runtime)
             implementation(libs.kotlinx.coroutines.core)
