@@ -170,6 +170,7 @@ class SpeechConfigTest {
 
         state.configureSpeech("volc-ark")
         state.speech.selectSpeechProvider("volc-ark")
+        state.speech.selectTtsProvider("volc-ark")
         assertEquals(SpeechProtocol.VolcArk, assertNotNull(state.speech.asrEndpoint()).protocol)
         assertEquals(SpeechProtocol.VolcArk, assertNotNull(state.speech.ttsEndpoint()).protocol)
 
@@ -331,17 +332,10 @@ class SpeechConfigTest {
 
     // ── 朗读 ────────────────────────────────────
 
-    /**
-     * 朗读跟着选的那家走：能做合成（智谱、OpenAI）就用它，不能（Groq）就交给设备。
-     *
-     * 这一条是**有意反转**了旧行为：以前合成是"自动挑一家能做合成的"，
-     * 所以选 Groq 做识别时朗读会落到智谱。现在语音只有一条配置，
-     * 选了谁就是谁——Groq 不能合成，`ttsEndpoint()` 返回 null，
-     * `Voice` 那边会退回设备自带（见 `VoiceTest.anUnreadyModelSynthesizerFallsBackToTheDevice`）。
-     */
     @Test
-    fun aVendorWithoutSynthesisHandsReadingBackToTheDevice() {
+    fun inheritedReadingWithAnAsrOnlyVendorHandsReadingBackToTheDevice() {
         val state = AppState()
+        state.speech.selectTtsProvider(null)
         state.configureSpeech("groq")
         state.speech.selectSpeechProvider("groq")
         assertNull(state.speech.ttsEndpoint(), "Groq 不做合成，朗读该交给设备")
@@ -354,8 +348,20 @@ class SpeechConfigTest {
     }
 
     @Test
+    fun edgeTtsRemainsTheDefaultEvenWhenRecognitionUsesAnotherVendor() {
+        val state = AppState()
+        state.configureSpeech("groq")
+        state.speech.selectSpeechProvider("groq")
+
+        val tts = assertNotNull(state.speech.ttsEndpoint())
+        assertEquals("edge-tts", state.speech.activeTtsProvider()?.id)
+        assertEquals("zh-CN-XiaoxiaoNeural", tts.ttsVoice)
+    }
+
+    @Test
     fun synthesisAlsoNeedsTheKey() {
         val state = AppState()
+        state.speech.selectTtsProvider(null)
         state.speech.selectSpeechProvider("openai")
 
         assertNull(state.speech.ttsEndpoint(), "没填 Key 就不该凑出一个发不出去的请求")

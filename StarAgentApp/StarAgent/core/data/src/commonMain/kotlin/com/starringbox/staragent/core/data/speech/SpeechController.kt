@@ -10,6 +10,7 @@ import com.starringbox.staragent.core.model.Author
 import com.starringbox.staragent.core.model.ChatMessage
 import com.starringbox.staragent.core.model.MessageBody
 import com.starringbox.staragent.core.model.SpeechProvider
+import com.starringbox.staragent.core.model.SpeechVoiceOption
 import com.starringbox.staragent.core.platform.voice.Voice
 import com.starringbox.staragent.core.speech.PcmPlayers
 import com.starringbox.staragent.core.speech.SpeechOutcome
@@ -19,6 +20,7 @@ import com.starringbox.staragent.core.speech.Wav
 import com.starringbox.staragent.core.speech.cloud.ModelSynthesizer
 import com.starringbox.staragent.core.speech.cloud.ModelTranscriber
 import com.starringbox.staragent.core.speech.cloud.SpeechEndpoint
+import com.starringbox.staragent.core.speech.cloud.listEdgeTtsVoices
 import com.starringbox.staragent.core.speech.local.LocalSynthesizer
 import com.starringbox.staragent.core.speech.local.LocalTranscriber
 import com.starringbox.staragent.core.speech.local.asr.client.SenseVoiceAsr
@@ -63,11 +65,11 @@ class SpeechController(
     var asrModelId by mutableStateOf<String?>(null)
         private set
 
-    var ttsVoiceSource by mutableStateOf<VoiceSource?>(null)
+    var ttsVoiceSource by mutableStateOf<VoiceSource?>(VoiceSource.Model)
         private set
-    var ttsProviderId by mutableStateOf<String?>(null)
+    var ttsProviderId by mutableStateOf<String?>(DEFAULT_TTS_PROVIDER_ID)
         private set
-    var ttsVoiceId by mutableStateOf<String?>(null)
+    var ttsVoiceId by mutableStateOf<String?>(DEFAULT_TTS_VOICE)
         private set
     val localAsrSupported: Boolean get() = SenseVoiceAsr.supported()
     val localTtsSupported: Boolean get() = PiperTts.supported()
@@ -98,6 +100,10 @@ class SpeechController(
      * 而 init 里那句 [restoreSettings] 就要往 [speechKeys] 里写。
      */
     val speechProviders: List<SpeechProvider> = Seed.speechProviders()
+
+    /** Edge catalog with a curated offline fallback; refreshed from the service when possible. */
+    var edgeTtsVoices by mutableStateOf(Seed.edgeTtsVoices())
+        private set
 
     /** 语音侧的 Key，按服务商分开存。理由见 [setSpeechKey]。snapshot map，界面跟着它刷新。 */
     private val speechKeys = mutableStateMapOf<String, String>()
@@ -158,6 +164,17 @@ class SpeechController(
         ttsProviderId?.let { id -> speechProviders.firstOrNull { it.id == id } }
             ?: activeSpeechProvider()
 
+    suspend fun refreshEdgeTtsVoices() {
+        val refreshed = try {
+            listEdgeTtsVoices()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return
+        }
+        if (refreshed.isNotEmpty()) edgeTtsVoices = refreshed
+    }
+
     fun selectTtsVoiceSource(source: VoiceSource?) {
         stopSpeaking()
         ttsVoiceSource = source
@@ -167,9 +184,9 @@ class SpeechController(
     fun selectTtsProvider(id: String?) {
         stopSpeaking()
         ttsProviderId = id
-        ttsVoiceId = null
+        ttsVoiceId = id?.let { selected -> speechProviders.firstOrNull { it.id == selected } }?.ttsVoice
         SettingsStore.put(KEY_TTS_PROVIDER, id.orEmpty())
-        SettingsStore.put(KEY_TTS_VOICE, "")
+        SettingsStore.put(KEY_TTS_VOICE, ttsVoiceId.orEmpty())
     }
 
     fun selectTtsVoice(voice: String?) {
@@ -458,9 +475,24 @@ class SpeechController(
         // 读出来落到 activeSpeechProvider() 上会自然退回第一家——不需要为它写迁移。
         speechProviderId = SettingsStore.get(KEY_SPEECH_PROVIDER)?.takeIf { it.isNotBlank() }
         asrModelId = SettingsStore.get(KEY_ASR_MODEL)?.takeIf { it.isNotBlank() }
-        ttsVoiceSource = SettingsStore.get(KEY_TTS_VOICE_SOURCE)?.let { saved -> VoiceSource.entries.firstOrNull { it.name == saved } }
-        ttsProviderId = SettingsStore.get(KEY_TTS_PROVIDER)?.takeIf { it.isNotBlank() }
-        ttsVoiceId = SettingsStore.get(KEY_TTS_VOICE)?.takeIf { it.isNotBlank() }
+        val savedTtsSource = SettingsStore.get(KEY_TTS_VOICE_SOURCE)
+        ttsVoiceSource = when {
+            savedTtsSource == null -> VoiceSource.Model
+            savedTtsSource.isBlank() -> null
+            else -> VoiceSource.entries.firstOrNull { it.name == savedTtsSource } ?: VoiceSource.Model
+        }
+        val savedTtsProvider = SettingsStore.get(KEY_TTS_PROVIDER)
+        ttsProviderId = when {
+            savedTtsProvider == null -> DEFAULT_TTS_PROVIDER_ID
+            savedTtsProvider.isBlank() -> null
+            else -> savedTtsProvider
+        }
+        val savedTtsVoice = SettingsStore.get(KEY_TTS_VOICE)
+        ttsVoiceId = when {
+            savedTtsVoice == null -> activeTtsProvider()?.ttsVoice
+            savedTtsVoice.isBlank() -> null
+            else -> savedTtsVoice
+        }
 
         // 每一家的 Key 都要读回来。漏读一家的后果是"每次冷启都要重填"，
         // 而这件事不写测试根本发现不了——id 和模型名都还原得好好的，看着一切正常。
@@ -472,6 +504,8 @@ class SpeechController(
     }
 
     companion object {
+        const val DEFAULT_TTS_PROVIDER_ID = "edge-tts"
+        const val DEFAULT_TTS_VOICE = "zh-CN-XiaoxiaoNeural"
         const val KEY_VOICE_SOURCE = "voiceSource"
         const val KEY_SPEECH_PROVIDER = "speechProvider"
         const val KEY_ASR_MODEL = "asrModel"

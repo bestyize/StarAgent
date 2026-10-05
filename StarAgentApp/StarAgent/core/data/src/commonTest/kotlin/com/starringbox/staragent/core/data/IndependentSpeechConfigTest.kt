@@ -16,11 +16,18 @@ class IndependentSpeechConfigTest {
         Voice.installPreference(null); Voice.installModel(); LocalStores.install(MemoryStore())
         Voice.installStopHandler(null)
     }
-    @Test fun legacyReadingKeepsFollowingTheSelectedAsrProvider() {
+    @Test fun defaultReadingUsesEdgeTtsAndItsDefaultVoice() {
+        val state = AppState()
+        assertEquals(VoiceSource.Model, state.speech.ttsVoiceSource)
+        assertEquals("edge-tts", state.speech.ttsProviderId)
+        assertEquals("zh-CN-XiaoxiaoNeural", state.speech.ttsVoiceId)
+        assertEquals("zh-CN-XiaoxiaoNeural", state.speech.ttsEndpoint()?.ttsVoice)
+    }
+    @Test fun explicitlyInheritedReadingStillFollowsTheSelectedAsrProvider() {
         SettingsStore.put("speechProvider", "openai")
         SettingsStore.put("speechKey:openai", "test-speech")
         val state = AppState()
-        assertNull(state.speech.ttsVoiceSource)
+        state.speech.selectTtsProvider(null)
         assertNull(state.speech.ttsProviderId)
         assertEquals("alloy", state.speech.ttsEndpoint()?.ttsVoice)
     }
@@ -40,6 +47,7 @@ class IndependentSpeechConfigTest {
     }
     @Test fun changingAnInheritedProviderResetsItsVoiceAndMiMoKeepsItsOwnProtocol() {
         val state = AppState()
+        state.speech.selectTtsProvider(null)
         state.speech.selectSpeechProvider("openai")
         state.speech.selectTtsVoice("echo")
         state.speech.selectSpeechProvider("mimo")

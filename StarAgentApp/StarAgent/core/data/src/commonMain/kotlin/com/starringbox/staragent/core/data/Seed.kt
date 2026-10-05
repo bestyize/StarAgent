@@ -12,6 +12,7 @@ import com.starringbox.staragent.core.model.Skill
 import com.starringbox.staragent.core.model.SkillSource
 import com.starringbox.staragent.core.model.SpeechProtocol
 import com.starringbox.staragent.core.model.SpeechProvider
+import com.starringbox.staragent.core.model.SpeechVoiceOption
 import com.starringbox.staragent.core.model.TaskPriority
 
 /**
@@ -333,6 +334,29 @@ internal object Seed {
             ttsModel = "edge-tts",
             ttsVoice = "zh-CN-XiaoxiaoNeural",
         ),
+    )
+
+    /** Offline fallback so the voice picker is useful before the live catalog loads. */
+    fun edgeTtsVoices(): List<SpeechVoiceOption> = listOf(
+        SpeechVoiceOption("zh-CN-XiaoxiaoNeural", "晓晓 · 温暖自然", "zh-CN", "Female"),
+        SpeechVoiceOption("zh-CN-XiaoyiNeural", "晓伊 · 活泼亲切", "zh-CN", "Female"),
+        SpeechVoiceOption("zh-CN-YunxiNeural", "云希 · 阳光少年", "zh-CN", "Male"),
+        SpeechVoiceOption("zh-CN-YunxiaNeural", "云夏 · 阳光男孩", "zh-CN", "Male"),
+        SpeechVoiceOption("zh-CN-YunyangNeural", "云扬 · 新闻播报", "zh-CN", "Male"),
+        SpeechVoiceOption("zh-CN-YunzeNeural", "云泽 · 沉稳成熟", "zh-CN", "Male"),
+        SpeechVoiceOption("zh-CN-liaoning-XiaobeiNeural", "晓北 · 东北方言", "zh-CN-liaoning", "Female"),
+        SpeechVoiceOption("zh-CN-shaanxi-XiaoniNeural", "晓妮 · 陕西方言", "zh-CN-shaanxi", "Female"),
+        SpeechVoiceOption("zh-TW-HsiaoChenNeural", "晓臻 · 台湾普通话", "zh-TW", "Female"),
+        SpeechVoiceOption("zh-TW-YunJheNeural", "云哲 · 台湾普通话", "zh-TW", "Male"),
+        SpeechVoiceOption("zh-HK-HiuMaanNeural", "晓曼 · 粤语", "zh-HK", "Female"),
+        SpeechVoiceOption("zh-HK-WanLungNeural", "云龙 · 粤语", "zh-HK", "Male"),
+        SpeechVoiceOption("en-US-EmmaMultilingualNeural", "Emma · 多语言", "en-US", "Female"),
+        SpeechVoiceOption("en-US-AriaNeural", "Aria · 自然英语", "en-US", "Female"),
+        SpeechVoiceOption("en-US-JennyNeural", "Jenny · 友好英语", "en-US", "Female"),
+        SpeechVoiceOption("en-US-GuyNeural", "Guy · 新闻英语", "en-US", "Male"),
+        SpeechVoiceOption("en-GB-SoniaNeural", "Sonia · 英式英语", "en-GB", "Female"),
+        SpeechVoiceOption("ja-JP-NanamiNeural", "Nanami · 日语", "ja-JP", "Female"),
+        SpeechVoiceOption("ko-KR-SunHiNeural", "SunHi · 韩语", "ko-KR", "Female"),
     )
 
     /** 首次启动的演示内容：智能体、任务、记忆、技能与示例对话。 */

@@ -20,6 +20,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -30,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.starringbox.staragent.core.speech.SpeechOutcome
 import com.starringbox.staragent.core.data.AppState
 import com.starringbox.staragent.core.data.LocalAppState
@@ -39,6 +41,7 @@ import com.starringbox.staragent.core.designsystem.component.StarTopBar
 import com.starringbox.staragent.core.designsystem.navigation.Navigator
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.model.SpeechProvider
+import com.starringbox.staragent.core.model.SpeechVoiceOption
 import com.starringbox.staragent.core.platform.voice.Voice
 import com.starringbox.staragent.core.speech.VoiceSource
 import kotlinx.coroutines.launch
@@ -443,8 +446,13 @@ private fun ReadingSettings(state: AppState) {
     val inheritedTtsProvider = state.speech.activeTtsProvider()
     val ttsProvider = inheritedTtsProvider?.takeIf { it.canSynthesize }
     val voiceDraft = remember(state.speech.ttsVoiceId) { mutableStateOf(state.speech.ttsVoiceId.orEmpty()) }
+    val showVoicePicker = remember { mutableStateOf(false) }
     val testMessage = remember { mutableStateOf<String?>(null) }
     val speakReplies = state.speech.speakReplies
+
+    LaunchedEffect(Unit) {
+        state.speech.refreshEdgeTtsVoices()
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         StarCard(modifier = Modifier.fillMaxWidth()) {
@@ -558,31 +566,82 @@ private fun ReadingSettings(state: AppState) {
             }
         }
 
-        if (source != VoiceSource.Local) {
+        if (source == VoiceSource.Model || source == null) {
             StarCard(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp)) {
                     Text("音色", style = MaterialTheme.typography.bodyMedium, color = StarPalette.Text)
                     Spacer(Modifier.height(8.dp))
-                    StarTextField(
-                        value = voiceDraft.value,
-                        onValueChange = { voiceDraft.value = it },
-                        placeholder = "默认音色（可留空）",
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (ttsProvider?.requiresApiKey == false) {
+                        val selectedId = state.speech.ttsVoiceId ?: ttsProvider.ttsVoice.orEmpty()
+                        val selectedVoice = state.speech.edgeTtsVoices.firstOrNull { it.id == selectedId }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(StarPalette.SurfaceAlt)
+                                .clickable { showVoicePicker.value = true }
+                                .padding(horizontal = 12.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    selectedVoice?.displayName ?: selectedId.ifBlank { "晓晓 · 温暖自然" },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = StarPalette.Text,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    selectedVoice?.let { "${it.locale} · ${it.gender}" } ?: selectedId,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = StarPalette.TextFaint,
+                                )
+                            }
+                            Text("选择", style = MaterialTheme.typography.labelLarge, color = StarPalette.Indigo)
+                        }
+                        Spacer(Modifier.height(8.dp))
                         Text(
-                            "音色名称会按所选朗读方式保存。",
-                            modifier = Modifier.weight(1f),
+                            "从 Edge TTS 音色列表中选择，试音会立即使用当前音色。",
                             style = MaterialTheme.typography.bodySmall,
                             color = StarPalette.TextFaint,
                         )
-                        SaveButton(
-                            enabled = voiceDraft.value != state.speech.ttsVoiceId.orEmpty(),
-                            onClick = { state.speech.selectTtsVoice(voiceDraft.value.trim().ifBlank { null }) },
+                    } else {
+                        StarTextField(
+                            value = voiceDraft.value,
+                            onValueChange = { voiceDraft.value = it },
+                            placeholder = "默认音色（可留空）",
                         )
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "音色名称会按所选朗读方式保存。",
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = StarPalette.TextFaint,
+                            )
+                            SaveButton(
+                                enabled = voiceDraft.value != state.speech.ttsVoiceId.orEmpty(),
+                                onClick = {
+                                    state.speech.selectTtsVoice(voiceDraft.value.trim().ifBlank { null })
+                                },
+                            )
+                        }
                     }
                 }
             }
+        }
+
+        if (showVoicePicker.value && ttsProvider?.requiresApiKey == false) {
+            EdgeTtsVoicePickerDialog(
+                voices = state.speech.edgeTtsVoices,
+                selectedId = state.speech.ttsVoiceId ?: ttsProvider.ttsVoice.orEmpty(),
+                onDismiss = { showVoicePicker.value = false },
+                onSelect = { voice ->
+                    state.speech.selectTtsVoice(voice.id)
+                    showVoicePicker.value = false
+                },
+            )
         }
 
         StarCard(modifier = Modifier.fillMaxWidth()) {
@@ -619,6 +678,97 @@ private fun ReadingSettings(state: AppState) {
                     testMessage.value?.let {
                         Text(it, Modifier.padding(start = 10.dp), style = MaterialTheme.typography.bodySmall, color = StarPalette.TextFaint)
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EdgeTtsVoicePickerDialog(
+    voices: List<SpeechVoiceOption>,
+    selectedId: String,
+    onDismiss: () -> Unit,
+    onSelect: (SpeechVoiceOption) -> Unit,
+) {
+    val query = remember { mutableStateOf("") }
+    val filtered = voices.filter { voice ->
+        val needle = query.value.trim()
+        needle.isBlank() ||
+            voice.displayName.contains(needle, ignoreCase = true) ||
+            voice.id.contains(needle, ignoreCase = true) ||
+            voice.locale.contains(needle, ignoreCase = true) ||
+            voice.gender.contains(needle, ignoreCase = true)
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        StarCard(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                Text("选择 Edge TTS 音色", style = MaterialTheme.typography.titleMedium, color = StarPalette.Text)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "共 ${voices.size} 个音色，可按名称、语言或性别搜索。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = StarPalette.TextFaint,
+                )
+                Spacer(Modifier.height(12.dp))
+                StarTextField(
+                    value = query.value,
+                    onValueChange = { query.value = it },
+                    placeholder = "搜索音色、语言或性别",
+                )
+                Spacer(Modifier.height(10.dp))
+                if (filtered.isNotEmpty()) {
+                    LazyColumn(modifier = Modifier.height(420.dp)) {
+                        items(filtered.size) { index ->
+                            val voice = filtered[index]
+                            val selected = voice.id == selectedId
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (selected) StarPalette.Indigo.copy(alpha = 0.12f) else Color.Transparent)
+                                    .clickable { onSelect(voice) }
+                                    .padding(horizontal = 10.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        voice.displayName,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = StarPalette.Text,
+                                        fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        "${voice.id} · ${voice.locale} · ${voice.gender}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = StarPalette.TextFaint,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                if (selected) {
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("✓", style = MaterialTheme.typography.labelLarge, color = StarPalette.Indigo)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Spacer(Modifier.height(20.dp))
+                    Text(
+                        "没有匹配的音色。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = StarPalette.TextMuted,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                    ActionLabel("关闭", enabled = true, onClick = onDismiss)
                 }
             }
         }
