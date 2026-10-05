@@ -14,6 +14,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import androidx.activity.result.ActivityResultCaller
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
@@ -199,12 +200,29 @@ class AndroidSystemSynthesizer(context: Context) : Synthesizer {
 
     private var readyState by mutableStateOf(false)
 
+    private data class Utterance(
+        val id: String,
+        val completed: kotlinx.coroutines.CompletableDeferred<SpeechOutcome<Unit>>,
+    )
+    private var nextUtteranceId = 0L
+    private var pending: Utterance? = null
+
+    private val progress = object : UtteranceProgressListener() {
+        override fun onStart(utteranceId: String?) = Unit
+        override fun onDone(utteranceId: String?) = settle(utteranceId, SpeechOutcome.Ok(Unit))
+        @Suppress("DEPRECATION")
+        override fun onError(utteranceId: String?) = settle(utteranceId, SpeechOutcome.Failed("系统朗读失败"))
+        override fun onError(utteranceId: String?, errorCode: Int) = settle(utteranceId, SpeechOutcome.Failed("系统朗读失败（$errorCode）"))
+        override fun onStop(utteranceId: String?, interrupted: Boolean) = settle(utteranceId, SpeechOutcome.Failed("朗读已停止"))
+    }
+
     init {
         main.post {
             lateinit var created: TextToSpeech
             created = TextToSpeech(context) { status ->
                 readyState = status == TextToSpeech.SUCCESS
                 if (readyState) {
+                    created.setOnUtteranceProgressListener(progress)
                     runCatching { created.language = Locale.SIMPLIFIED_CHINESE }
                 }
             }
@@ -215,9 +233,7 @@ class AndroidSystemSynthesizer(context: Context) : Synthesizer {
     override val ready: Boolean get() = readyState
 
     override fun stop() {
-        // 系统合成是自己排队播放的，停它只能通过引擎本身。
-        // 没初始化好时 engine 还是 null，停止是空操作，不该抛。
-        runCatching { engine?.stop() }
+        if (Looper.myLooper() == main.looper) stopOnMain() else main.post { stopOnMain() }
     }
 
     override suspend fun speak(text: String): SpeechOutcome<Unit> {
@@ -225,15 +241,35 @@ class AndroidSystemSynthesizer(context: Context) : Synthesizer {
         // 没什么可念的算成功——空回复不是错误
         if (trimmed.isBlank()) return SpeechOutcome.Ok(Unit)
 
-        val tts = engine ?: return SpeechOutcome.Failed("系统朗读还没准备好")
-        if (!readyState) return SpeechOutcome.Failed("系统朗读还没准备好")
-
-        val result = tts.speak(trimmed, TextToSpeech.QUEUE_FLUSH, null, "staragent")
-        return if (result == TextToSpeech.SUCCESS) {
-            SpeechOutcome.Ok(Unit)
-        } else {
-            SpeechOutcome.Failed("系统朗读起不来")
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+            val tts = engine ?: return@withContext SpeechOutcome.Failed("系统朗读还没准备好")
+            if (!readyState) return@withContext SpeechOutcome.Failed("系统朗读还没准备好")
+            stopOnMain()
+            val active = Utterance("staragent-${++nextUtteranceId}", kotlinx.coroutines.CompletableDeferred())
+            pending = active
+            try {
+                if (tts.speak(trimmed, TextToSpeech.QUEUE_FLUSH, null, active.id) != TextToSpeech.SUCCESS) {
+                    active.completed.complete(SpeechOutcome.Failed("系统朗读起不来"))
+                }
+                active.completed.await()
+            } finally {
+                if (pending === active) {
+                    pending = null
+                    runCatching { tts.stop() }
+                }
+            }
         }
+    }
+
+    private fun stopOnMain() {
+        val active = pending
+        pending = null
+        active?.completed?.complete(SpeechOutcome.Failed("朗读已停止"))
+        runCatching { engine?.stop() }
+    }
+
+    private fun settle(id: String?, outcome: SpeechOutcome<Unit>) {
+        main.post { pending?.takeIf { it.id == id }?.completed?.complete(outcome) }
     }
 }
 

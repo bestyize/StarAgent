@@ -12,12 +12,18 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaPlayer
 import android.media.MediaRecorder
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.result.ActivityResultCaller
 import androidx.activity.result.contract.ActivityResultContracts
 import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
@@ -155,31 +161,80 @@ class AndroidVoiceRecorder(
  */
 class AndroidVoicePlayer(private val context: Context) : Player {
 
-    private var playing: MediaPlayer? = null
+    private class Playback {
+        val completed = CompletableDeferred<Boolean>()
+        var player: MediaPlayer? = null
+        var file: File? = null
+    }
+
+    private val main = Handler(Looper.getMainLooper())
+    // MediaPlayer 的创建、回调和释放全部在主线程；prepareAsync 不阻塞界面。
+    private var playing: Playback? = null
 
     override val available: Boolean get() = true
 
-    override suspend fun play(clip: VoiceClip): Boolean = withContext(Dispatchers.IO) {
-        stop()
-        runCatching {
+    override suspend fun play(clip: VoiceClip): Boolean = withContext(Dispatchers.Main.immediate) {
+        stopOnMain()
+        if (clip.bytes.isEmpty()) return@withContext false
+        val active = Playback()
+        playing = active
+        try {
             val extension = if (clip.mimeType == "audio/mpeg") "mp3" else "wav"
-            val file = File(context.cacheDir, "staragent-reply.$extension")
-            file.writeBytes(clip.bytes)
-
+            withContext(Dispatchers.IO) {
+                val file = File.createTempFile("staragent-reply-", ".$extension", context.cacheDir)
+                active.file = file
+                file.writeBytes(clip.bytes)
+            }
+            currentCoroutineContext().ensureActive()
+            if (playing !== active || active.completed.isCompleted) return@withContext false
             val player = MediaPlayer()
-            player.setDataSource(file.absolutePath)
-            player.prepare()
-            player.start()
-            playing = player
-            true
-        }.getOrDefault(false)
+            active.player = player
+            player.setOnPreparedListener {
+                if (playing === active && !active.completed.isCompleted) {
+                    try { it.start() } catch (_: Exception) { finish(active, false) }
+                }
+            }
+            player.setOnCompletionListener { finish(active, true) }
+            player.setOnErrorListener { _, _, _ -> finish(active, false); true }
+            player.setDataSource(requireNotNull(active.file).absolutePath)
+            player.prepareAsync()
+            active.completed.await()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        } finally {
+            if (playing === active) playing = null
+            release(active)
+        }
     }
 
     override fun stop() {
-        runCatching {
-            playing?.stop()
-            playing?.release()
-        }
+        if (Looper.myLooper() == main.looper) stopOnMain() else main.post { stopOnMain() }
+    }
+
+    private fun stopOnMain() {
+        val active = playing ?: return
         playing = null
+        active.completed.complete(false)
+        // 文件可能仍在 IO 线程写入；等待 play 的 finally 再删除，避免写入重新创建已删文件。
+        release(active, deleteFile = false)
+    }
+
+    private fun finish(active: Playback, success: Boolean) {
+        if (playing === active) active.completed.complete(success)
+    }
+
+    private fun release(active: Playback, deleteFile: Boolean = true) {
+        val player = active.player
+        active.player = null
+        runCatching { player?.setOnPreparedListener(null) }
+        runCatching { player?.setOnCompletionListener(null) }
+        runCatching { player?.setOnErrorListener(null) }
+        runCatching { player?.release() }
+        if (deleteFile) {
+            active.file?.let { runCatching { it.delete() } }
+            active.file = null
+        }
     }
 }

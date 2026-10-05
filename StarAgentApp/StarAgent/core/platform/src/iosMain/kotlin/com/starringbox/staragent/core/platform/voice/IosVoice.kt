@@ -10,6 +10,7 @@ import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import platform.AVFAudio.AVAudioPlayer
+import platform.AVFAudio.AVAudioPlayerDelegateProtocol
 import platform.AVFAudio.AVAudioRecorder
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryRecord
@@ -25,6 +26,10 @@ import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSURL
+import platform.Foundation.NSError
+import platform.darwin.NSObject
+import platform.Foundation.NSOperationQueue
+import platform.Foundation.NSThread
 import platform.Foundation.dataWithBytes
 import platform.posix.memcpy
 
@@ -126,25 +131,62 @@ class IosVoiceRecorder : Recorder {
 @OptIn(ExperimentalForeignApi::class)
 class IosVoicePlayer : Player {
 
-    private var playing: AVAudioPlayer? = null
+    private class Playback {
+        val completed = kotlinx.coroutines.CompletableDeferred<Boolean>()
+        var player: AVAudioPlayer? = null
+        var delegate: AVAudioPlayerDelegateProtocol? = null
+    }
+    private var playing: Playback? = null
 
     override val available: Boolean get() = true
 
-    override suspend fun play(clip: VoiceClip): Boolean = withContext(Dispatchers.Default) {
-        stop()
-        runCatching {
-            if (clip.bytes.isEmpty()) return@runCatching false
+    override suspend fun play(clip: VoiceClip): Boolean = withContext(Dispatchers.Main) {
+        stopOnMain()
+        if (clip.bytes.isEmpty()) return@withContext false
+        val active = Playback()
+        playing = active
+        try {
             val opened = AVAudioPlayer(data = clip.bytes.toNSData(), error = null)
-            if (!opened.prepareToPlay()) return@runCatching false
-            opened.play()
-            playing = opened
-            true
-        }.getOrDefault(false)
+            active.player = opened
+            active.delegate = object : NSObject(), AVAudioPlayerDelegateProtocol {
+                override fun audioPlayerDidFinishPlaying(player: AVAudioPlayer, successfully: Boolean) {
+                    onMain { if (playing === active) active.completed.complete(successfully) }
+                }
+                override fun audioPlayerDecodeErrorDidOccur(player: AVAudioPlayer, error: NSError?) {
+                    onMain { if (playing === active) active.completed.complete(false) }
+                }
+            }
+            opened.delegate = active.delegate
+            if (!opened.prepareToPlay() || !opened.play()) return@withContext false
+            active.completed.await()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        } finally {
+            if (playing === active) playing = null
+            release(active)
+        }
     }
 
-    override fun stop() {
-        runCatching { playing?.stop() }
+    override fun stop() = onMain { stopOnMain() }
+
+    private fun stopOnMain() {
+        val active = playing ?: return
         playing = null
+        active.completed.complete(false)
+        release(active)
+    }
+
+    private fun release(active: Playback) {
+        runCatching { active.player?.stop() }
+        active.player?.delegate = null
+        active.player = null
+        active.delegate = null
+    }
+
+    private fun onMain(action: () -> Unit) {
+        if (NSThread.isMainThread) action() else NSOperationQueue.mainQueue.addOperationWithBlock(action)
     }
 }
 

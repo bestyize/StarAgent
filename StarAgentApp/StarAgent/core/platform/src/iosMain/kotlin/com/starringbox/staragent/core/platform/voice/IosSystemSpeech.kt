@@ -5,6 +5,7 @@ import com.starringbox.staragent.core.speech.Synthesizer
 import com.starringbox.staragent.core.speech.Transcriber
 import kotlin.coroutines.resume
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.ObjCSignatureOverride
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.AVFAudio.AVAudioApplication
 import platform.AVFAudio.AVAudioEngine
@@ -13,10 +14,14 @@ import platform.AVFAudio.AVAudioSessionCategoryRecord
 import platform.AVFAudio.AVSpeechBoundary
 import platform.AVFAudio.AVSpeechSynthesisVoice
 import platform.AVFAudio.AVSpeechSynthesizer
+import platform.AVFAudio.AVSpeechSynthesizerDelegateProtocol
 import platform.AVFAudio.AVSpeechUtterance
 import platform.AVFAudio.setActive
 import platform.Foundation.NSError
 import platform.Foundation.NSLocale
+import platform.darwin.NSObject
+import platform.Foundation.NSOperationQueue
+import platform.Foundation.NSThread
 import platform.Foundation.currentLocale
 import platform.Speech.SFSpeechAudioBufferRecognitionRequest
 import platform.Speech.SFSpeechRecognitionTask
@@ -200,6 +205,24 @@ class IosSystemTranscriber : Transcriber {
 class IosSystemSynthesizer : Synthesizer {
 
     private val engine = AVSpeechSynthesizer()
+    private data class Utterance(
+        val utterance: AVSpeechUtterance,
+        val completed: kotlinx.coroutines.CompletableDeferred<SpeechOutcome<Unit>>,
+    )
+    private var pending: Utterance? = null
+    // AVFoundation 弱引用 delegate，需要在 Kotlin 对象上保留强引用。
+    private val progress = object : NSObject(), AVSpeechSynthesizerDelegateProtocol {
+        @ObjCSignatureOverride
+        override fun speechSynthesizer(synthesizer: AVSpeechSynthesizer, didFinishSpeechUtterance: AVSpeechUtterance) {
+            settle(didFinishSpeechUtterance, SpeechOutcome.Ok(Unit))
+        }
+        @ObjCSignatureOverride
+        override fun speechSynthesizer(synthesizer: AVSpeechSynthesizer, didCancelSpeechUtterance: AVSpeechUtterance) {
+            settle(didCancelSpeechUtterance, SpeechOutcome.Failed("朗读已停止"))
+        }
+    }
+
+    init { engine.delegate = progress }
 
     override val ready: Boolean get() = true
 
@@ -208,17 +231,40 @@ class IosSystemSynthesizer : Synthesizer {
         // 没什么可念的算成功——空回复不是错误
         if (trimmed.isBlank()) return SpeechOutcome.Ok(Unit)
 
-        return runCatching {
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+            stopOnMain()
             val utterance = AVSpeechUtterance.speechUtteranceWithString(trimmed)
             // 和 Android 那边设 Locale.SIMPLIFIED_CHINESE 对齐；取不到就交给系统默认音色
             AVSpeechSynthesisVoice.voiceWithLanguage("zh-CN")?.let { utterance.voice = it }
-            engine.speakUtterance(utterance)
-            SpeechOutcome.Ok(Unit)
-        }.getOrElse { SpeechOutcome.Failed("系统朗读起不来") }
+            val active = Utterance(utterance, kotlinx.coroutines.CompletableDeferred())
+            pending = active
+            try {
+                engine.speakUtterance(utterance)
+                active.completed.await()
+            } finally {
+                if (pending === active) {
+                    pending = null
+                    runCatching { engine.stopSpeakingAtBoundary(AVSpeechBoundary.AVSpeechBoundaryImmediate) }
+                }
+            }
+        }
     }
 
-    override fun stop() {
+    override fun stop() = onMain { stopOnMain() }
+
+    private fun stopOnMain() {
+        val active = pending
+        pending = null
+        active?.completed?.complete(SpeechOutcome.Failed("朗读已停止"))
         runCatching { engine.stopSpeakingAtBoundary(AVSpeechBoundary.AVSpeechBoundaryImmediate) }
+    }
+
+    private fun settle(utterance: AVSpeechUtterance, outcome: SpeechOutcome<Unit>) = onMain {
+        pending?.takeIf { it.utterance == utterance }?.completed?.complete(outcome)
+    }
+
+    private fun onMain(action: () -> Unit) {
+        if (NSThread.isMainThread) action() else NSOperationQueue.mainQueue.addOperationWithBlock(action)
     }
 }
 

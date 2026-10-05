@@ -119,68 +119,67 @@ class DesktopVoiceRecorder : Recorder {
  * 所以这一条用 JLayer 解出音频设备能直接接受的采样流。
  */
 class DesktopVoicePlayer : Player {
+    private class Playback {
+        val completed = kotlinx.coroutines.CompletableDeferred<Boolean>()
+        var release: (() -> Unit)? = null
+    }
 
     private val hasOutput: Boolean by lazy {
         runCatching { AudioSystem.getMixerInfo().isNotEmpty() }.getOrDefault(false)
     }
-
-    private var playing: Clip? = null
-    private var mp3Player: JLayerPlayer? = null
-    private var mp3Thread: Thread? = null
-
+    private val lock = Any()
+    private var playing: Playback? = null
     override val available: Boolean get() = hasOutput
 
     override suspend fun play(clip: VoiceClip): Boolean = withContext(Dispatchers.IO) {
-        stop()
-        if (clip.mimeType == "audio/mpeg") {
-            return@withContext runCatching {
-                val opened = JLayerPlayer(ByteArrayInputStream(clip.bytes))
-                val worker = Thread {
-                    try {
-                        opened.play()
-                    } finally {
-                        synchronized(this@DesktopVoicePlayer) {
-                            if (mp3Player === opened) {
-                                mp3Player = null
-                                mp3Thread = null
-                            }
+        val active = Playback()
+        val previous = synchronized(lock) { playing.also { playing = active } }
+        previous?.let { finish(it, false) }
+        try {
+            val opened = synchronized(lock) {
+                if (playing !== active) return@synchronized false
+                if (clip.mimeType == "audio/mpeg") {
+                    val decoder = JLayerPlayer(ByteArrayInputStream(clip.bytes))
+                    val worker = Thread {
+                        try { decoder.play(); active.completed.complete(true) }
+                        catch (_: Exception) { active.completed.complete(false) }
+                    }.apply { isDaemon = true }
+                    active.release = { decoder.close(); worker.interrupt() }
+                    worker.start()
+                } else {
+                    val output = AudioSystem.getClip()
+                    active.release = { runCatching { output.stop() }; output.close() }
+                    AudioSystem.getAudioInputStream(ByteArrayInputStream(clip.bytes)).use { output.open(it) }
+                    output.addLineListener { event ->
+                        when (event.type) {
+                            javax.sound.sampled.LineEvent.Type.STOP -> active.completed.complete(true)
+                            javax.sound.sampled.LineEvent.Type.CLOSE -> active.completed.complete(false)
+                            else -> Unit
                         }
                     }
+                    output.start()
                 }
-                worker.isDaemon = true
-                synchronized(this@DesktopVoicePlayer) {
-                    mp3Player = opened
-                    mp3Thread = worker
-                }
-                worker.start()
                 true
-            }.getOrDefault(false)
+            }
+            if (opened) active.completed.await() else false
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        } finally {
+            synchronized(lock) { if (playing === active) playing = null }
+            finish(active, false)
         }
-        runCatching {
-            val stream = AudioSystem.getAudioInputStream(ByteArrayInputStream(clip.bytes))
-            val opened = AudioSystem.getClip()
-            opened.open(stream)
-            opened.start()
-            playing = opened
-            true
-        }.getOrDefault(false)
     }
 
     override fun stop() {
-        val activeMp3: JLayerPlayer?
-        val activeThread: Thread?
-        synchronized(this) {
-            activeMp3 = mp3Player
-            activeThread = mp3Thread
-            mp3Player = null
-            mp3Thread = null
-        }
-        runCatching { activeMp3?.close() }
-        activeThread?.interrupt()
-        runCatching {
-            playing?.stop()
-            playing?.close()
-        }
-        playing = null
+        val active = synchronized(lock) { playing.also { playing = null } }
+        active?.let { finish(it, false) }
+    }
+
+    private fun finish(active: Playback, success: Boolean) {
+        active.completed.complete(success)
+        val release = synchronized(lock) { active.release.also { active.release = null } }
+        runCatching { release?.invoke() }
     }
 }

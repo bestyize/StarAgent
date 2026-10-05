@@ -10,7 +10,7 @@ interface Player {
     /** 这个平台现在能不能放。桌面没有音频输出设备时应当是 false。 */
     val available: Boolean
 
-    /** 播一段音频。成功开始播放返回 true。 */
+    /** 等待整段音频播放完成后返回 true；播放失败或被 stop() 中断返回 false。取消必须释放播放资源。 */
     suspend fun play(clip: VoiceClip): Boolean
 
     /** 打断当前播放。没有在播时什么都不做。 */

@@ -59,7 +59,7 @@ interface Synthesizer {
     /** 同上，界面要同步地问"能不能念"。 */
     val ready: Boolean
 
-    /** 念出来。文本为空时直接算成功（没什么可念的）。 */
+    /** 等待合成及整段播放完成再返回成功，不能只表示已入队。文本为空时直接算成功。 */
     suspend fun speak(text: String): SpeechOutcome<Unit>
 
     /**

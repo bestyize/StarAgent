@@ -5,6 +5,10 @@ import com.starringbox.staragent.core.platform.storage.LocalStores
 import com.starringbox.staragent.core.speech.SpeechOutcome
 import com.starringbox.staragent.core.speech.Synthesizer
 import com.starringbox.staragent.core.speech.Transcriber
+import com.starringbox.staragent.core.speech.Player
+import com.starringbox.staragent.core.speech.Players
+import com.starringbox.staragent.core.speech.VoiceClip
+import com.starringbox.staragent.core.speech.Wav
 import com.starringbox.staragent.core.platform.voice.Voice
 import com.starringbox.staragent.core.speech.VoiceSource
 import kotlinx.coroutines.CompletableDeferred
@@ -140,6 +144,60 @@ class CompanionVoiceSessionTest {
         assertEquals(0, transcriber.starts)
         assertFalse(state.companionVoice.active)
         assertNotNull(state.companionVoice.error)
+    }
+
+    @Test
+    fun cloudAudioMustFinishBeforeMicrophoneReopensAndStopsPlayback() = runTest {
+        val state = readyState()
+        val transcriber = FakeTranscriber()
+        val finished = CompletableDeferred<Boolean>()
+        val started = CompletableDeferred<Unit>()
+        var playing = false
+        var interrupted = false
+        Players.install(object : Player {
+            override val available = true
+            override suspend fun play(clip: VoiceClip): Boolean {
+                playing = true
+                started.complete(Unit)
+                try { return finished.await() } finally { playing = false }
+            }
+            override fun stop() { if (playing) { interrupted = true; finished.complete(false) } }
+        })
+        try {
+            Voice.installDevice(transcriber, null)
+            Voice.installModel(synthesizer = object : Synthesizer {
+                override val ready = true
+                override suspend fun speak(text: String): SpeechOutcome<Unit> =
+                    if (Players.play(VoiceClip(Wav.wrap(ByteArray(3_200)), Wav.MIME_TYPE, 100))) SpeechOutcome.Ok(Unit)
+                    else SpeechOutcome.Failed("播放中断")
+                override fun stop() = Players.stop()
+            })
+            state.speech.selectTtsVoiceSource(VoiceSource.Model)
+            state.companionVoice.start(backgroundScope)
+            runCurrent()
+            state.companionVoice.submitUtterance()
+            advanceTimeBy(110)
+            runCurrent()
+            assertTrue(started.isCompleted)
+            advanceTimeBy(2_000)
+            runCurrent()
+            assertEquals(1, transcriber.starts, "排入播放器后仍须等待实际播完")
+            assertFalse(Voice.isListening)
+            assertFalse(interrupted)
+            finished.complete(true)
+            advanceTimeBy(400)
+            runCurrent()
+            assertEquals(2, transcriber.starts)
+            assertFalse(interrupted)
+            state.companionVoice.stop()
+            runCurrent()
+        } finally {
+            Players.install(object : Player {
+                override val available = false
+                override suspend fun play(clip: VoiceClip) = false
+                override fun stop() = Unit
+            })
+        }
     }
 
     private fun readyState(): AppState {
