@@ -4,10 +4,23 @@ import com.starringbox.searx.SearchEngine
 import com.starringbox.searx.SearchRequest
 import com.starringbox.searx.SearchResult
 import com.starringbox.searx.Searx
+import com.starringbox.staragent.core.model.ToolCall
+import com.starringbox.staragent.core.runtime.AgentLoop
+import com.starringbox.staragent.core.runtime.DefaultToolCallExecutor
+import com.starringbox.staragent.core.tools.ToolHost
+import com.starringbox.staragent.core.tools.ToolRegistry
+import com.starringbox.staragent.core.tools.builtin.WebSearchTool
+import com.starringbox.staragent.core.tools.ports.NoopMemoryPort
+import com.starringbox.staragent.core.tools.ports.NoopTaskPort
+import com.starringbox.staragent.core.tools.ports.NoopWebPort
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
@@ -60,5 +73,45 @@ class AppSearchPortTest {
 
         assertTrue(result.ok)
         assertTrue(result.items.isEmpty())
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun slowSourceDoesNotDiscardFastResultsAtTheToolDeadline() = runTest {
+        assertTrue(Searx.DEFAULT_ENGINE_TIMEOUT_MILLIS < AgentLoop.DEFAULT_TOOL_TIMEOUT_MILLIS)
+        var slowSourceReleased = false
+        val slow = object : SearchEngine {
+            override val name = "slow"
+            override suspend fun search(request: SearchRequest): List<SearchResult> {
+                try { awaitCancellation() } finally { slowSourceReleased = true }
+            }
+        }
+        val fast = FakeEngine("fast", listOf(SearchResult("Fast result", "https://example.com/Guide", "ready", "fast")))
+        val host = ToolHost(
+            memory = NoopMemoryPort, tasks = NoopTaskPort, web = NoopWebPort,
+            search = AppSearchPort(Searx(listOf(slow, fast))),
+            agentId = "test", conversationKey = "test",
+        )
+        val outcome = DefaultToolCallExecutor().execute(
+            ToolCall("search-1", "web_search", "{\"query\":\"q\"}"), host, ToolRegistry.of(WebSearchTool),
+        )
+        assertFalse(outcome.isError, "A slow source must not turn successful search results into a tool timeout")
+        assertTrue(outcome.content.contains("Fast result"))
+        assertTrue(slowSourceReleased)
+        assertTrue(testScheduler.currentTime < AgentLoop.DEFAULT_TOOL_TIMEOUT_MILLIS)
+    }
+
+    @Test fun searchCancellationIsNotConvertedToAnOrdinaryFailure() = runTest {
+        val port = AppSearchPort(Searx(listOf(FakeEngine("cancelled", error = CancellationException("cancelled")))))
+        assertFailsWith<CancellationException> { port.search("q", 5) }
+    }
+
+    @Test fun everySourceTimingOutReturnsASearchFailureBeforeTheToolDeadline() = runTest {
+        val source = object : SearchEngine {
+            override val name = "slow"
+            override suspend fun search(request: SearchRequest): List<SearchResult> = awaitCancellation()
+        }
+        val response = AppSearchPort(Searx(listOf(source), engineTimeoutMillis = 100)).search("q", 5)
+        assertFalse(response.ok)
+        assertTrue(response.error.orEmpty().contains("timed out"))
     }
 }

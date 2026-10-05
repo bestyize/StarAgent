@@ -2,11 +2,21 @@ package com.starringbox.searx
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.MockEngineConfig
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -68,6 +78,42 @@ class SearxAggregationTest {
         assertEquals(7, searx.search(SearchRequest("q", limit = 7)).size)
     }
 
+    @Test fun keepsCaseSensitivePathsDistinct() = runTest {
+        val results = Searx(listOf(FakeEngine("a", listOf(
+            result("upper path", "https://example.com/Guide"),
+            result("lower path", "https://example.com/guide"),
+        )))).search(SearchRequest("q"))
+        assertEquals(listOf("upper path", "lower path"), results.map { it.title })
+    }
+
+    @Test fun keepsQueryNamesAndValuesCaseSensitive() = runTest {
+        val urls = listOf(
+            "https://example.com/search?Key=AbC",
+            "https://example.com/search?key=AbC",
+            "https://example.com/search?key=abc",
+        )
+        val results = Searx(listOf(FakeEngine("a", urls.map { result(it, it) }))).search(SearchRequest("q"))
+        assertEquals(urls, results.map { it.url })
+    }
+
+    @Test fun normalizesHostCaseWithoutChangingTheReturnedUrl() = runTest {
+        val original = "HTTPS://WWW.EXAMPLE.COM/Guide/?key=AbC#intro"
+        val results = Searx(listOf(
+            FakeEngine("a", listOf(result("first", original))),
+            FakeEngine("b", listOf(result("duplicate", "http://example.com/Guide?key=AbC#details"))),
+        )).search(SearchRequest("q"))
+        assertEquals(listOf(original), results.map { it.url })
+    }
+
+    @Test fun preservesTrailingSlashesInsideQueryValues() = runTest {
+        val withSlash = "https://example.com/Guide?next=Path/"
+        val withoutSlash = "https://example.com/Guide?next=Path"
+        val results = Searx(listOf(FakeEngine("a", listOf(
+            result("slash", withSlash), result("no slash", withoutSlash),
+        )))).search(SearchRequest("q"))
+        assertEquals(listOf(withSlash, withoutSlash), results.map { it.url })
+    }
+
     @Test fun oneEngineFailingDoesNotBreakTheOthers() = runTest {
         val searx = Searx(
             listOf(
@@ -100,6 +146,68 @@ class SearxAggregationTest {
     @Test fun blankQueryIsRejected() = runTest {
         assertFailsWith<IllegalArgumentException> { Searx(listOf(FakeEngine("a"))).search(SearchRequest("  ")) }
     }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun timedOutSourceReleasesResourcesAndKeepsSuccessfulResults() = runTest {
+        var released = false
+        val slow = object : SearchEngine {
+            override val name = "slow"
+            override suspend fun search(request: SearchRequest): List<SearchResult> {
+                try { awaitCancellation() } finally { released = true }
+            }
+        }
+        val fast = object : SearchEngine {
+            override val name = "fast"
+            override suspend fun search(request: SearchRequest): List<SearchResult> {
+                delay(20)
+                return listOf(result("ready", "https://example.com/Guide?Key=AbC"))
+            }
+        }
+        val results = Searx(listOf(slow, fast), engineTimeoutMillis = 100).search(SearchRequest("q"))
+        assertEquals(listOf("ready"), results.map { it.title })
+        assertTrue(released)
+        assertEquals(100L, testScheduler.currentTime)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun allTimedOutSourcesFailAtTheirSharedDeadline() = runTest {
+        val sources = listOf("first", "second").map { name -> object : SearchEngine {
+            override val name = name
+            override suspend fun search(request: SearchRequest): List<SearchResult> = awaitCancellation()
+        } }
+        val failure = assertFailsWith<SearchEngineTimeoutException> {
+            Searx(sources, engineTimeoutMillis = 100).search(SearchRequest("q"))
+        }
+        assertEquals("first", failure.engineName)
+        assertEquals(100L, failure.timeoutMillis)
+        assertEquals(100L, testScheduler.currentTime, "Sources must run in parallel, not consume sequential timeout budgets")
+    }
+
+    @Test fun callerCancellationPropagatesAndReleasesTheSource() = runTest {
+        val entered = CompletableDeferred<Unit>()
+        var released = false
+        var cancelled = false
+        val source = object : SearchEngine {
+            override val name = "pending"
+            override suspend fun search(request: SearchRequest): List<SearchResult> {
+                entered.complete(Unit)
+                try { awaitCancellation() } finally { released = true }
+            }
+        }
+        val job = launch {
+            try { Searx(listOf(source)).search(SearchRequest("q")) }
+            catch (failure: CancellationException) { cancelled = true; throw failure }
+        }
+        entered.await()
+        job.cancelAndJoin()
+        assertTrue(cancelled)
+        assertTrue(released)
+    }
+
+    @Test fun nonPositiveSourceBudgetsAreRejected() {
+        assertFailsWith<IllegalArgumentException> { Searx(emptyList(), engineTimeoutMillis = 0) }
+        assertFailsWith<IllegalArgumentException> { Searx(emptyList(), engineTimeoutMillis = -1) }
+    }
 }
 
 /** 端到端：用 MockEngine 同时喂四个引擎的响应，走完整条 search()。 */
@@ -124,19 +232,23 @@ class SearxWithMockEngineTest {
         <p class="s">Snippet.</p></li></ul>
     """.trimIndent()
 
-    private fun engine(): MockEngine = MockEngine { request ->
-        val body = when {
-            "duckduckgo" in request.url.host -> ddgHtml
-            "bing.com" in request.url.host -> bingHtml
-            "wikipedia.org" in request.url.host -> wikiJson
-            else -> mojeekHtml
+    private fun engine(dispatcher: CoroutineDispatcher): MockEngine = MockEngine(MockEngineConfig().apply {
+        // HTTP 模拟响应与超时使用同一虚拟时钟，避免真实 IO 线程尚未响应时测试时钟先跳到超时。
+        this.dispatcher = dispatcher
+        addHandler { request ->
+            val body = when {
+                "duckduckgo" in request.url.host -> ddgHtml
+                "bing.com" in request.url.host -> bingHtml
+                "wikipedia.org" in request.url.host -> wikiJson
+                else -> mojeekHtml
+            }
+            respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "text/html"))
         }
-        respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "text/html"))
-    }
+    })
 
     @Test fun fullSearchRunsEveryEngineThroughMockHttp() = runTest {
         // 四个引擎共用同一个 MockEngine，各自按 host 拿响应
-        val client = HttpClient(engine())
+        val client = HttpClient(engine(StandardTestDispatcher(testScheduler)))
         val searx = Searx(
             listOf(
                 com.starringbox.searx.engines.DuckDuckGoEngine(client),

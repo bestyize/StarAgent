@@ -9,6 +9,7 @@ import com.starringbox.staragent.core.platform.storage.LocalStores
 import com.starringbox.staragent.core.tools.ports.*
 import com.starringbox.searx.SearchRequest
 import com.starringbox.searx.Searx
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -219,11 +220,15 @@ class AppSearchPort(
     private val searx: Searx = Searx(),
     private val language: String = "",
 ) : SearchPort {
-    override suspend fun search(query: String, limit: Int): SearchResult = runCatching {
+    override suspend fun search(query: String, limit: Int): SearchResult = try {
         val items = searx.search(SearchRequest(query, limit, language))
             .map { SearchItem(it.title, it.url, it.snippet) }
         SearchResult(true, items)
-    }.getOrElse { SearchResult(false, emptyList(), "搜索失败：${it.message ?: "网络错误"}") }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        SearchResult(false, emptyList(), "搜索失败：${failure.message ?: "网络错误"}")
+    }
 }
 
 class AppBrowserPort(private val web: WebPort) : BrowserPort {

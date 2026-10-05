@@ -11,14 +11,14 @@ import io.ktor.client.plugins.HttpTimeout
 internal expect fun defaultSearxHttpClient(): HttpClient
 
 /**
- * 一次搜索给每个引擎 30 秒。搜索引擎偶尔会很慢，但这个库是给 Agent 当工具用的，
- * 卡太久不如早点放弃、把已有的结果还回去。
+ * 默认请求预算与单源预算一致，为 Agent 的工具总时限预留返回和聚合余量。
+ * Searx 还会约束自定义 HTTP 客户端及引擎，单个慢源不会占满外层工具预算。
  */
 internal fun HttpClientConfig<*>.configureSearx() {
     install(HttpTimeout) {
-        requestTimeoutMillis = 30_000
-        connectTimeoutMillis = 15_000
-        socketTimeoutMillis = 30_000
+        requestTimeoutMillis = Searx.DEFAULT_ENGINE_TIMEOUT_MILLIS
+        connectTimeoutMillis = 5_000
+        socketTimeoutMillis = Searx.DEFAULT_ENGINE_TIMEOUT_MILLIS
     }
 }
 

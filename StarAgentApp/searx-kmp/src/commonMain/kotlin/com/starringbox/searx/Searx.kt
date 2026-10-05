@@ -1,7 +1,9 @@
 package com.starringbox.searx
 
 import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * 把 [engines] 聚成一个搜索源——这就是这个库的全部。
@@ -16,10 +18,18 @@ import kotlinx.coroutines.supervisorScope
  * 用剩下的结果继续。**只有全部引擎都抛异常时**才把第一个异常抛出去，
  * 让调用方能区分"网络确实不通"和"真的没有结果"。
  */
-class Searx(private val engines: List<SearchEngine>) {
+class Searx(
+    private val engines: List<SearchEngine>,
+    private val engineTimeoutMillis: Long,
+) {
+
+    /** 保留原有单参数构造器，现有调用方继续使用默认预算。 */
+    constructor(engines: List<SearchEngine>) : this(engines, DEFAULT_ENGINE_TIMEOUT_MILLIS)
 
     /** 默认配置：四个公开源，全都不要 API Key。 */
     constructor() : this(Engines.all())
+
+    init { require(engineTimeoutMillis > 0) { "engineTimeoutMillis must be positive" } }
 
     suspend fun search(request: SearchRequest): List<SearchResult> {
         require(request.query.isNotBlank()) { "query must not be blank" }
@@ -28,7 +38,13 @@ class Searx(private val engines: List<SearchEngine>) {
         // supervisorScope：一个引擎抛异常不会取消兄弟协程。
         val outcomes = supervisorScope {
             engines.map { engine ->
-                async { runCatching { engine.search(request) } }
+                async {
+                    withTimeoutOrNull(engineTimeoutMillis) {
+                        try { Result.success(engine.search(request)) }
+                        catch (cancelled: CancellationException) { throw cancelled }
+                        catch (failure: Exception) { Result.failure(failure) }
+                    } ?: Result.failure(SearchEngineTimeoutException(engine.name, engineTimeoutMillis))
+                }
             }.map { it.await() }
         }
 
@@ -68,19 +84,33 @@ class Searx(private val engines: List<SearchEngine>) {
         return out
     }
 
-    private companion object {
+    companion object {
+        /** 单源预算包含请求和解析；小于 StarAgent 的 30 秒工具总时限。自定义引擎须响应取消。 */
+        const val DEFAULT_ENGINE_TIMEOUT_MILLIS = 15_000L
+
         /**
-         * 去重用的键：去掉 scheme、`www.`、结尾斜杠。
-         *
-         * 不丢 query 和 fragment——`?id=2` 和 `?id=1` 是不同的页面。只把
-         * "同一个地址写法的差异"归并掉，够用了。
+         * 保留既有的 http/https、www、路径末尾斜杠及 fragment 合并策略。
+         * 仅规范化主机大小写，路径、用户信息及原始 query（包括末尾斜杠）保持原样。
+         * 此键只用于去重，返回的 SearchResult.url 不会被改写。
          */
-        fun canonicalUrl(raw: String): String {
-            var value = raw.trim().lowercase()
-            value = value.removePrefix("https://").removePrefix("http://")
-            value = value.removePrefix("www.")
-            value = value.substringBefore('#')
-            return value.trimEnd('/')
+        private fun canonicalUrl(raw: String): String {
+            val value = raw.trim().substringBefore('#')
+            val schemeEnd = value.indexOf("://")
+            if (schemeEnd < 0) return value
+            val scheme = value.substring(0, schemeEnd)
+            if (!scheme.equals("https", ignoreCase = true) && !scheme.equals("http", ignoreCase = true)) return value
+            val address = value.substring(schemeEnd + 3)
+            val authorityEnd = address.indexOfFirst { it == '/' || it == '?' }.let { if (it < 0) address.length else it }
+            val authority = address.substring(0, authorityEnd)
+            if (authority.isBlank()) return value
+            val userInfoEnd = authority.lastIndexOf('@')
+            val userInfo = if (userInfoEnd >= 0) authority.substring(0, userInfoEnd + 1) else ""
+            val host = authority.substring(userInfoEnd + 1).lowercase().removePrefix("www.")
+            val tail = address.substring(authorityEnd)
+            val queryStart = tail.indexOf('?')
+            val path = if (queryStart >= 0) tail.substring(0, queryStart) else tail
+            val query = if (queryStart >= 0) tail.substring(queryStart) else ""
+            return userInfo + host + path.trimEnd('/') + query
         }
     }
 }

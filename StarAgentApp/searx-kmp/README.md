@@ -30,15 +30,19 @@ results.forEach { println("${it.title}\n  ${it.url}\n  ${it.snippet}") }
 也可以只要某几个源：
 
 ```kotlin
-val searx = Searx(listOf(WikipediaEngine, DuckDuckGoEngine))
+val searx = Searx(listOf(Engines.wikipedia(), Engines.duckDuckGo()), engineTimeoutMillis = 15_000)
 ```
 
 ## 设计取舍
 
 - **引擎只做解析，不做编排。** 每个 `SearchEngine` 把请求变成 HTTP、把响应解析成 `List<SearchResult>`；
   失败**抛异常**，由 `Searx` 逐个兜住。一个引擎改版或限流，不影响另外几个。
-- **去重按链接归一化后的键**（去 scheme、`www.`、结尾斜杠，保留 query 和 fragment）。
-  同一篇文章被多家收录时，靠前的源那条胜出。
+- **去重仅规范化主机大小写**，保留路径、用户信息及 query 的大小写和内容，返回链接不改写。
+  延续 http/https、`www.`、路径末尾斜杠和 fragment 的合并策略；靠前的源胜出。
+- **每个源默认最多等待 15 秒**，包含引擎自己的请求和解析，HTTP 连接超时为 5 秒。
+  慢源会被取消并按失败跳过，其他源已取得的结果继续聚合；全部源失败时抛出异常。
+  构造参数可以调整单源预算，调用方应让它短于外层总时限，并为聚合与返回预留余量。
+  主动取消继续向调用方传播，不会被转换成普通搜索失败；引擎实现须响应协程取消。
 - **结果交错而不是打分。** 轮流从每个引擎取一条，让每个源都有机会出现在前面——
   SearXNG 那套引擎权重是另一回事，这里不做。
 - **只用字符串扫描解析 HTML。** 不引 HTML 解析库（多一份依赖、跨平台还麻烦），
