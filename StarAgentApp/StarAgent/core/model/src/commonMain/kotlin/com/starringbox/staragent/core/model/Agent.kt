@@ -158,18 +158,6 @@ internal fun looksLikeChatModel(model: String): Boolean {
 }
 
 /**
- * IM 渠道。绑定后智能体以"联系人"形式出现在该渠道里，
- * 与 App 内共用同一条会话。
- */
-@Serializable
-data class Channel(
-    val id: String,
-    val name: String,
-    val glyph: String,
-    val connected: Boolean = false,
-)
-
-/**
  * Skill：可插拔的能力单元，和 agentskills.io 开放规范（Claude / Codex / Hermes / OpenClaw 通用）同形。
  *
  * 渐进披露分三层：[summary] 每轮都随系统提示发给模型，让它知道有这个技能；[instructions]

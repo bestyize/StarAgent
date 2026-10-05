@@ -60,7 +60,6 @@ import com.starringbox.staragent.feature.agents.GroupEditorScreen
 import com.starringbox.staragent.feature.chat.ChatScreen
 import com.starringbox.staragent.feature.chat.CompanionScreen
 import com.starringbox.staragent.feature.chat.GroupChatScreen
-import com.starringbox.staragent.feature.settings.ChannelsScreen
 import com.starringbox.staragent.feature.settings.MeScreen
 import com.starringbox.staragent.feature.settings.MemoryScreen
 import com.starringbox.staragent.feature.settings.ModelConfigScreen
@@ -226,7 +225,6 @@ private fun RouteHost(navigator: Navigator) {
             is Route.ProviderDetail -> ProviderDetailScreen(navigator, route.providerId)
             Route.SpeechConfig -> SpeechConfigScreen(navigator)
             Route.Memories -> MemoryScreen(navigator)
-            Route.Channels -> ChannelsScreen(navigator)
             Route.Skills -> SkillsScreen(navigator)
             Route.Settings -> SettingsScreen(navigator)
             is Route.StorageBrowser -> StorageBrowserScreen(navigator, route.path)

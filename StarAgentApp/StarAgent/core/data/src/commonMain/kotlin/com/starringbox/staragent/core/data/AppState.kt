@@ -40,7 +40,6 @@ import com.starringbox.staragent.core.model.BuiltInCompanion
 import com.starringbox.staragent.core.model.AgentGroup
 import com.starringbox.staragent.core.model.AgentTask
 import com.starringbox.staragent.core.model.Author
-import com.starringbox.staragent.core.model.Channel
 import com.starringbox.staragent.core.model.ChatMessage
 import com.starringbox.staragent.core.model.ExecutionPolicy
 import com.starringbox.staragent.core.model.LlmProtocol
@@ -70,11 +69,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.TimeZone
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.jsonArray
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -103,7 +97,6 @@ class AppState(
     val tasks = mutableStateListOf<AgentTask>()
     val memories = mutableStateListOf<MemoryItem>()
     val skills = mutableStateListOf<Skill>()
-    val channels = mutableStateListOf<Channel>()
     val groups = mutableStateListOf<AgentGroup>()
     val userInputPort = AppUserInputPort(this)
     val companionVoice = CompanionVoiceSession(this)
@@ -137,7 +130,6 @@ class AppState(
     fun setDefaultModel(modelId: String) = models.setDefaultModel(modelId)
     fun selectResponseMode(mode: ResponseMode) = models.selectResponseMode(mode)
     fun selectExecutionPolicy(policy: ExecutionPolicy) = models.selectExecutionPolicy(policy)
-    fun setAgentModel(agentId: String, modelId: String) = models.setAgentModel(agentId, modelId)
 
     /**
      * 这个智能体能用哪些工具。由已注册的 [extensions] 按需提供，
@@ -170,11 +162,6 @@ class AppState(
         systemPromptFor = { agent -> systemPromptFor(agent, toolsAvailable = true) },
         registryFor = { agent -> registryFor(agent) },
         newId = { prefix -> nextId(prefix) },
-        onAgentModelChanged = { agentId, modelId ->
-            val index = agents.indexOfFirst { it.id == agentId }
-            if (index >= 0) agents[index] = agents[index].copy(modelId = modelId)
-            persistState()
-        },
     )
 
     var searchQuery by mutableStateOf("")
@@ -272,7 +259,6 @@ class AppState(
                 fixed
             }
             skills.addAll(backfilledSkills)
-            channels.addAll(saved.channels)
             groups.addAll(saved.groups)
             var removedSeedMessages = false
             saved.conversations.forEach { (agentId, messages) ->
@@ -317,7 +303,6 @@ class AppState(
                 tasks = tasks.toList(),
                 memories = memories.toList(),
                 skills = skills.toList(),
-                channels = channels.toList(),
                 groups = groups.toList(),
                 conversations = conversations.mapValues { (_, list) -> list.toList() },
             )
@@ -349,7 +334,6 @@ class AppState(
         val tasks = state.tasks.onEach { bump(it.id) }
         val memories = state.memories.onEach { bump(it.id) }
         val skills = state.skills.onEach { bump(it.id) }
-        val channels = state.channels.onEach { bump(it.id) }
         val groups = state.groups.onEach { bump(it.id) }
 
         val conversations = state.conversations.mapValues { (_, messages) ->
@@ -371,7 +355,6 @@ class AppState(
             tasks = tasks,
             memories = memories,
             skills = skills,
-            channels = channels,
             groups = groups,
             conversations = conversations,
         ) to counter
@@ -529,13 +512,6 @@ class AppState(
         // 整串命中给高分，否则按逐字命中计数
         return if (haystack.contains(needle)) 100 + needle.length
         else needle.count { it in haystack }
-    }
-
-    fun activeChannels(): List<Channel> = channels.filter { it.connected }
-
-    fun activeChannelLabel(): String {
-        val active = activeChannels()
-        return if (active.isEmpty()) "未连接渠道" else "已连接${active.joinToString("、") { it.name }}"
     }
 
     /** 列表页显示的消息摘要——取最有信息量的一条，而不是时间戳。 */
@@ -1028,7 +1004,7 @@ class AppState(
         timeLabel = "刚刚",
     )
 
-    // ── 任务 / 记忆 / 技能 / 渠道 ────────────────
+    // ── 任务 / 记忆 / 技能 ────────────────
 
     fun toggleTaskPaused(taskId: String) {
         val index = tasks.indexOfFirst { it.id == taskId }
@@ -1538,13 +1514,6 @@ class AppState(
         val last = turns.indexOfLast { it.role == LlmRole.User }
         if (last >= 0) expandSkillInvocation(turns[last].text)?.let { turns[last] = turns[last].copy(text = it) }
         return turns
-    }
-
-    fun toggleChannel(channelId: String) {
-        val index = channels.indexOfFirst { it.id == channelId }
-        if (index < 0) return
-        channels[index] = channels[index].copy(connected = !channels[index].connected)
-        persistState()
     }
 
     fun addAgent(agent: Agent) {

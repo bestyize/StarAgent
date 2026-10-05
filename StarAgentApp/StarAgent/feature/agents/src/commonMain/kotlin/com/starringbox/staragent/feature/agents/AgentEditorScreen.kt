@@ -55,16 +55,15 @@ private data class AgentTemplate(
     val label: String,
     val glyph: String,
     val persona: String,
-    val modelId: String,
     val skills: List<String>,
 )
 
 private val Templates = listOf(
-    AgentTemplate("general", "通用", "星", "通用助手，日常问答与信息汇总", "anthropic:0", listOf("web", "digest")),
-    AgentTemplate("writer", "写作", "写", "擅长把零散想法整理成结构清晰的文字", "anthropic:0", listOf("doc")),
-    AgentTemplate("study", "学习", "学", "陪你学习，讲解概念并出练习题", "openai:0", listOf("web")),
-    AgentTemplate("work", "工作", "工", "面向工作场景：周报、邮件、会议纪要", "openai:0", listOf("doc", "mail")),
-    AgentTemplate("blank", "空白", "＋", "一个全新的智能体，人设由你来定义", "anthropic:0", emptyList()),
+    AgentTemplate("general", "通用", "星", "通用助手，日常问答与信息汇总", listOf("web", "digest")),
+    AgentTemplate("writer", "写作", "写", "擅长把零散想法整理成结构清晰的文字", listOf("doc")),
+    AgentTemplate("study", "学习", "学", "陪你学习，讲解概念并出练习题", listOf("web")),
+    AgentTemplate("work", "工作", "工", "面向工作场景：周报、邮件、会议纪要", listOf("doc", "mail")),
+    AgentTemplate("blank", "空白", "＋", "一个全新的智能体，人设由你来定义", emptyList()),
 )
 
 /**
@@ -81,19 +80,12 @@ fun AgentEditorScreen(navigator: Navigator, agentId: String?) {
 
     var name by remember { mutableStateOf(editing?.name ?: "") }
     var persona by remember { mutableStateOf(editing?.persona ?: "") }
-    var modelId by remember { mutableStateOf(editing?.modelId ?: state.defaultModelId) }
     var glyph by remember { mutableStateOf(editing?.glyph ?: "星") }
     var accentIndex by remember { mutableStateOf(editing?.accentIndex ?: state.agents.size) }
     var description by remember { mutableStateOf("") }
 
     // 新智能体默认**不开**任务能力——默认保持纯对话，想要的人自己打开。
     var canScheduleTasks by remember { mutableStateOf(editing?.canScheduleTasks ?: false) }
-
-    // 直接算，不用 remember 缓存——服务商配置随时可能变，缓存反而容易过期。
-    // 只列能对话的：识别/合成/审核模型也在 models 里，选中它们聊天必然失败。
-    val modelChoices = state.providers.flatMap { provider ->
-        provider.chatChoices.map { (index, label) -> state.modelKey(provider.id, index) to label }
-    }
 
     Column(Modifier.fillMaxSize()) {
         StarTopBar(
@@ -160,7 +152,6 @@ fun AgentEditorScreen(navigator: Navigator, agentId: String?) {
                                 name = if (template.id == "blank") "" else template.label + "助手"
                             }
                             persona = template.persona
-                            modelId = template.modelId
                         },
                     )
                 }
@@ -209,27 +200,6 @@ fun AgentEditorScreen(navigator: Navigator, agentId: String?) {
             )
 
             Spacer(Modifier.height(22.dp))
-            SectionLabel("模型")
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(modelChoices, key = { it.first }) { choice ->
-                    val selected = choice.first == modelId
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (selected) StarPalette.Indigo else StarPalette.SurfaceAlt)
-                            .clickable { modelId = choice.first }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                    ) {
-                        Text(
-                            text = choice.second,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (selected) androidx.compose.ui.graphics.Color.White else StarPalette.TextMuted,
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(22.dp))
             SectionLabel("能力")
             StarCard(Modifier.fillMaxWidth()) {
                 Row(
@@ -276,7 +246,8 @@ fun AgentEditorScreen(navigator: Navigator, agentId: String?) {
                             name = name.trim(),
                             glyph = glyph,
                             persona = persona.trim(),
-                            modelId = modelId,
+                            // 对话统一走全局默认模型，这个字段不再参与解析，只是保留着。
+                            modelId = state.defaultModelId,
                             accentIndex = accentIndex,
                             canScheduleTasks = canScheduleTasks,
                         )
@@ -286,7 +257,6 @@ fun AgentEditorScreen(navigator: Navigator, agentId: String?) {
                             name = name.trim(),
                             glyph = glyph,
                             persona = persona.trim(),
-                            modelId = modelId,
                             canScheduleTasks = canScheduleTasks,
                             accentIndex = accentIndex,
                         ))

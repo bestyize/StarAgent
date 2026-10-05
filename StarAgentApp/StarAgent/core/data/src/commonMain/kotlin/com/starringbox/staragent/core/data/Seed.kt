@@ -3,7 +3,6 @@ package com.starringbox.staragent.core.data
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.AgentGroup
 import com.starringbox.staragent.core.model.AgentTask
-import com.starringbox.staragent.core.model.Channel
 import com.starringbox.staragent.core.model.LlmProtocol
 import com.starringbox.staragent.core.model.MemoryCategory
 import com.starringbox.staragent.core.model.MemoryItem
@@ -326,17 +325,8 @@ internal object Seed {
         ),
     )
 
-    /** 首次启动的演示内容：智能体、任务、记忆、技能、渠道与示例对话。 */
+    /** 首次启动的演示内容：智能体、任务、记忆、技能与示例对话。 */
     fun populateDemo(state: AppState) {
-        state.channels.addAll(
-            listOf(
-                Channel("wechat", "微信", "💬", connected = true),
-                Channel("feishu", "飞书", "🔷"),
-                Channel("dingtalk", "钉钉", "🔔"),
-                Channel("telegram", "Telegram", "✈️"),
-            )
-        )
-
         state.skills.addAll(
             listOf(
                 Skill("web", "网页检索", "联网搜索并读取网页正文", "🔍", installed = true),

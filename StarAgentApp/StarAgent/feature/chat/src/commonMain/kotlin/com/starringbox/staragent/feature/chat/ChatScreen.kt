@@ -82,7 +82,6 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val clipboard = LocalClipboardManager.current
-    var sheetOpen by remember { mutableStateOf(false) }
     // 右上角「更多」的操作面板。和设置面板分开两个状态：一个是菜单，一个是被菜单打开的设置。
     var menuOpen by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
@@ -143,7 +142,7 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
         Column(Modifier.fillMaxSize()) {
             ChatHeader(
                 agent = agent,
-                statusText = "${state.modelLabel(agent.modelId)} · ${state.activeChannelLabel()}",
+                statusText = state.modelLabel(state.defaultModelId),
                 onBack = { navigator.pop() },
                 onMore = { menuOpen = true },
             )
@@ -245,12 +244,11 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
         // 录音浮层。放在最外层，盖住消息列表和输入坞。
         VoiceHoldOverlay(voice.phase)
 
-        // 右上角「更多」。顶栏原本有两个入口（状态位=设置、三点=编辑），
-        // 现在并成一个菜单——顶栏只留一个按钮，状态位退回成纯展示。
+        // 右上角「更多」。智能体自己的设置都在编辑页里；
+        // 响应模式、语音这些全局设置在「我的」页。
         if (menuOpen) {
             StarActionSheet(
                 actions = listOf(
-                    StarSheetAction("设置对话"),
                     StarSheetAction("编辑智能体"),
                     // 破坏性的放最后并标红：这是菜单里唯一不可逆的一项
                     StarSheetAction("清除聊天记录", destructive = true),
@@ -259,9 +257,8 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
                     // 先关菜单再开下一个：两个面板叠着出现会互相顶掉
                     menuOpen = false
                     when (index) {
-                        0 -> sheetOpen = true
-                        1 -> navigator.push(Route.AgentEditor(agent.id))
-                        2 -> confirmClear = true
+                        0 -> navigator.push(Route.AgentEditor(agent.id))
+                        1 -> confirmClear = true
                     }
                 },
                 onDismiss = { menuOpen = false },
@@ -280,15 +277,6 @@ fun ChatScreen(navigator: Navigator, agentId: String) {
                 onDismiss = { confirmClear = false },
             )
         }
-
-        // 常驻组合、由 visible 驱动：关掉时要留在树里把退场动画播完。
-        // 它自身在隐藏时不留任何可见内容，也不吃触摸。
-        AgentStatusSheet(
-            agent = agent,
-            visible = sheetOpen,
-            onDismiss = { sheetOpen = false },
-            onPickModel = { state.setAgentModel(agentId, it) },
-        )
 
         // 全屏看图。放在最外层，盖住底栏与输入坞。
         (viewingMessage?.body as? MessageBody.Image)?.let { body ->
@@ -597,12 +585,9 @@ internal fun ConfigureModelBanner(onClick: () -> Unit) {
 }
 
 /**
- * 顶栏常驻状态位。把"模型自由"和"IM 连接"两个卖点做成**持续可见的状态**，
- * 而不是藏在设置里的开关。
+ * 顶栏常驻状态位：显示当前在用的模型。
  *
- * 它自己不再是入口：模型、渠道、语音这些统一收到右上角「更多」里的「设置对话」，
- * 顶栏只负责告诉你现在是什么状态。所以连那个下拉小箭头也去掉了——
- * 留着它就还是个按钮的样子。
+ * 它只展示、不是入口，所以没有下拉箭头。模型在「我的 → 模型服务」里统一配置。
  */
 @Composable
 private fun ChatHeader(

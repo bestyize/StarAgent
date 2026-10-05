@@ -4,7 +4,6 @@ import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.AgentGroup
 import com.starringbox.staragent.core.model.AgentTask
 import com.starringbox.staragent.core.model.Author
-import com.starringbox.staragent.core.model.Channel
 import com.starringbox.staragent.core.model.ChatMessage
 import com.starringbox.staragent.core.model.MediaAsset
 import com.starringbox.staragent.core.model.MemoryCategory
@@ -94,7 +93,6 @@ class StorageTreeTest {
         assertEquals(before.state.agents, after.state.agents, "智能体（含人设）必须一字不差")
         assertEquals(before.state.tasks, after.state.tasks)
         assertEquals(before.state.skills, after.state.skills)
-        assertEquals(before.state.channels, after.state.channels)
         assertEquals(before.state.groups, after.state.groups)
 
         // 记忆的 id 是按位置生成的，所以只比"内容与归属"，不比 id
@@ -387,7 +385,6 @@ class StorageTreeTest {
                 ),
                 memories = listOf(MemoryItem("mem-1", "a-xing", MemoryCategory.Preference, "喜欢简洁")),
                 skills = listOf(skill("web")),
-                channels = listOf(Channel("wechat", "微信", "💬", connected = true)),
                 groups = listOf(AgentGroup("g-1", "三人行", listOf("a-xing"))),
                 conversations = mapOf("a-xing" to plainMessages()),
             )

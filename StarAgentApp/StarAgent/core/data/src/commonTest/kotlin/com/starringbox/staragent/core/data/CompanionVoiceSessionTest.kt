@@ -149,7 +149,7 @@ class CompanionVoiceSessionTest {
         } })
         val provider = assertNotNull(state.providerById("deepseek"))
         state.updateProvider(provider.copy(apiKey = "test-key", models = listOf("test-model")))
-        state.setAgentModel(state.companion.id, "deepseek:0")
+        state.setDefaultModel("deepseek:0")
         state.speech.selectVoiceSource(VoiceSource.Device)
         state.speech.selectTtsVoiceSource(VoiceSource.Device)
         state.speech.setReadingReplies(false)

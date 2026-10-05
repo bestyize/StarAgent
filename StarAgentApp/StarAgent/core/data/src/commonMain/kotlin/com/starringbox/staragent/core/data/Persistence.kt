@@ -4,7 +4,6 @@ import com.starringbox.staragent.core.model.MediaAsset
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.AgentGroup
 import com.starringbox.staragent.core.model.AgentTask
-import com.starringbox.staragent.core.model.Channel
 import com.starringbox.staragent.core.model.ChatMessage
 import com.starringbox.staragent.core.model.MemoryItem
 import com.starringbox.staragent.core.model.MessageBody
@@ -17,7 +16,7 @@ import kotlinx.serialization.json.Json
 /**
  * 落盘的那一份应用状态。
  *
- * 只存"内容"——智能体、任务、记忆、技能、渠道、群组、对话。
+ * 只存"内容"——智能体、任务、记忆、技能、群组、对话。
  * 模型服务配置（含 API Key）走 SettingsStore，两套各管各的。
  *
  * **新增字段一律要带默认值**：旧文件里没有这个键时，解码器会填默认值，数据照常恢复。
@@ -30,7 +29,6 @@ internal data class PersistedState(
     val tasks: List<AgentTask> = emptyList(),
     val memories: List<MemoryItem> = emptyList(),
     val skills: List<Skill> = emptyList(),
-    val channels: List<Channel> = emptyList(),
     val groups: List<AgentGroup> = emptyList(),
     val conversations: Map<String, List<ChatMessage>> = emptyMap(),
 )
@@ -184,7 +182,6 @@ internal class StatePersister(private val store: LocalStore) {
             tasks = tasks,
             memories = memories,
             skills = StateTree.orderedBy(skills, layout.skills) { it.id },
-            channels = config.channels,
             groups = StateTree.orderedBy(groups, layout.groups) { it.id },
             conversations = conversations,
         )
@@ -315,7 +312,6 @@ internal class StatePersister(private val store: LocalStore) {
 
         files[StateTree.CONFIG] = PersistedJson.encodeToString(
             StateTree.ConfigFile(
-                channels = state.channels,
                 installedSkills = state.skills.filter { it.installed }.map { it.id },
                 skillSources = state.skills.associate { it.id to it.source },
             )

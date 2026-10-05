@@ -20,14 +20,12 @@ import kotlinx.serialization.json.jsonArray
 /**
  * 模型服务：服务商清单与 Key、模型解析、默认模型、回复模式与执行策略。
  *
- * 只管配置本身。把模型绑到某个智能体上要写会话存档，那属于 [AppState]，
- * 所以 [setAgentModel] 只转发给 [onAgentModelChanged]，落盘由调用方负责。
+ * 所有智能体共用 [defaultModelId]，不再按智能体单独选模型。
  */
 class ModelConfigController(
     private val systemPromptFor: (Agent) -> String,
     private val registryFor: (Agent) -> ToolRegistry,
     private val newId: (String) -> String,
-    private val onAgentModelChanged: (String, String) -> Unit,
 ) {
 
     val providers = mutableStateListOf<ModelProvider>()
@@ -79,7 +77,9 @@ class ModelConfigController(
         systemPrompt: String,
         toolsAvailable: Boolean = true,
     ): LlmEndpoint? {
-        val (provider, model) = resolveModel(agent.modelId) ?: return null
+        // 所有智能体统一用全局默认模型。Agent.modelId 还留在数据里，但不再参与解析：
+        // 单独选模型的入口已经去掉，留着读它只会让老存档里写死的模型压过用户的默认设置。
+        val (provider, model) = resolveModel(defaultModelId) ?: return null
         if (!provider.configured) return null
         // 地址按当前协议取：同一家两种协议的路径往往不同
         val baseUrl = provider.baseUrlFor(provider.protocol) ?: return null
@@ -265,11 +265,6 @@ class ModelConfigController(
                 .mapNotNull { (it as? JsonPrimitive)?.content }
                 .filter { it.isNotBlank() }
         }.getOrDefault(emptyList())
-    }
-
-    /** 把模型绑到某个智能体上。落盘交给 [onAgentModelChanged]。 */
-    fun setAgentModel(agentId: String, modelId: String) {
-        onAgentModelChanged(agentId, modelId)
     }
 
     /**

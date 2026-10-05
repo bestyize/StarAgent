@@ -52,9 +52,6 @@ sealed interface Route {
     /** 记忆管理。 */
     data object Memories : Route
 
-    /** IM 渠道绑定。 */
-    data object Channels : Route
-
     /** 技能管理。 */
     data object Skills : Route
 

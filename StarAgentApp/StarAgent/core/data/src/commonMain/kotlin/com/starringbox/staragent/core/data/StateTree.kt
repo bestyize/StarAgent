@@ -3,7 +3,6 @@ package com.starringbox.staragent.core.data
 import com.starringbox.staragent.core.model.Agent
 import com.starringbox.staragent.core.model.AgentGroup
 import com.starringbox.staragent.core.model.AgentTask
-import com.starringbox.staragent.core.model.Channel
 import com.starringbox.staragent.core.model.ChatMessage
 import com.starringbox.staragent.core.model.MediaAsset
 import com.starringbox.staragent.core.model.MemoryCategory
@@ -21,7 +20,7 @@ import kotlinx.serialization.Serializable
  * ```
  * <root>/
  * ├── layout.json                版本 + 顺序。**最后写**，它的存在 = 这棵树完整
- * ├── config.json                渠道、已安装的技能
+ * ├── config.json                已安装的技能
  * ├── agents/<id>/
  * │   ├── SOUL.md                人格正文（纯散文，用户手写）
  * │   ├── agent.json             名字/图标/配色/模型/技能/置顶/能否托管任务
@@ -220,7 +219,6 @@ internal object StateTree {
 
     @Serializable
     internal data class ConfigFile(
-        val channels: List<Channel> = emptyList(),
         val installedSkills: List<String> = emptyList(),
         /**
          * 技能来源。和 installed 一样是这台设备上的事，不写进 SKILL.md：同一份技能分享出去，

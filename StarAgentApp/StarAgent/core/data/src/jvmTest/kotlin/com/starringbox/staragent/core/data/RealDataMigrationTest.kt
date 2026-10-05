@@ -64,7 +64,6 @@ class RealDataMigrationTest {
 
         assertEquals(before.state.agents, after.state.agents, "智能体（含人设）必须一字不差")
         assertEquals(before.state.tasks, after.state.tasks)
-        assertEquals(before.state.channels, after.state.channels)
         assertEquals(before.state.groups, after.state.groups)
         assertEquals(
             before.state.skills.map { it.copy(installed = false) },

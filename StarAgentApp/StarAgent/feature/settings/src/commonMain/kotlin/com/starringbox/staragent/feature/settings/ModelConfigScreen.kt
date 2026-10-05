@@ -70,7 +70,7 @@ fun ModelConfigScreen(navigator: Navigator) {
                 ) {
                     Text(
                         text = "填好 API Key 之后就能真正对话了。Key 只保存在这台设备上；" +
-                            "每个智能体还可以用不同的模型。",
+                            "所有智能体都用这里选的默认模型。",
                         style = MaterialTheme.typography.bodySmall,
                         color = StarPalette.TextMuted,
                     )

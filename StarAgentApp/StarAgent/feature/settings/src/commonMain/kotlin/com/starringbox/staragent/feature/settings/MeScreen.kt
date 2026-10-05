@@ -26,7 +26,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,15 +44,15 @@ import com.starringbox.staragent.core.designsystem.navigation.Navigator
 import com.starringbox.staragent.core.designsystem.navigation.Route
 import com.starringbox.staragent.core.designsystem.theme.StarPalette
 import com.starringbox.staragent.core.model.Agent
-import com.starringbox.staragent.core.model.Channel
 import com.starringbox.staragent.core.model.LlmProtocol
+import com.starringbox.staragent.core.model.ResponseMode
 import com.starringbox.staragent.core.model.ModelProvider
 import com.starringbox.staragent.core.model.Skill
 import com.starringbox.staragent.core.platform.voice.Voice
 
 /**
  * 「我的」页，按设计稿做成模块化工作台：
- * 我的智能体 / Skill 商店 / 模型接入 / IM 渠道，每个模块都能直接操作，而不是一堆开关列表。
+ * 我的智能体 / Skill 商店 / 模型接入 / 回复方式 / 语音，每个模块都能直接操作，而不是一堆开关列表。
  */
 @Composable
 fun MeScreen(navigator: Navigator) {
@@ -77,10 +79,10 @@ fun MeScreen(navigator: Navigator) {
         ModelModule(state, navigator)
 
         Spacer(Modifier.height(26.dp))
-        SpeechModule(state, navigator)
+        ResponseModeModule(state)
 
         Spacer(Modifier.height(26.dp))
-        ChannelModule(state, navigator)
+        SpeechModule(state, navigator)
 
         Spacer(Modifier.height(32.dp))
     }
@@ -405,54 +407,43 @@ private fun speechSubtitle(state: AppState): String = when {
     else -> "还用不了：点进去看识别方式"
 }
 
-// ── IM 渠道 ─────────────────────────────────────
+// ── 回复方式 ────────────────────────────────────
 
+/** 响应模式对所有智能体生效，所以放在这里，不放在单个智能体的编辑页。 */
 @Composable
-private fun ChannelModule(state: AppState, navigator: Navigator) {
-    ModuleHeader(
-        glyph = StarIconGlyph.Link,
-        title = "IM 渠道",
-        badge = "${state.activeChannels().size}",
-        actionLabel = "连接渠道",
-        onAction = { navigator.push(Route.Channels) },
-        onMore = { navigator.push(Route.Channels) },
-    )
+private fun ResponseModeModule(state: AppState) {
+    ModuleHeader(glyph = StarIconGlyph.Sparkle, title = "回复方式")
     Spacer(Modifier.height(12.dp))
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        state.channels.forEach { channel ->
-            ChannelTile(channel, Modifier.weight(1f)) { navigator.push(Route.Channels) }
+    Column(Modifier.padding(horizontal = 20.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ResponseMode.entries.forEach { mode ->
+                val selected = state.responseMode == mode
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (selected) StarPalette.Indigo else StarPalette.Surface)
+                        .selectable(
+                            selected = selected,
+                            role = Role.RadioButton,
+                            onClick = { state.selectResponseMode(mode) },
+                        )
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = mode.label,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (selected) Color.White else StarPalette.TextMuted,
+                    )
+                }
+            }
         }
-    }
-}
-
-@Composable
-private fun ChannelTile(channel: Channel, modifier: Modifier, onClick: () -> Unit) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(StarPalette.Surface)
-            .clickable { onClick() }
-            .padding(vertical = 12.dp, horizontal = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(channel.glyph, style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(6.dp))
         Text(
-            text = channel.name,
-            style = MaterialTheme.typography.labelLarge,
-            color = StarPalette.Text,
-            maxLines = 1,
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = if (channel.connected) "已连接" else "未连接",
-            style = MaterialTheme.typography.labelSmall,
-            color = if (channel.connected) StarPalette.Success else StarPalette.TextFaint,
+            text = state.responseMode.hint,
+            style = MaterialTheme.typography.bodySmall,
+            color = StarPalette.TextFaint,
         )
     }
 }
